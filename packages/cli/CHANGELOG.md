@@ -7,28 +7,40 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.76.0] - 2026-09-20
+
 ### Added
 
-- Implemented preview OpenAI Agents SDK adapters for Python `0.22.2` and
-  TypeScript `@openai/agents` `0.18.0` with independent framework/runtime
-  selection, credentialless conformance lanes, and Create kit ids
-  `agent.openai.python` / `agent.openai.typescript`. Reviewed release admission
-  from matrix run 35357989405 on `8eb1308` now opens Create and Attach for those
-  explicit kit ids and `--framework openai-agents`. Adapters remain `preview`.
-  `--runtime python` without `--framework` requires an explicit framework because
-  Microsoft and OpenAI are both admitted.
+- Implemented OpenAI Agents SDK adapters for Python `0.22.2` and TypeScript
+  `@openai/agents` `0.18.0` with independent framework/runtime selection,
+  credentialless conformance lanes, and Create kit ids `agent.openai.python` /
+  `agent.openai.typescript`. Adapters are labeled `stable`. Create and Attach
+  stay fail-closed until the reviewed v2 inventory is promoted from Linux,
+  macOS, and Windows evidence for this release SHA.
+  `--runtime python` without `--framework` requires an explicit framework
+  because Microsoft and OpenAI are both published. Handoffs, MCP, sessions, and
+  voice stay unsupported.
 
 ### Changed
 
+- Conformance reports and admission candidates now retain a per-platform
+  semantic implementation digest as audit provenance in addition to the
+  adapter manifest digest. Runtime admission remains bound to the adapter
+  version and manifest, framework baseline, runtime, and platform matrix; a
+  routine implementation edit no longer requires a manually refreshed digest.
+  Pull requests validate only affected families on Linux, while manual `full`
+  qualification retains the complete twelve-lane release gate. V1 evidence
+  cannot authorize Create or Attach.
 - Generated OpenAI and Microsoft starters inspect admitted Workspai context
   through allowlisted read-only tools instead of pasting the JSON into
   instructions. Live entrypoints stream stdout, accept a prompt from argv or
   stdin, and redact Azure-shaped secrets in addition to `sk-` values.
   Microsoft Python adds a credentialless LocalChatClient loop when the
-  framework is installed. Adapters remain `preview`.
+  framework is installed. Microsoft adapters remain `preview`.
 
 ### Fixed
 
+- `agent framework list --json` includes each adapter's `stability`.
 - Microsoft .NET context loader assigns `FileAttributes` before `GetAttributes`
   so CS0165 does not fail the restore/build lane.
 - OpenAI Python tools pass `failure_error_function=None`, and OpenAI
@@ -61,9 +73,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `pre-push`.
 - Isolated the workspace-intelligence adversarial script the same way; it runs
   during `quality:push` and was still inheriting husky Git env.
-- Kept published `agent framework list` preview OpenAI adapters visible before
-  release admission; the enterprise package smoke now requires the four
-  reviewed Microsoft and OpenAI adapters.
+- Kept published `agent framework list` OpenAI adapters visible; the enterprise
+  package smoke requires OpenAI to stay labeled `stable` and requires the exact
+  admitted set after promotion.
 - Invoked npm through `npm_execpath` in the OpenAI TypeScript conformance smoke
   so Windows does not `spawn EINVAL` on `npm.cmd`.
 - Ran the OpenAI TypeScript conformance install/test inside the generated
@@ -76,12 +88,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   require `project-context-agent.v1` JSON, and reject escaped symlinks
   without echoing file contents. Credentialless SDK checks now call the
   generated `buildAgent` / `build_agent` seam with official ScriptedModel
-  doubles. Python `pyproject.toml` is pip-editable. OpenAI adapters remain
-  preview after the reviewed admission; changing that label would change the
-  manifest digest and require a new matrix. Context-path containment
+  doubles. Python `pyproject.toml` is pip-editable. OpenAI adapters are labeled
+  `stable`; binding the new digest still requires the next green matrix.
+  Context-path containment
   is a bounded fd read after `O_NOFOLLOW` when available, not a TOCTOU-free
   walk. Generator coverage remains in the Vitest gate alongside the OpenAI
   adapter sources.
+- Bound Agent Framework qualification to deterministic semantic implementation
+  digests in conformance-report v2, admission-candidate v2, and release-admission
+  v2. Create and Attach are admitted by the exact Linux/macOS/Windows candidate
+  from run `35483229302` on source commit `2b25305c`.
+- Preflighted Python and `uv` before lifecycle mutation, restricted dependency
+  installation to the owned virtual environment, preserved scoped run evidence
+  timestamps, and rejected PCC goal binding after unreceipted filesystem drift.
 
 ## [0.75.2] - 2026-09-14
 

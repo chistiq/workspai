@@ -2,9 +2,12 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createBuiltinAgentFrameworkRegistry,
+  listBundledAgentFrameworkReleaseAdmissions,
   parseAgentFrameworkRuntime,
   resolveAgentFrameworkSelection,
 } from '../agent-frameworks/index.js';
+
+const releaseAdmitted = listBundledAgentFrameworkReleaseAdmissions().length === 4;
 
 describe('agent framework selection', () => {
   it('refuses to guess Python when Microsoft and OpenAI are both published', () => {
@@ -24,7 +27,7 @@ describe('agent framework selection', () => {
     ).toMatchObject({
       adapterId: 'microsoft-agent-framework-python',
       frameworkId: 'microsoft-agent-framework',
-      admitted: true,
+      admitted: releaseAdmitted,
     });
   });
 
@@ -73,7 +76,7 @@ describe('agent framework selection', () => {
     ).toMatchObject({
       adapterId: 'openai-agents-python',
       frameworkId: 'openai-agents',
-      admitted: true,
+      admitted: releaseAdmitted,
     });
     expect(
       resolveAgentFrameworkSelection({
@@ -84,7 +87,7 @@ describe('agent framework selection', () => {
     ).toMatchObject({
       adapterId: 'openai-agents-typescript',
       frameworkId: 'openai-agents',
-      admitted: true,
+      admitted: releaseAdmitted,
     });
   });
 });

@@ -152,6 +152,7 @@ function reportFor(
       id: adapterManifest.adapter.id,
       version: adapterManifest.adapter.version,
       manifestSha256: digest,
+      implementationSha256: digest,
     },
     frameworkVersion: '1.0.0',
     cliVersion: '0.74.0',
@@ -187,6 +188,7 @@ describe('agent framework detection and registry', () => {
     const registry = new AgentFrameworkRegistry().register({
       manifest: fixtureManifest,
       manifestSha256: digest,
+      implementationSha256: digest,
       source: 'builtin',
       conformanceReports: [],
     });
@@ -338,6 +340,7 @@ describe('agent framework detection and registry', () => {
     const incomplete = assessAgentFrameworkAdmission({
       manifest: adapter,
       manifestSha256: digest,
+      implementationSha256: digest,
       reports: [nodeReport],
     });
     expect(incomplete.status).toBe('blocked');
@@ -350,6 +353,7 @@ describe('agent framework detection and registry', () => {
       assessAgentFrameworkAdmission({
         manifest: adapter,
         manifestSha256: digest,
+        implementationSha256: digest,
         reports: [nodeReport, pythonReport],
       }).status
     ).toBe('admitted');
@@ -360,9 +364,65 @@ describe('agent framework detection and registry', () => {
       assessAgentFrameworkAdmission({
         manifest: adapter,
         manifestSha256: digest,
+        implementationSha256: digest,
         reports: [nodeReport, wrongDigest],
       }).blockers
     ).toContain('conformance linux/python/1.0.0: manifest digest does not match');
+
+    const wrongImplementation = structuredClone(pythonReport);
+    wrongImplementation.adapter.implementationSha256 = 'b'.repeat(64);
+    expect(
+      assessAgentFrameworkAdmission({
+        manifest: adapter,
+        manifestSha256: digest,
+        implementationSha256: digest,
+        reports: [nodeReport, wrongImplementation],
+      }).blockers
+    ).toContain('conformance linux/python/1.0.0: implementation digest does not match');
+
+    const darwinPython = structuredClone(pythonReport);
+    darwinPython.environment = { ...pythonReport.environment, platform: 'darwin' };
+    darwinPython.adapter = { ...pythonReport.adapter, implementationSha256: 'c'.repeat(64) };
+    const win32Python = structuredClone(pythonReport);
+    win32Python.environment = { ...pythonReport.environment, platform: 'win32' };
+    win32Python.adapter = { ...pythonReport.adapter, implementationSha256: 'd'.repeat(64) };
+    const darwinNode = structuredClone(nodeReport);
+    darwinNode.environment = { ...nodeReport.environment, platform: 'darwin' };
+    darwinNode.adapter = { ...nodeReport.adapter, implementationSha256: 'c'.repeat(64) };
+    const win32Node = structuredClone(nodeReport);
+    win32Node.environment = { ...nodeReport.environment, platform: 'win32' };
+    win32Node.adapter = { ...nodeReport.adapter, implementationSha256: 'd'.repeat(64) };
+    const threeOsAdapter = {
+      ...adapter,
+      implementation: { ...adapter.implementation, platforms: ['linux', 'darwin', 'win32'] },
+    };
+    expect(
+      assessAgentFrameworkAdmission({
+        manifest: threeOsAdapter,
+        manifestSha256: digest,
+        implementationSha256: digest,
+        reports: [nodeReport, pythonReport, darwinNode, darwinPython, win32Node, win32Python],
+      }).blockers
+    ).toEqual(
+      expect.arrayContaining([
+        'conformance darwin/node/1.0.0: implementation digest does not match',
+        'conformance darwin/python/1.0.0: implementation digest does not match',
+        'conformance win32/node/1.0.0: implementation digest does not match',
+        'conformance win32/python/1.0.0: implementation digest does not match',
+      ])
+    );
+    expect(
+      assessAgentFrameworkAdmission({
+        manifest: threeOsAdapter,
+        manifestSha256: digest,
+        implementationSha256ByPlatform: {
+          linux: digest,
+          darwin: 'c'.repeat(64),
+          win32: 'd'.repeat(64),
+        },
+        reports: [nodeReport, pythonReport, darwinNode, darwinPython, win32Node, win32Python],
+      }).status
+    ).toBe('admitted');
 
     const blockedReport = structuredClone(pythonReport);
     blockedReport.checks[0].status = 'failed';
@@ -374,6 +434,7 @@ describe('agent framework detection and registry', () => {
       assessAgentFrameworkAdmission({
         manifest: adapter,
         manifestSha256: digest,
+        implementationSha256: digest,
         reports: [nodeReport, blockedReport],
       }).blockers
     ).toContain('conformance linux/python/1.0.0: manifest-schema: fixture failure');
@@ -465,12 +526,14 @@ describe('agent framework detection and registry', () => {
       .register({
         manifest: first,
         manifestSha256: digest,
+        implementationSha256: digest,
         source: 'package',
         conformanceReports: [reportFor(first)],
       })
       .register({
         manifest: second,
         manifestSha256: digest,
+        implementationSha256: digest,
         source: 'package',
         conformanceReports: [reportFor(second)],
       });
@@ -481,6 +544,7 @@ describe('agent framework detection and registry', () => {
     const blocked = new AgentFrameworkRegistry().register({
       manifest: first,
       manifestSha256: digest,
+      implementationSha256: digest,
       source: 'package',
       conformanceReports: [],
     });
@@ -495,6 +559,7 @@ describe('agent framework detection and registry', () => {
       blocked.register({
         manifest: first,
         manifestSha256: digest,
+        implementationSha256: digest,
         source: 'workspace',
         conformanceReports: [],
       })
@@ -512,6 +577,7 @@ describe('agent framework detection and registry', () => {
     const result = assessAgentFrameworkAdmission({
       manifest: adapter,
       manifestSha256: digest,
+      implementationSha256: digest,
       reports: [report, structuredClone(report)],
     });
 

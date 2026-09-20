@@ -52,7 +52,26 @@ describe('agent framework version automation', () => {
       }
     }
     const conformance = workflows[1]!;
-    expect(conformance).toContain('os: [ubuntu-latest, macos-latest, windows-latest]');
+    expect(conformance).toContain('qualification_mode:');
+    expect(conformance).toContain("'packages/cli/src/__tests__/agent-framework-*.test.ts'");
+    expect(conformance).toContain(
+      'inputs.qualification_mode == \'full\' && \'["ubuntu-latest","macos-latest","windows-latest"]\' || \'["ubuntu-latest"]\''
+    );
+    expect(conformance).toContain(
+      "github.event_name == 'workflow_dispatch' && inputs.qualification_mode == 'full'"
+    );
+    expect(conformance).toContain('dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d');
+    expect(YAML.parse(conformance).permissions).toEqual({
+      contents: 'read',
+      'pull-requests': 'read',
+    });
+    expect(conformance).toContain("- 'packages/cli/src/agent-frameworks/**'");
+    expect(conformance).toContain(
+      "- '!packages/cli/src/agent-frameworks/adapters/openai-agents/**'"
+    );
+    expect(conformance).toContain(
+      "- '!packages/cli/src/agent-frameworks/adapters/microsoft-agent-framework/**'"
+    );
     expect(conformance).toContain('runtime: [python, dotnet]');
     expect(conformance).toContain('runtime: [python, typescript]');
     expect(conformance).toContain('smoke-openai-agents-adapter.ts');
@@ -97,7 +116,16 @@ describe('agent framework version automation', () => {
     const promotion = read('packages/cli/scripts/promote-agent-framework-release-admission.ts');
     expect(promotion).toContain('AGENT_FRAMEWORK_ADMISSION_CANDIDATE_CONTRACT_PATH');
     expect(promotion).toContain('digestBuiltinAgentFrameworkManifest');
+    expect(promotion).toContain('digestBuiltinAgentFrameworkImplementation');
+    expect(promotion).toContain('candidate.sourceCommit !== sourceCommit');
+    expect(conformance).toContain('release-admissions.v2.json');
     expect(promotion).toContain("repository !== 'chistiq/workspai'");
+    const verify = read('packages/cli/scripts/verify-agent-framework-conformance.ts');
+    expect(verify).toContain('implementationSha256ByPlatformFromReports');
+    expect(verify).toContain('liveImplementationDigestBlockers');
+    expect(verify).not.toContain(
+      'implementationSha256: digestBuiltinAgentFrameworkImplementation(adapter)'
+    );
   });
 
   it('keeps generator coverage and OpenAI adapter coverage in the same Vitest gate', () => {

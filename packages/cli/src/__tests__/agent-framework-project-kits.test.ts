@@ -12,15 +12,17 @@ import {
   resolveAgentFrameworkProjectKit,
 } from '../agent-frameworks/project-kits.js';
 import { readProjectMetadata } from '../utils/project-metadata.js';
+import { listBundledAgentFrameworkReleaseAdmissions } from '../agent-frameworks/release-admission.js';
 
 const roots: string[] = [];
+const releaseAdmitted = listBundledAgentFrameworkReleaseAdmissions().length === 4;
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => fsExtra.remove(root)));
 });
 
 describe('agent framework project kits', () => {
-  it('publishes the exact release-admitted Microsoft and OpenAI kits', () => {
+  it('publishes every Microsoft and OpenAI kit without treating visibility as admission', () => {
     expect(describeAgentFrameworkProjectKits().map((kit) => kit.id)).toEqual([
       'agent.microsoft.python',
       'agent.microsoft.dotnet',
@@ -42,7 +44,11 @@ describe('agent framework project kits', () => {
     expect(resolveAgentFrameworkProjectKit('agent.openai.typescript')?.adapterId).toBe(
       'openai-agents-typescript'
     );
-    expect(kits.every((kit) => isAdmittedAgentFrameworkProjectKit(kit))).toBe(true);
+    expect(isAdmittedAgentFrameworkProjectKit('agent.openai.python')).toBe(releaseAdmitted);
+    expect(isAdmittedAgentFrameworkProjectKit('agent.openai.typescript')).toBe(releaseAdmitted);
+    expect(kits.every((kit) => isAdmittedAgentFrameworkProjectKit(kit) === releaseAdmitted)).toBe(
+      true
+    );
   });
 
   it('resolves stable aliases without exposing mutable registry state', () => {

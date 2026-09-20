@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { buildAgentFrameworkAdmissionCandidate } from '../agent-frameworks/admission-candidate.js';
 import {
   digestBuiltinAgentFrameworkManifest,
+  digestBuiltinAgentFrameworkImplementation,
   microsoftAgentFrameworkPythonAdapter,
 } from '../agent-frameworks/index.js';
 import {
@@ -37,6 +38,7 @@ function report(platform: 'linux' | 'darwin' | 'win32'): AgentFrameworkConforman
       id: adapter.manifest.adapter.id,
       version: adapter.manifest.adapter.version,
       manifestSha256: digestBuiltinAgentFrameworkManifest(adapter),
+      implementationSha256: digestBuiltinAgentFrameworkImplementation(adapter),
     },
     frameworkVersion: adapter.manifest.framework.testedVersions[0],
     cliVersion: '0.74.0',
@@ -103,8 +105,42 @@ describe('agent framework admission candidate', () => {
     expect(candidate.schemaVersion).toBe(AGENT_FRAMEWORK_ADMISSION_CANDIDATE_SCHEMA_VERSION);
     expect(candidate.reviewStatus).toBe('pending');
     expect(candidate.adapters[0].lanes).toHaveLength(3);
+    expect(candidate.adapters[0].implementationSha256ByPlatform).toEqual({
+      linux: expect.stringMatching(/^[a-f0-9]{64}$/),
+      darwin: expect.stringMatching(/^[a-f0-9]{64}$/),
+      win32: expect.stringMatching(/^[a-f0-9]{64}$/),
+    });
     expect(candidate.adapters[0].lanes.every((lane) => lane.evidence.length === 18)).toBe(true);
     expect(candidate.adapters[0].lanes[0].report.sha256).toMatch(/^[a-f0-9]{64}$/);
+    expect(
+      candidate.adapters[0].implementationSha256ByPlatform[
+        process.platform as 'linux' | 'darwin' | 'win32'
+      ]
+    ).toBe(digestBuiltinAgentFrameworkImplementation(microsoftAgentFrameworkPythonAdapter));
+  });
+
+  it('fails closed when live implementation does not match the current-platform report', async () => {
+    const input = await fixture();
+    const host = process.platform as 'linux' | 'darwin' | 'win32';
+    const mismatched = input.reports.map((lane) =>
+      lane.environment.platform === host
+        ? {
+            ...lane,
+            adapter: { ...lane.adapter, implementationSha256: 'b'.repeat(64) },
+          }
+        : lane
+    );
+
+    await expect(
+      buildAgentFrameworkAdmissionCandidate({
+        evidenceRoot: input.root,
+        reportPaths: input.reportPaths,
+        reports: mismatched,
+        sourceCommit: 'a'.repeat(40),
+        cliVersion: '0.74.0',
+        adapters: [microsoftAgentFrameworkPythonAdapter],
+      })
+    ).rejects.toThrow(`live implementation digest does not match ${host} evidence`);
   });
 
   it('rejects a report changed after conformance validation', async () => {

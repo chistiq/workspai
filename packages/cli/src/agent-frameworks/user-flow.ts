@@ -241,7 +241,9 @@ export async function applyPreparedAgentFrameworkAttachment(input: {
     })),
     ownershipReceipt: applied.ownershipReceipt,
     nextActions: [
-      `workspai workspace intelligence run --workspace ${JSON.stringify(input.prepared.workspacePath)} --for-agent generic --strict --json`,
+      `workspai workspace run init --workspace ${JSON.stringify(input.prepared.workspacePath)} --scope ${JSON.stringify(input.prepared.project)} --json`,
+      `workspai workspace run test --workspace ${JSON.stringify(input.prepared.workspacePath)} --scope ${JSON.stringify(input.prepared.project)} --json`,
+      `workspai workspace run build --workspace ${JSON.stringify(input.prepared.workspacePath)} --scope ${JSON.stringify(input.prepared.project)} --json`,
       `workspai change verify --workspace ${JSON.stringify(input.prepared.workspacePath)} --change ${input.prepared.changeId} --json`,
     ],
   };
@@ -286,7 +288,9 @@ export async function applyAgentFrameworkAttachmentByChange(input: {
     files: applied.files,
     ownershipReceipt: applied.ownershipReceipt,
     nextActions: [
-      `workspai workspace intelligence run --workspace ${JSON.stringify(input.workspacePath)} --for-agent generic --strict --json`,
+      `workspai workspace run init --workspace ${JSON.stringify(input.workspacePath)} --scope ${JSON.stringify(applied.project)} --json`,
+      `workspai workspace run test --workspace ${JSON.stringify(input.workspacePath)} --scope ${JSON.stringify(applied.project)} --json`,
+      `workspai workspace run build --workspace ${JSON.stringify(input.workspacePath)} --scope ${JSON.stringify(applied.project)} --json`,
       `workspai change verify --workspace ${JSON.stringify(input.workspacePath)} --change ${input.changeId} --json`,
     ],
   };

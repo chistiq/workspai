@@ -12,6 +12,7 @@ import os
 import re
 import stat
 import sys
+from contextvars import ContextVar
 from pathlib import Path
 
 CONTEXT_LIMIT = 131_072
@@ -22,6 +23,7 @@ GENERATED_NOTICE = "Generated and managed by Workspai"
 CONTEXT_SEGMENTS = tuple(part for part in CONTEXT_PATH.split("/") if part)
 MAX_PACKAGE_WALK = 5
 MAX_MANIFEST_BYTES = 16_384
+_TEST_PROJECT_ROOT: ContextVar[Path | None] = ContextVar("workspai_test_project_root", default=None)
 
 
 def _fail(message: str) -> None:
@@ -79,7 +81,15 @@ def _is_generated_python_manifest(path: Path) -> bool:
     return text.startswith(f"# {GENERATED_NOTICE}") and "[project]" in text
 
 
+def bind_workspai_project_root_for_tests(project_root: Path | None) -> None:
+    """Test-only. Production entrypoints must not call this."""
+    _TEST_PROJECT_ROOT.set(_canonical(project_root) if project_root is not None else None)
+
+
 def resolve_workspai_project_root() -> Path:
+    overridden = _TEST_PROJECT_ROOT.get()
+    if overridden is not None:
+        return overridden
     cursor = Path(os.path.abspath(__file__)).parent
     for _ in range(MAX_PACKAGE_WALK):
         manifest = cursor / "pyproject.toml"
@@ -152,9 +162,9 @@ def _open_contained_regular_file(project_root: Path) -> int:
         raise
 
 
-def load_workspai_context() -> str:
-    project_root = resolve_workspai_project_root()
-    fd = _open_contained_regular_file(project_root)
+def load_workspai_context(project_root: Path | None = None) -> str:
+    root = _canonical(Path(project_root)) if project_root is not None else resolve_workspai_project_root()
+    fd = _open_contained_regular_file(root)
     try:
         st = os.fstat(fd)
         if not _is_regular_file(st):

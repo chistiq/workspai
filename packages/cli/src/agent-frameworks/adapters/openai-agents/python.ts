@@ -58,6 +58,7 @@ function pathsFor(instanceName: string) {
     agent: `agents/${slug}/agent.py`,
     dependencyManifest: `agents/${slug}/pyproject.toml`,
     test: `agents/${slug}/tests/test_context.py`,
+    frameworkTest: `agents/${slug}/tests/test_framework.py`,
     environmentExample: `agents/${slug}/.env.example`,
     readme: `agents/${slug}/README.md`,
     state: `.workspai/agent-frameworks/openai-agents-python/${slug}.json`,
@@ -119,19 +120,19 @@ def tracing_disabled() -> bool:
 
 
 @function_tool(failure_error_function=None)
-def describe_workspai_context() -> str:
+async def describe_workspai_context() -> str:
     """Return the admitted Workspai context size and schemaVersion. This tool does not mutate files or run a shell."""
     return describe_workspai_context_view()
 
 
 @function_tool(failure_error_function=None)
-def read_workspai_project_summary() -> str:
+async def read_workspai_project_summary() -> str:
     """Return allowlisted Workspai workspace and project identity fields. This tool does not mutate files or run a shell."""
     return read_project_summary_view()
 
 
 @function_tool(failure_error_function=None)
-def list_workspai_supported_commands() -> str:
+async def list_workspai_supported_commands() -> str:
     """Return the admitted project command surface. This tool does not mutate files or run a shell."""
     return list_supported_commands_view()
 
@@ -248,13 +249,15 @@ dependencies = [
 
 [tool.setuptools]
 py-modules = ["agent", "main", "workspai_context"]
+
+[tool.workspai]
+lifecycle-lock-tool = "uv"
 `
     ),
     managedFile(
       target.test,
       `# Generated and managed by Workspai. This test performs no network calls.
 
-import asyncio
 import json
 import os
 import shutil
@@ -269,68 +272,38 @@ from workspai_context import (
     CONTEXT_LIMIT,
     CONTEXT_PATH,
     CONTEXT_SCHEMA_VERSION,
+    GENERATED_NOTICE,
+    bind_workspai_project_root_for_tests,
     describe_workspai_context_view,
     list_workspai_supported_commands,
     load_workspai_context,
     read_workspai_project_summary,
     redact_secret_shaped_values,
-    resolve_workspai_project_root,
 )
 
 
-class WorkspaiContextTests(unittest.TestCase):
-    @classmethod
-    def setUpClass(cls) -> None:
-        cls._live_context = resolve_workspai_project_root() / CONTEXT_PATH
-        cls._backup_dir = Path(tempfile.mkdtemp(prefix="workspai-context-backup-"))
-        cls._backup = cls._backup_dir / "project-context-agent.json"
-        cls._restored_kind = "none"
-        cls._isolated = False
-        cls.addClassCleanup(cls._restore_live_context)
-        live = cls._live_context
-        if live.is_symlink():
-            cls._backup.symlink_to(os.readlink(live))
-            cls._restored_kind = "symlink"
-            live.unlink()
-            cls._isolated = True
-            return
-        if live.is_file():
-            shutil.copy2(live, cls._backup)
-            cls._restored_kind = "file"
-            live.unlink()
-            cls._isolated = True
-            return
-        if live.exists():
-            raise RuntimeError("Workspai agent context path is not a contained regular file")
-        cls._isolated = True
-
-    @classmethod
-    def _restore_live_context(cls) -> None:
-        try:
-            if not getattr(cls, "_isolated", False):
-                return
-            live = cls._live_context
-            if live.is_symlink() or live.exists():
-                live.unlink()
-            if cls._restored_kind == "symlink":
-                live.parent.mkdir(parents=True, exist_ok=True)
-                live.symlink_to(os.readlink(cls._backup))
-            elif cls._restored_kind == "file":
-                live.parent.mkdir(parents=True, exist_ok=True)
-                shutil.copy2(cls._backup, live)
-        finally:
-            backup_dir = getattr(cls, "_backup_dir", None)
-            if backup_dir is not None:
-                shutil.rmtree(backup_dir, ignore_errors=True)
+class _TemporaryProjectFixture(unittest.TestCase):
+    def setUp(self) -> None:
+        self._fixture = Path(tempfile.mkdtemp(prefix="workspai-context-fixture-"))
+        self.addCleanup(shutil.rmtree, self._fixture, True)
+        agent = self._fixture / "agents" / "primary"
+        agent.mkdir(parents=True)
+        (agent / "pyproject.toml").write_text(
+            f"# {GENERATED_NOTICE}\\n\\n[project]\\nname = \\"primary\\"\\n",
+            encoding="utf-8",
+        )
+        bind_workspai_project_root_for_tests(self._fixture)
+        self.addCleanup(bind_workspai_project_root_for_tests, None)
 
     def _context_path(self) -> Path:
-        path = resolve_workspai_project_root() / CONTEXT_PATH
+        path = self._fixture / CONTEXT_PATH
         path.parent.mkdir(parents=True, exist_ok=True)
-        if path.is_symlink():
+        if path.is_symlink() or path.exists():
             path.unlink()
-        elif path.exists() and not path.is_file():
-            raise RuntimeError("Workspai agent context path is not a contained regular file")
         return path
+
+
+class WorkspaiContextTests(_TemporaryProjectFixture):
 
     def test_reads_bounded_context_from_the_owning_project_not_cwd(self) -> None:
         payload = json.dumps({"schemaVersion": CONTEXT_SCHEMA_VERSION})
@@ -357,6 +330,12 @@ class WorkspaiContextTests(unittest.TestCase):
             load_workspai_context()
         self.assertNotIn("do-not-leak", str(raised.exception))
 
+    def test_rejects_malformed_utf8_without_disclosing_contents(self) -> None:
+        self._context_path().write_bytes(b"{\\xffsecret")
+        with self.assertRaisesRegex(RuntimeError, "UTF-8") as raised:
+            load_workspai_context()
+        self.assertNotIn("secret", str(raised.exception))
+
     def test_rejects_an_external_symlink_without_disclosing_the_target(self) -> None:
         context = self._context_path()
         if context.exists() or context.is_symlink():
@@ -374,28 +353,6 @@ class WorkspaiContextTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "contained regular file") as raised:
                 load_workspai_context()
             self.assertNotIn("do-not-leak", str(raised.exception))
-
-    def test_scripted_model_tool_call_stays_offline(self) -> None:
-        try:
-            from agents.testing import ScriptedModel, assistant_message, function_call
-            from main import run_admitted_agent
-        except ImportError:
-            self.skipTest("openai-agents is not installed")
-        payload = json.dumps({"schemaVersion": CONTEXT_SCHEMA_VERSION, "secret": "do-not-leak"})
-        self._context_path().write_text(payload, encoding="utf-8")
-        os.environ["OPENAI_AGENTS_DISABLE_TRACING"] = "1"
-        model = ScriptedModel(
-            steps=[
-                [function_call("describe_workspai_context", {}, call_id="call_context")],
-                [assistant_message("OFFLINE_OK")],
-            ]
-        )
-        output = asyncio.run(run_admitted_agent("Check admitted context", model=model))
-        self.assertEqual(output, "OFFLINE_OK")
-        self.assertEqual(len(model.calls), 2)
-        self.assertIn("admitted-context-bytes:", str(model.calls[1].input))
-        self.assertIsNone(getattr(getattr(model.calls[0], "model_settings", None), "timeout", None))
-        self.assertNotIn("do-not-leak", str(getattr(model.calls[0], "system_instructions", "")))
 
     def test_allowlisted_views_omit_non_admitted_keys(self) -> None:
         payload = {
@@ -446,6 +403,76 @@ if __name__ == "__main__":
 `
     ),
     managedFile(
+      target.frameworkTest,
+      `# Generated and managed by Workspai. This test performs no network calls.
+
+import asyncio
+import json
+import os
+import shutil
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from workspai_context import (
+    CONTEXT_PATH,
+    CONTEXT_SCHEMA_VERSION,
+    GENERATED_NOTICE,
+    bind_workspai_project_root_for_tests,
+)
+
+
+class RequiredFrameworkLoopTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self._fixture = Path(tempfile.mkdtemp(prefix="workspai-framework-fixture-"))
+        self.addCleanup(shutil.rmtree, self._fixture, True)
+        agent = self._fixture / "agents" / "primary"
+        agent.mkdir(parents=True)
+        (agent / "pyproject.toml").write_text(
+            f"# {GENERATED_NOTICE}\\n\\n[project]\\nname = \\"primary\\"\\n",
+            encoding="utf-8",
+        )
+        bind_workspai_project_root_for_tests(self._fixture)
+        self.addCleanup(bind_workspai_project_root_for_tests, None)
+
+    def _context_path(self) -> Path:
+        path = self._fixture / CONTEXT_PATH
+        path.parent.mkdir(parents=True, exist_ok=True)
+        if path.is_symlink() or path.exists():
+            path.unlink()
+        return path
+
+    def test_scripted_model_tool_call_stays_offline(self) -> None:
+        try:
+            from agents.testing import ScriptedModel, assistant_message, function_call
+            from main import run_admitted_agent
+        except ImportError as error:
+            self.fail(f"openai-agents is required for this release-admitted kit: {error}")
+        payload = json.dumps({"schemaVersion": CONTEXT_SCHEMA_VERSION, "secret": "do-not-leak"})
+        self._context_path().write_text(payload, encoding="utf-8")
+        os.environ["OPENAI_AGENTS_DISABLE_TRACING"] = "1"
+        model = ScriptedModel(
+            steps=[
+                [function_call("describe_workspai_context", {}, call_id="call_context")],
+                [assistant_message("OFFLINE_OK")],
+            ]
+        )
+        output = asyncio.run(run_admitted_agent("Check admitted context", model=model))
+        self.assertEqual(output, "OFFLINE_OK")
+        self.assertEqual(len(model.calls), 2)
+        self.assertIn("admitted-context-bytes:", str(model.calls[1].input))
+        self.assertIsNone(getattr(getattr(model.calls[0], "model_settings", None), "timeout", None))
+        self.assertNotIn("do-not-leak", str(getattr(model.calls[0], "system_instructions", "")))
+
+
+if __name__ == "__main__":
+    unittest.main()
+`
+    ),
+    managedFile(
       target.environmentExample,
       `# Generated and managed by Workspai. Copy variable names into your secret manager or shell; never commit credentials.\nOPENAI_API_KEY=\nOPENAI_MODEL=\n# Optional. The OpenAI Agents SDK also honors OPENAI_DEFAULT_MODEL when OPENAI_MODEL is unset.\nOPENAI_DEFAULT_MODEL=\n# Optional. Set to 1 only when you explicitly want SDK tracing. Offline verification must keep tracing disabled.\nWORKSPAI_AGENT_TRACING=0\nOPENAI_AGENTS_DISABLE_TRACING=1\n`
     ),
@@ -478,7 +505,9 @@ CI may use \`uv sync --project ${target.root}\` against the same \`pyproject.tom
 
 \`cd ${target.root} && ${python} -m unittest discover -s tests\`
 
-Credentialless tests cover the Workspai context boundary, allowlisted views, Azure-shaped redaction, and an official ScriptedModel tool-call when the SDK is installed. They isolate the operational context file for the suite and restore it afterward. They do not call a model provider.
+Credentialless tests cover the Workspai context boundary, allowlisted views, Azure-shaped redaction, and an official ScriptedModel tool-call. They construct a temporary project fixture and never mutate the operational context file. A missing \`openai-agents\` install fails the required framework test; it is not skipped. They do not call a model provider.
+
+\`wspai workspace run init\` requires [uv](https://docs.astral.sh/uv/), validates it before changing the project, creates the project \`.venv\`, installs this package into that environment, and writes \`uv.lock\`. It fails closed rather than producing an unlocked environment. \`wspai workspace run test\` and \`wspai workspace run build\` use that same interpreter. A blocking Doctor or Readiness gate fails the process even without \`--strict\`.
 
 ## Run
 

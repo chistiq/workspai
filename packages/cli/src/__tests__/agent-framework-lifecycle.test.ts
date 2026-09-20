@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   createBuiltinAgentFrameworkRegistry,
+  digestBuiltinAgentFrameworkImplementation,
   digestBuiltinAgentFrameworkManifest,
   microsoftAgentFrameworkPythonAdapter,
 } from '../agent-frameworks/index.js';
@@ -32,6 +33,7 @@ const roots: string[] = [];
 function admittedRegistry() {
   const adapter = microsoftAgentFrameworkPythonAdapter;
   const manifestSha256 = digestBuiltinAgentFrameworkManifest(adapter);
+  const implementationSha256 = digestBuiltinAgentFrameworkImplementation(adapter);
   const reports = adapter.manifest.implementation.platforms.map((platform) => {
     const checks = AGENT_FRAMEWORK_CONFORMANCE_CHECK_IDS.map((id) => ({
       id,
@@ -49,6 +51,7 @@ function admittedRegistry() {
         id: adapter.manifest.adapter.id,
         version: adapter.manifest.adapter.version,
         manifestSha256,
+        implementationSha256,
       },
       frameworkVersion: adapter.manifest.framework.testedVersions[0],
       cliVersion: '0.74.0',
@@ -166,7 +169,7 @@ describe('agent framework proof-carrying lifecycle', () => {
 
       expect(prepared.status).toBe('planned');
       expect(prepared.plan.target).toEqual({ project: 'api', artifactPrefix });
-      expect(prepared.plan.files).toHaveLength(8);
+      expect(prepared.plan.files).toHaveLength(9);
       expect(prepared.planArtifact).toContain(
         `/plans/agent-framework-change-plan-${prepared.planDigest}.json`
       );
@@ -206,7 +209,7 @@ describe('agent framework proof-carrying lifecycle', () => {
       });
 
       expect(applied.status).toBe('applied');
-      expect(applied.files).toHaveLength(8);
+      expect(applied.files).toHaveLength(9);
       expect(
         await fsExtra.readFile(
           path.join(projectPath, 'agents', 'release-reviewer', 'main.py'),
@@ -219,7 +222,7 @@ describe('agent framework proof-carrying lifecycle', () => {
         changeId,
         target: { workspace: 'platform', project: 'api', instanceName: 'release-reviewer' },
       });
-      expect(ownership.files).toHaveLength(8);
+      expect(ownership.files).toHaveLength(9);
       const transaction = await readDecisionTransaction(workspacePath, changeId);
       expect(transaction.transaction.effects).toContainEqual(
         expect.objectContaining({

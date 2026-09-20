@@ -40,6 +40,7 @@ const CLI_EXTENSION_CONTRACT_FILES = [
   'workspace-intelligence/workspace-repair-transaction.v1.json',
   'workspace-intelligence/agent-framework-adapter-manifest.v1.json',
   'workspace-intelligence/agent-framework-conformance-report.v1.json',
+  'workspace-intelligence/agent-framework-conformance-report.v2.json',
   'workspace-intelligence/agent-framework-change-plan.v1.json',
   'workspace-intelligence/agent-framework-ownership-receipt.v1.json',
   'analyze-last-run.v1.json',

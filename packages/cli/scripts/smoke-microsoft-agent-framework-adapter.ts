@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {
+  digestBuiltinAgentFrameworkImplementation,
   digestBuiltinAgentFrameworkManifest,
   managedFile,
   MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE,
@@ -920,6 +921,7 @@ async function main(): Promise<void> {
       id: adapter.manifest.adapter.id,
       version: adapter.manifest.adapter.version,
       manifestSha256: digestBuiltinAgentFrameworkManifest(adapter),
+      implementationSha256: digestBuiltinAgentFrameworkImplementation(adapter),
     },
     frameworkVersion: adapter.manifest.framework.testedVersions[0],
     cliVersion: await cliVersion(),
@@ -946,7 +948,12 @@ async function main(): Promise<void> {
   process.stdout.write(
     `${status} ${adapter.manifest.adapter.id} ${report.frameworkVersion} on ${platform}; report: ${reportPath}\n`
   );
-  if (report.verdict !== 'admitted') process.exitCode = 1;
+  if (report.verdict !== 'admitted') {
+    for (const blocker of report.blockers) {
+      process.stdout.write(`blocker: ${blocker}\n`);
+    }
+    process.exitCode = 1;
+  }
 }
 
 main().catch((error: unknown) => {

@@ -172,7 +172,17 @@ describe('npm publish contract', () => {
     expect(smoke).toContain("adapter.status === 'admitted'");
     expect(smoke).toContain('microsoft-agent-framework-python');
     expect(smoke).toContain('openai-agents-typescript');
+    expect(smoke).toContain("openai.stability !== 'stable'");
+    expect(smoke).toContain('openai-agents-python');
+    expect(smoke).toContain('agent kit smoke did not record ownership receipts');
+    expect(smoke).toContain('recorded ownership receipts without a release-admitted create');
     expect(smoke).not.toContain('adapters?.length !== 2');
+
+    const listCommand = fs.readFileSync(
+      path.join(process.cwd(), 'src/commands/agent-framework.ts'),
+      'utf8'
+    );
+    expect(listCommand).toContain('stability: entry.manifest.adapter.stability');
   });
 
   it('keeps npm-only contributor enforcement out of consumer install lifecycles', () => {

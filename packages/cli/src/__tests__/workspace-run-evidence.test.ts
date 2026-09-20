@@ -54,6 +54,7 @@ function makeStageReport(
       passed: 1,
       failed: 0,
       skipped: 0,
+      blocked: 0,
       exitCode: 0,
     },
     projects: [],
@@ -130,5 +131,82 @@ describe('workspace run evidence', () => {
       publishWorkspaceRunStageReport(workspace, makeStageReport(workspace, 'test'))
     ).rejects.toThrow('refusing to overwrite');
     expect(await fsExtra.readFile(reportPath, 'utf-8')).toBe('{invalid json');
+  });
+
+  it('keeps timestamped project history without presenting old rows as the latest run', async () => {
+    const workspace = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-workspace-run-merge-'));
+    createdPaths.push(workspace);
+    const base = makeStageReport(workspace, 'test');
+    const first: WorkspaceRunReport = {
+      ...base,
+      generatedAt: '2026-06-16T12:00:00.000Z',
+      projects: [
+        {
+          path: path.join(workspace, 'alpha'),
+          relativePath: 'alpha',
+          projectName: 'alpha',
+          selected: true,
+          affected: true,
+          status: 'passed',
+          exitCode: 0,
+          durationMs: 10,
+          executionCommand: 'python -m unittest',
+        },
+        {
+          path: path.join(workspace, 'beta'),
+          relativePath: 'beta',
+          projectName: 'beta',
+          selected: false,
+          affected: false,
+          status: 'skipped',
+          exitCode: null,
+          durationMs: 0,
+          reason: 'outside scope',
+        },
+      ],
+      summary: { ...base.summary, selectedCount: 1, passed: 1, skipped: 1 },
+    };
+    const second: WorkspaceRunReport = {
+      ...base,
+      generatedAt: '2026-06-16T12:05:00.000Z',
+      projects: [
+        {
+          path: path.join(workspace, 'alpha'),
+          relativePath: 'alpha',
+          projectName: 'alpha',
+          selected: false,
+          affected: false,
+          status: 'skipped',
+          exitCode: null,
+          durationMs: 0,
+          reason: 'outside scope',
+        },
+        {
+          path: path.join(workspace, 'beta'),
+          relativePath: 'beta',
+          projectName: 'beta',
+          selected: true,
+          affected: true,
+          status: 'passed',
+          exitCode: 0,
+          durationMs: 12,
+          executionCommand: 'python -m unittest',
+        },
+      ],
+      summary: { ...base.summary, selectedCount: 1, passed: 1, skipped: 1 },
+    };
+
+    await publishWorkspaceRunStageReport(workspace, first);
+    await publishWorkspaceRunStageReport(workspace, second);
+    const evidence = await readWorkspaceRunEvidence(workspace);
+    const testStage = evidence?.stages.test;
+    expect(testStage?.projects.find((project) => project.relativePath === 'alpha')?.status).toBe(
+      'skipped'
+    );
+    expect(testStage?.projects.find((project) => project.relativePath === 'beta')?.status).toBe(
+      'passed'
+    );
+    expect(evidence?.projectStages?.alpha?.test?.status).toBe('passed');
+    expect(evidence?.projectStages?.beta?.test?.status).toBe('passed');
   });
 });

@@ -1027,6 +1027,10 @@ describe('doctor enterprise surface probes', () => {
     expect(security?.repairCapability?.strategy?.some((stage) => stage.kind === 'safe-fix')).toBe(
       false
     );
+    expect(security?.repairCapability?.files).toEqual([
+      path.join(projectPath, 'package.json'),
+      path.join(projectPath, 'package-lock.json'),
+    ]);
   });
 
   it('binds agent dependency and environment repairs to the nested runtime boundary', async () => {

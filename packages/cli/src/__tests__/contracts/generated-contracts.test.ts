@@ -136,7 +136,7 @@ describe('generated shared contracts (Wave B + C)', () => {
       readJsonContract('workspace-intelligence/agent-framework-adapter-manifest.v1.json')
     ).toEqual(buildAgentFrameworkAdapterManifestSchema());
     expect(
-      readJsonContract('workspace-intelligence/agent-framework-conformance-report.v1.json')
+      readJsonContract('workspace-intelligence/agent-framework-conformance-report.v2.json')
     ).toEqual(buildAgentFrameworkConformanceReportSchema());
     expect(readJsonContract('workspace-intelligence/agent-framework-change-plan.v1.json')).toEqual(
       buildAgentFrameworkChangePlanSchema()

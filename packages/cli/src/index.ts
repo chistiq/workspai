@@ -81,6 +81,7 @@ import {
 } from './utils/cli-lifecycle-contract.js';
 import { findRapidkitProjectRoot } from './utils/project-command-capabilities.js';
 import { missingShellActivationDiagnostic } from './utils/shell-activation-diagnostics.js';
+import { enrichBridgeBackedProjectMetadata } from './utils/bridge-kit-metadata.js';
 import { canonicalizeProjectMetadata } from './utils/project-metadata.js';
 import {
   ProjectWorkspaceResolutionError,
@@ -1111,11 +1112,16 @@ async function finalizeCreatedProjectWorkspace(
     }) => Promise<void>;
   } = {}
 ): Promise<string | undefined> {
-  if (args.includes('--no-workspace') || args.includes('--dry-run')) {
+  if (args.includes('--dry-run')) {
     return undefined;
   }
   if (!(await fsExtra.pathExists(projectPath))) {
     logger.warn(`Created project path was not found for workspace linking: ${projectPath}`);
+    return undefined;
+  }
+  await canonicalizeProjectMetadata(projectPath);
+  await enrichBridgeBackedProjectMetadata(projectPath);
+  if (args.includes('--no-workspace')) {
     return undefined;
   }
 
@@ -1141,7 +1147,6 @@ async function finalizeCreatedProjectWorkspace(
 
   let relationship = 'managed';
   try {
-    await canonicalizeProjectMetadata(projectPath);
     const relativeProjectPath = path.relative(workspacePath, projectPath);
     const projectIsExternal =
       relativeProjectPath.startsWith('..') || path.isAbsolute(relativeProjectPath);

@@ -268,7 +268,8 @@ public static class WorkspaiContext
                 }
                 if (last)
                 {
-                    if ((targetAttributes & FileAttributes.Directory) != 0)
+                    if ((targetAttributes & FileAttributes.Directory) != 0
+                        || (targetAttributes & FileAttributes.Device) != 0)
                     {
                         ThrowUnsafe();
                     }
@@ -285,7 +286,8 @@ public static class WorkspaiContext
             }
             if (last)
             {
-                if ((attributes & FileAttributes.Directory) != 0)
+                if ((attributes & FileAttributes.Directory) != 0
+                    || (attributes & FileAttributes.Device) != 0)
                 {
                     ThrowUnsafe();
                 }
@@ -317,12 +319,28 @@ public static class WorkspaiContext
             4096,
             FileOptions.SequentialScan))
         {
+            if (!stream.CanSeek)
+            {
+                ThrowUnsafe();
+            }
             if (stream.Length > ContextLimit)
             {
                 throw new InvalidOperationException("Workspai agent context exceeds the admitted 128 KiB boundary.");
             }
-            using var reader = new StreamReader(stream, Encoding.UTF8, detectEncodingFromByteOrderMarks: false);
-            decoded = await reader.ReadToEndAsync();
+            using var reader = new StreamReader(
+                stream,
+                new UTF8Encoding(encoderShouldEmitUTF8Identifier: false, throwOnInvalidBytes: true),
+                detectEncodingFromByteOrderMarks: false,
+                bufferSize: 1024,
+                leaveOpen: false);
+            try
+            {
+                decoded = await reader.ReadToEndAsync();
+            }
+            catch (DecoderFallbackException)
+            {
+                throw new InvalidOperationException("Workspai agent context is not valid UTF-8.");
+            }
         }
         if (Encoding.UTF8.GetByteCount(decoded) > ContextLimit)
         {
@@ -733,6 +751,25 @@ public sealed class WorkspaiContextTests
         Directory.CreateDirectory(Path.GetDirectoryName(context)!);
         File.WriteAllText(context, contents);
         return root;
+    }
+
+    [Fact]
+    public async Task RejectsMalformedUtf8WithoutDisclosingContents()
+    {
+        var root = Path.Combine(Path.GetTempPath(), "workspai-context-" + Guid.NewGuid().ToString("N"));
+        var context = Path.Combine(root, "${PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH}".Replace('/', Path.DirectorySeparatorChar));
+        Directory.CreateDirectory(Path.GetDirectoryName(context)!);
+        File.WriteAllBytes(context, new byte[] { 0x7b, 0xff, 0x73, 0x65, 0x63, 0x72, 0x65, 0x74 });
+        try
+        {
+            var error = await Assert.ThrowsAsync<InvalidOperationException>(() => WorkspaiContext.LoadAsync(root));
+            Assert.Contains("UTF-8", error.Message);
+            Assert.DoesNotContain("secret", error.Message);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
     }
 }
 `

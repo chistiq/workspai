@@ -161,6 +161,21 @@ async function assertGoalBindings(workspacePath: string, entry: GoalIndexEntry):
         break;
       }
     }
+    if (!sanctioned) {
+      const { assertAppliedProofCarryingChangeCurrent } =
+        await import('./proof-carrying-change.js');
+      for (const changeId of [...changeTransactionIds].reverse()) {
+        const binding = await assertAppliedProofCarryingChangeCurrent({
+          workspacePath,
+          changeId,
+          goalId: entry.id,
+        }).catch(() => undefined);
+        if (binding?.modelHash === currentModelHash && binding.graphHash === currentGraphHash) {
+          sanctioned = true;
+          break;
+        }
+      }
+    }
     const transactionIds =
       entry.repairTransactionIds ?? (entry.repairTransactionId ? [entry.repairTransactionId] : []);
     const { assertClosedGoalRepairTransactionCurrent } =

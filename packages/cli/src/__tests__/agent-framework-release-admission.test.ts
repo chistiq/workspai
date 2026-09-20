@@ -4,51 +4,66 @@ import {
   assessBundledAgentFrameworkRelease,
   BUILTIN_AGENT_FRAMEWORK_ADAPTERS,
   createBuiltinAgentFrameworkRegistry,
+  digestBuiltinAgentFrameworkImplementation,
   listBundledAgentFrameworkReleaseAdmissions,
 } from '../agent-frameworks/index.js';
 
 describe('agent framework release admission', () => {
-  it('admits only the exact reviewed built-in manifests and complete platform matrices', () => {
+  it('admits exactly the four adapters promoted from the reviewed v2 matrix', () => {
     const admissions = listBundledAgentFrameworkReleaseAdmissions();
-    const admittedIds = new Set(admissions.map((admission) => admission.id));
-    expect(admissions).toHaveLength(4);
+    expect(admissions.map((admission) => admission.id).sort()).toEqual(
+      BUILTIN_AGENT_FRAMEWORK_ADAPTERS.map((adapter) => adapter.manifest.adapter.id).sort()
+    );
 
     for (const adapter of BUILTIN_AGENT_FRAMEWORK_ADAPTERS) {
       const resolution = assessBundledAgentFrameworkRelease(adapter);
-      if (admittedIds.has(adapter.manifest.adapter.id)) {
-        expect(resolution).toMatchObject({ status: 'admitted', blockers: [] });
-        expect(resolution.admission?.platforms).toEqual(['linux', 'darwin', 'win32']);
-      } else {
-        expect(resolution.status).toBe('blocked');
-        expect(resolution.blockers).toEqual(
-          expect.arrayContaining([expect.stringContaining('No reviewed release admission exists')])
-        );
-      }
+      expect(resolution.status).toBe('admitted');
+      expect(resolution.blockers).toEqual([]);
     }
   });
 
-  it('fails closed after any admitted manifest change', () => {
+  it('records deterministic implementation provenance without making it runtime authority', () => {
     const adapter = BUILTIN_AGENT_FRAMEWORK_ADAPTERS[0];
     const changed = {
       ...adapter,
+      render: (input: Parameters<typeof adapter.render>[0]) => ({
+        ...adapter.render(input),
+        files: adapter
+          .render(input)
+          .files.map((file, index) =>
+            index === 0 ? { ...file, content: `${file.content}\n# changed` } : file
+          ),
+      }),
+    };
+    expect(digestBuiltinAgentFrameworkImplementation(adapter)).toMatch(/^[a-f0-9]{64}$/);
+    expect(digestBuiltinAgentFrameworkImplementation(adapter)).not.toBe(
+      digestBuiltinAgentFrameworkImplementation(changed)
+    );
+    expect(assessBundledAgentFrameworkRelease(changed)).toMatchObject({
+      status: 'admitted',
+      blockers: [],
+    });
+
+    const changedManifest = {
+      ...adapter,
       manifest: {
         ...adapter.manifest,
-        framework: {
-          ...adapter.manifest.framework,
-          testedVersions: ['1.17.1'],
+        adapter: {
+          ...adapter.manifest.adapter,
+          version: '999.0.0',
         },
       },
     };
-    expect(assessBundledAgentFrameworkRelease(changed)).toMatchObject({
+    expect(assessBundledAgentFrameworkRelease(changedManifest)).toMatchObject({
       status: 'blocked',
       blockers: expect.arrayContaining([
+        'adapter version changed after release admission',
         'adapter manifest changed after release admission',
-        'framework baseline changed after release admission',
       ]),
     });
   });
 
-  it('keeps raw registries blocked and enables release trust only when explicitly requested', () => {
+  it('keeps raw registries blocked and admits reviewed adapters only when explicitly trusted', () => {
     const adapterId = BUILTIN_AGENT_FRAMEWORK_ADAPTERS[0].manifest.adapter.id;
     expect(createBuiltinAgentFrameworkRegistry().resolveAdapter(adapterId).status).toBe('blocked');
     expect(
@@ -64,7 +79,7 @@ describe('agent framework release admission', () => {
     ).not.toHaveProperty('releaseAdapter');
   });
 
-  it('admits reviewed OpenAI adapters while keeping default registries blocked', () => {
+  it('keeps stable-labeled OpenAI adapters visible and admitted after promotion', () => {
     const registry = createBuiltinAgentFrameworkRegistry(
       {},
       { trustReviewedReleaseAdmissions: true }
@@ -74,21 +89,11 @@ describe('agent framework release admission', () => {
       status: registry.resolveAdapter(entry.manifest.adapter.id).status,
       stability: entry.manifest.adapter.stability,
     }));
-    expect(
-      adapters
-        .filter((adapter) => adapter.status === 'admitted')
-        .map((adapter) => adapter.id)
-        .sort()
-    ).toEqual([
-      'microsoft-agent-framework-dotnet',
-      'microsoft-agent-framework-python',
-      'openai-agents-python',
-      'openai-agents-typescript',
-    ]);
+    expect(adapters.filter((adapter) => adapter.status === 'admitted')).toHaveLength(4);
     expect(
       adapters
         .filter((adapter) => adapter.id.startsWith('openai-agents-'))
-        .every((adapter) => adapter.status === 'admitted' && adapter.stability === 'preview')
+        .every((adapter) => adapter.status === 'admitted' && adapter.stability === 'stable')
     ).toBe(true);
     expect(
       createBuiltinAgentFrameworkRegistry().resolveAdapter('openai-agents-python').status

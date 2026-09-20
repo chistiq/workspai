@@ -308,7 +308,7 @@ main().catch((error: unknown) => {
       `// Generated and managed by Workspai. This test performs no network calls.
 
 import assert from 'node:assert/strict';
-import { copyFile, lstat, mkdir, mkdtemp, readlink, rename, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, before, test } from 'node:test';
@@ -318,6 +318,7 @@ import { ScriptedModel, assistantMessage, functionCall } from '@openai/agents/te
 
 import { runAdmittedAgent } from '../src/agent.js';
 import {
+  bindWorkspaiProjectRootForTests,
   describeWorkspaiContextView,
   listWorkspaiSupportedCommands,
   loadWorkspaiContext,
@@ -327,79 +328,36 @@ import {
   WORKSPAI_CONTEXT_LIMIT,
   WORKSPAI_CONTEXT_PATH,
   WORKSPAI_CONTEXT_SCHEMA_VERSION,
+  WORKSPAI_GENERATED_NOTICE,
 } from '../src/workspai-context.js';
 
 function admittedContext(): string {
   return JSON.stringify({ schemaVersion: WORKSPAI_CONTEXT_SCHEMA_VERSION });
 }
 
-let liveContextPath = '';
-let contextBackupPath = '';
-let restoredLiveKind = 'none';
-let isolatedLiveContext = false;
+let fixtureRoot = '';
 
-async function isolateLiveContext() {
-  const projectRoot = resolveWorkspaiProjectRoot();
-  liveContextPath = join(projectRoot, WORKSPAI_CONTEXT_PATH);
-  const backupRoot = await mkdtemp(join(tmpdir(), 'workspai-context-backup-'));
-  contextBackupPath = join(backupRoot, 'project-context-agent.json');
-  restoredLiveKind = 'none';
-  isolatedLiveContext = false;
-  try {
-    const st = await lstat(liveContextPath);
-    if (st.isSymbolicLink()) {
-      await symlink(await readlink(liveContextPath), contextBackupPath);
-      restoredLiveKind = 'symlink';
-      await rm(liveContextPath, { force: true });
-      isolatedLiveContext = true;
-      return;
-    }
-    if (st.isFile()) {
-      try {
-        await rename(liveContextPath, contextBackupPath);
-      } catch {
-        await copyFile(liveContextPath, contextBackupPath);
-        await rm(liveContextPath, { force: true });
-      }
-      restoredLiveKind = 'file';
-      isolatedLiveContext = true;
-      return;
-    }
-    throw new Error('Workspai agent context path is not a contained regular file');
-  } catch (error) {
-    if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
-      isolatedLiveContext = true;
-      return;
-    }
-    throw error;
+async function createTemporaryProjectFixture() {
+  fixtureRoot = await mkdtemp(join(tmpdir(), 'workspai-context-fixture-'));
+  const agent = join(fixtureRoot, 'agents', 'primary');
+  await mkdir(agent, { recursive: true });
+  await writeFile(
+    join(agent, 'package.json'),
+    JSON.stringify({ notice: WORKSPAI_GENERATED_NOTICE, name: 'primary' }),
+    'utf8'
+  );
+  bindWorkspaiProjectRootForTests(fixtureRoot);
+}
+
+async function removeTemporaryProjectFixture() {
+  bindWorkspaiProjectRootForTests(null);
+  if (fixtureRoot) {
+    await rm(fixtureRoot, { recursive: true, force: true });
   }
 }
 
-async function restoreLiveContext() {
-  try {
-    if (isolatedLiveContext && liveContextPath) {
-      await rm(liveContextPath, { force: true });
-      if (restoredLiveKind === 'file') {
-        await mkdir(dirname(liveContextPath), { recursive: true });
-        try {
-          await rename(contextBackupPath, liveContextPath);
-        } catch {
-          await copyFile(contextBackupPath, liveContextPath);
-        }
-      } else if (restoredLiveKind === 'symlink') {
-        await mkdir(dirname(liveContextPath), { recursive: true });
-        await symlink(await readlink(contextBackupPath), liveContextPath);
-      }
-    }
-  } finally {
-    if (contextBackupPath) {
-      await rm(dirname(contextBackupPath), { recursive: true, force: true });
-    }
-  }
-}
-
-before(isolateLiveContext);
-after(restoreLiveContext);
+before(createTemporaryProjectFixture);
+after(removeTemporaryProjectFixture);
 
 test('reads bounded context from the owning project, not process cwd', async () => {
   const projectRoot = resolveWorkspaiProjectRoot();
@@ -422,6 +380,14 @@ test('rejects context larger than the admitted boundary', async () => {
   await mkdir(dirname(contextPath), { recursive: true });
   await writeFile(contextPath, Buffer.alloc(WORKSPAI_CONTEXT_LIMIT + 1, 0x78));
   assert.throws(() => loadWorkspaiContext(), /128 KiB/);
+});
+
+test('rejects malformed UTF-8 without disclosing contents', async () => {
+  const projectRoot = resolveWorkspaiProjectRoot();
+  const contextPath = join(projectRoot, WORKSPAI_CONTEXT_PATH);
+  await mkdir(dirname(contextPath), { recursive: true });
+  await writeFile(contextPath, Buffer.from([0x7b, 0xff, 0x73, 0x65, 0x63, 0x72, 0x65, 0x74]));
+  assert.throws(() => loadWorkspaiContext(), /UTF-8|valid/);
 });
 
 test('rejects an external symlink without disclosing the target', async () => {
@@ -544,7 +510,7 @@ Context bytes are admitted only after canonical containment, a regular-file open
 
 \`npm --prefix ${target.root} test\`
 
-Credentialless tests cover the Workspai context boundary, allowlisted views, Azure-shaped redaction, and an official ScriptedModel tool-call. They isolate the operational context file for the suite and restore it afterward. They do not call a model provider and must keep \`OPENAI_AGENTS_DISABLE_TRACING=1\`.
+Credentialless tests cover the Workspai context boundary, allowlisted views, Azure-shaped redaction, and an official ScriptedModel tool-call. They construct a temporary project fixture and never mutate the operational context file. They do not call a model provider and must keep \`OPENAI_AGENTS_DISABLE_TRACING=1\`. A blocking Doctor or Readiness gate fails the process even without \`--strict\`.
 
 ## Run
 

@@ -249,6 +249,181 @@ export function getVenvPythonPath(
     : path.join(venvPath, 'bin', 'python');
 }
 
+export function getVenvPipPath(
+  venvPath: string,
+  platform: NodeJS.Platform = process.platform
+): string {
+  return isWindowsPlatform(platform)
+    ? path.join(venvPath, 'Scripts', 'pip.exe')
+    : path.join(venvPath, 'bin', 'pip');
+}
+
+export const WORKSPAI_PYTHON_INTERPRETER_ENV = 'WORKSPAI_PYTHON';
+
+export type PythonLifecycleInterpreterSource =
+  'configured' | 'project-venv' | 'unit-venv' | 'active-project-venv' | 'system';
+
+export type PythonLifecycleInterpreterResolution = {
+  interpreter: string;
+  source: PythonLifecycleInterpreterSource;
+  venvPath: string;
+  venvExists: boolean;
+  pipAvailable: boolean;
+  usedForDependencyInstall: boolean;
+};
+
+function pathIsInside(parent: string, child: string): boolean {
+  const relative = path.relative(path.resolve(parent), path.resolve(child));
+  return relative === '' || (!relative.startsWith('..') && !path.isAbsolute(relative));
+}
+
+function isExistingFile(filePath: string): boolean {
+  try {
+    return fs.statSync(filePath).isFile();
+  } catch {
+    return false;
+  }
+}
+
+export function findOwningWorkspaiProjectRoot(startPath: string): string {
+  let cursor = path.resolve(startPath);
+  for (let depth = 0; depth < 8; depth += 1) {
+    if (fs.existsSync(path.join(cursor, '.workspai', 'project.json'))) {
+      return cursor;
+    }
+    const parent = path.dirname(cursor);
+    if (parent === cursor) {
+      break;
+    }
+    cursor = parent;
+  }
+  return path.resolve(startPath);
+}
+
+function interpreterFromVenv(
+  venvPath: string,
+  platform: NodeJS.Platform
+): { interpreter: string; pipAvailable: boolean } | null {
+  const interpreter = getVenvPythonPath(venvPath, platform);
+  if (!isExistingFile(interpreter)) {
+    return null;
+  }
+  return {
+    interpreter,
+    pipAvailable: isExistingFile(getVenvPipPath(venvPath, platform)),
+  };
+}
+
+/**
+ * Resolve the Python interpreter for a nested runtime unit.
+ *
+ * Preference order:
+ * 1. `WORKSPAI_PYTHON` when it points at an existing interpreter
+ * 2. `<owning-project>/.venv` (`bin/python` or `Scripts/python.exe`)
+ * 3. `<unit>/.venv` when the owning project has no venv
+ * 4. an active `VIRTUAL_ENV` only when it is contained by the project
+ * 5. the system interpreter, which may create a venv but must never receive
+ *    `pip install` of agent dependencies
+ */
+export function resolvePythonLifecycleInterpreter(input: {
+  unitRoot: string;
+  projectRoot?: string;
+  env?: NodeJS.ProcessEnv;
+  platform?: NodeJS.Platform;
+}): PythonLifecycleInterpreterResolution {
+  const platform = input.platform ?? process.platform;
+  const env = input.env ?? process.env;
+  const unitRoot = path.resolve(input.unitRoot);
+  const projectRoot = path.resolve(input.projectRoot ?? findOwningWorkspaiProjectRoot(unitRoot));
+  const projectVenvPath = path.join(projectRoot, '.venv');
+  const unitVenvPath = path.join(unitRoot, '.venv');
+
+  const configured = env[WORKSPAI_PYTHON_INTERPRETER_ENV]?.trim();
+  if (
+    configured &&
+    isExistingFile(configured) &&
+    (pathIsInside(projectVenvPath, configured) || pathIsInside(unitVenvPath, configured))
+  ) {
+    const configuredVenv = pathIsInside(projectVenvPath, configured)
+      ? projectVenvPath
+      : unitVenvPath;
+    return {
+      interpreter: configured,
+      source: 'configured',
+      venvPath: configuredVenv,
+      venvExists: true,
+      pipAvailable:
+        isExistingFile(getVenvPipPath(configuredVenv, platform)) ||
+        pathIsInside(configuredVenv, configured),
+      usedForDependencyInstall: true,
+    };
+  }
+
+  const projectVenv = interpreterFromVenv(projectVenvPath, platform);
+  if (projectVenv) {
+    return {
+      interpreter: projectVenv.interpreter,
+      source: 'project-venv',
+      venvPath: projectVenvPath,
+      venvExists: true,
+      pipAvailable: projectVenv.pipAvailable,
+      usedForDependencyInstall: true,
+    };
+  }
+
+  const unitVenv = interpreterFromVenv(unitVenvPath, platform);
+  if (unitVenv) {
+    return {
+      interpreter: unitVenv.interpreter,
+      source: 'unit-venv',
+      venvPath: unitVenvPath,
+      venvExists: true,
+      pipAvailable: unitVenv.pipAvailable,
+      usedForDependencyInstall: true,
+    };
+  }
+
+  const virtualEnv = env.VIRTUAL_ENV?.trim();
+  if (virtualEnv) {
+    const active = interpreterFromVenv(virtualEnv, platform);
+    if (active && (pathIsInside(projectRoot, virtualEnv) || pathIsInside(unitRoot, virtualEnv))) {
+      return {
+        interpreter: active.interpreter,
+        source: 'active-project-venv',
+        venvPath: virtualEnv,
+        venvExists: true,
+        pipAvailable: active.pipAvailable,
+        usedForDependencyInstall: true,
+      };
+    }
+  }
+
+  return {
+    interpreter: getDefaultPythonCommand(platform),
+    source: 'system',
+    venvPath: projectVenvPath,
+    venvExists: false,
+    pipAvailable: false,
+    usedForDependencyInstall: false,
+  };
+}
+
+export function portablePathFrom(from: string, to: string): string {
+  return path.relative(from, to).split(path.sep).join('/') || '.';
+}
+
+export function argvPathFrom(
+  from: string,
+  to: string,
+  platform: NodeJS.Platform = process.platform
+): string {
+  const relative = path.relative(from, to);
+  if (!relative) {
+    return '.';
+  }
+  return isWindowsPlatform(platform) ? relative : relative.split(path.sep).join('/');
+}
+
 export function getVenvRapidkitPath(
   venvPath: string,
   platform: NodeJS.Platform = process.platform

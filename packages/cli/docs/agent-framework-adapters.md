@@ -12,29 +12,31 @@ existing project ---/            |
                                   -> Workspai Context, Goal, PCC, and Verify
 ```
 
-Microsoft Agent Framework is the first release-admitted implementation of this
+Microsoft Agent Framework is the first adapter implementation of this
 foundation. Its Python and .NET adapters are intentionally separate because
 their package graphs, runtime requirements, entrypoints, and verification
-commands differ. Both are available for governed attachment after their exact
-manifest digests pass the required Linux, macOS, and Windows conformance lanes
-and are bound into the reviewed release-admission inventory.
+commands differ. Both become available for governed attachment only after the
+exact manifest and release baseline pass the required Linux, macOS, and Windows
+conformance lanes and are bound into the reviewed release-admission inventory.
+Per-platform semantic implementation digests accompany that evidence for
+traceability, but do not act as runtime authorization locks.
 
 OpenAI Agents SDK adapters for Python and TypeScript are implemented in the
-same registry and lifecycle. They are not listed as Create/Attach kits until
-their complete cross-platform matrix is reviewed into that inventory. Public
+same registry and lifecycle. They become Create/Attach kits only after their
+complete cross-platform matrix is reviewed into that inventory. Public
 commands fail closed rather than silently substituting Microsoft, OpenAI, or
 another runtime.
 
 ## Published contracts
 
-| Contract                                                                       | Purpose                                                                               |
-| ------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------- |
-| `contracts/agent-framework-capabilities.v1.json`                               | Normative ownership, capability, lifecycle, security, versioning, and admission rules |
-| `contracts/workspace-intelligence/agent-framework-adapter-manifest.v1.json`    | JSON Schema for one framework/version adapter declaration                             |
-| `contracts/workspace-intelligence/agent-framework-conformance-report.v1.json`  | JSON Schema for reproducible adapter admission evidence                               |
-| `contracts/workspace-intelligence/agent-framework-change-plan.v1.json`         | Portable, mutation-free scaffold or attach plan returned to the host                  |
-| `contracts/workspace-intelligence/agent-framework-ownership-receipt.v1.json`   | Hash-bound proof of the files Workspai may safely refresh                             |
-| `contracts/workspace-intelligence/agent-framework-admission-candidate.v1.json` | Review-pending, digest-bound index of the complete cross-platform evidence matrix     |
+| Contract                                                                       | Purpose                                                                                  |
+| ------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------- |
+| `contracts/agent-framework-capabilities.v1.json`                               | Normative ownership, capability, lifecycle, security, versioning, and admission rules    |
+| `contracts/workspace-intelligence/agent-framework-adapter-manifest.v1.json`    | JSON Schema for one framework/version adapter declaration                                |
+| `contracts/workspace-intelligence/agent-framework-conformance-report.v2.json`  | JSON Schema binding reproducible adapter evidence to manifest and implementation digests |
+| `contracts/workspace-intelligence/agent-framework-change-plan.v1.json`         | Portable, mutation-free scaffold or attach plan returned to the host                     |
+| `contracts/workspace-intelligence/agent-framework-ownership-receipt.v1.json`   | Hash-bound proof of the files Workspai may safely refresh                                |
+| `contracts/workspace-intelligence/agent-framework-admission-candidate.v2.json` | Review-pending, digest-bound index of the complete cross-platform evidence matrix        |
 
 The schemas are also discoverable through
 `contracts/published-contract-catalog.v1.json` and the extension compatibility
@@ -227,22 +229,28 @@ workspace profile. A later adapter-manifest change must not hide a kit.
 Create and Attach still refuse a kit whose adapter is not release-admitted;
 visibility in the picker is not permission to write a blocked adapter.
 Attach still requires `--framework openai-agents` when the
-runtime is shared. Adapters remain `preview`; handoffs, MCP, sessions, voice,
-sandbox, and approval loops stay unsupported. Changing `preview` to `stable`
-would change the manifest digest and require a new matrix.
+runtime is shared. OpenAI adapters are labeled `stable`; release admission
+remains blocked until the exact v2 cross-platform candidate is promoted.
+Handoffs, MCP, sessions, voice, sandbox, and approval loops stay unsupported.
+Microsoft adapters remain `preview`.
 
-A path-filtered twelve-lane adapter matrix compiles the generated Microsoft
-Python/.NET and OpenAI Python/TypeScript projects on Linux, macOS, and Windows. Every lane records all 18 mandatory
-checks, the exact runtime and framework baseline, a digest of the adapter
-manifest, and one bounded evidence file per check. Reports are retained as CI
-artifacts for review. A final job validates every evidence path and admits the
-matrix only when all three operating-system lanes pass for every built-in adapter.
+A path-filtered PR gate compiles only the affected Microsoft or OpenAI adapter
+family on Linux. Shared lifecycle, security, registry, admission, and contract
+changes select both families; documentation-only edits do not run adapter
+conformance. The complete twelve-lane matrix is an explicit release-
+qualification operation: it compiles Microsoft Python/.NET and OpenAI
+Python/TypeScript on Linux, macOS, and Windows. Every full-qualification lane
+records all 18 mandatory checks, the exact runtime and framework baseline,
+digests of the adapter manifest and semantic implementation, and one bounded
+evidence file per check. Reports are retained as CI artifacts for review. A
+final job validates every evidence path and emits an admission candidate only
+when all three operating-system lanes pass for every built-in adapter.
 Python conformance is pinned to 3.10.11, the final Python 3.10 release with
 cross-platform binary installers; this provides one reproducible minimum-runtime
 baseline while the adapter continues to declare Python `>=3.10` support.
 
 After verification, CI emits one admission-candidate artifact. It binds the
-source commit, CLI version, adapter-manifest digests, lane reports, and every
+source commit, CLI version, adapter manifest and implementation digests, lane reports, and every
 evidence file by SHA-256. Its status is always `pending`: successful CI produces
 reviewable evidence, not release authority. Only the protected version-update
 branch may convert that candidate into the exact release-admission inventory,
@@ -253,11 +261,16 @@ blocked when callers provide neither raw conformance reports nor explicit
 permission to use the bundled reviewed release inventory. User-facing commands
 enable that inventory deliberately and fail closed if an adapter version,
 manifest digest, framework baseline, runtime, or platform list has changed.
+Semantic implementation digests remain in lane reports, candidates, and the
+reviewed inventory as audit provenance. They are verified during full
+qualification and promotion, but are deliberately not runtime authorization:
+routine implementation changes are guarded by affected-family tests instead
+of requiring a hand-edited admission digest for every source edit.
 
 ## Attach an agent runtime
 
-Build current Workspace Intelligence first, then inspect the release-admitted
-runtimes:
+Build current Workspace Intelligence first, then inspect adapter admission
+state:
 
 ```bash
 npx workspai workspace intelligence run --for-agent generic --strict --json

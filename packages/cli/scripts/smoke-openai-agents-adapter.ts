@@ -4,6 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import {
+  digestBuiltinAgentFrameworkImplementation,
   digestBuiltinAgentFrameworkManifest,
   managedFile,
   OPENAI_AGENTS_PYTHON_BASELINE,
@@ -951,8 +952,10 @@ async function main(): Promise<void> {
       assertCondition(generatedTests, 'Credentialless context tests were not rendered.');
       assertCondition(
         generatedTests.content.includes('setUpClass') ||
-          generatedTests.content.includes('restoreLiveContext'),
-        'Generated context tests do not restore the operational context file.'
+          generatedTests.content.includes('restoreLiveContext') ||
+          generatedTests.content.includes('bind_workspai_project_root_for_tests') ||
+          generatedTests.content.includes('bindWorkspaiProjectRootForTests'),
+        'Generated context tests neither isolate their fixture root nor restore operational context.'
       );
       const agentSource = rendered.files.find(
         (file) => file.path.endsWith('/agent.py') || file.path.endsWith('/agent.ts')
@@ -1400,6 +1403,7 @@ async function main(): Promise<void> {
       id: adapter.manifest.adapter.id,
       version: adapter.manifest.adapter.version,
       manifestSha256: digestBuiltinAgentFrameworkManifest(adapter),
+      implementationSha256: digestBuiltinAgentFrameworkImplementation(adapter),
     },
     frameworkVersion: adapter.manifest.framework.testedVersions[0],
     cliVersion: await cliVersion(),
@@ -1431,7 +1435,12 @@ async function main(): Promise<void> {
   process.stdout.write(
     `${status} ${adapter.manifest.adapter.id} ${report.frameworkVersion} on ${platform}; report: ${reportPath}\n`
   );
-  if (report.verdict !== 'admitted') process.exitCode = 1;
+  if (report.verdict !== 'admitted') {
+    for (const blocker of report.blockers) {
+      process.stdout.write(`blocker: ${blocker}\n`);
+    }
+    process.exitCode = 1;
+  }
 }
 
 main().catch((error: unknown) => {

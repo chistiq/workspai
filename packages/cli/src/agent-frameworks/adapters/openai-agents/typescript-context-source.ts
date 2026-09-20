@@ -28,6 +28,13 @@ export const WORKSPAI_CONTEXT_SCHEMA_VERSION = '${WORKSPAI_CONTEXT_SCHEMA_VERSIO
 export const WORKSPAI_AGENT_LAYOUT_PARENT = 'agents';
 export const WORKSPAI_GENERATED_NOTICE = 'Generated and managed by Workspai';
 
+let testProjectRoot: string | undefined;
+
+/** Test-only. Production entrypoints must not call this. */
+export function bindWorkspaiProjectRootForTests(projectRoot: string | null): void {
+  testProjectRoot = projectRoot ?? undefined;
+}
+
 const CONTEXT_SEGMENTS = WORKSPAI_CONTEXT_PATH.split('/').filter(Boolean);
 const MAX_PACKAGE_WALK = 5;
 const MAX_MANIFEST_BYTES = 16_384;
@@ -108,6 +115,9 @@ function isGeneratedAgentManifest(directory: string): boolean {
 }
 
 export function resolveWorkspaiProjectRoot(moduleUrl = import.meta.url): string {
+  if (testProjectRoot) {
+    return testProjectRoot;
+  }
   let cursor = dirname(fileURLToPath(moduleUrl));
   for (let depth = 0; depth < MAX_PACKAGE_WALK; depth += 1) {
     if (isGeneratedAgentManifest(cursor) && basename(dirname(cursor)) === WORKSPAI_AGENT_LAYOUT_PARENT) {
@@ -185,8 +195,7 @@ function parseObjectOrFail(decoded: string): Record<string, unknown> {
   return parsed as Record<string, unknown>;
 }
 
-export function loadWorkspaiContext(): string {
-  const projectRoot = resolveWorkspaiProjectRoot();
+export function loadWorkspaiContext(projectRoot = resolveWorkspaiProjectRoot()): string {
   const fd = openContainedRegularFile(projectRoot);
   try {
     const st = fstatSync(fd);

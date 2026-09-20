@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import {
   createBuiltinAgentFrameworkRegistry,
+  digestBuiltinAgentFrameworkImplementation,
   digestBuiltinAgentFrameworkManifest,
   openaiAgentsPythonAdapter,
   openaiAgentsTypeScriptAdapter,
@@ -33,6 +34,7 @@ function admittedRegistry(
   adapter: typeof openaiAgentsPythonAdapter | typeof openaiAgentsTypeScriptAdapter
 ) {
   const manifestSha256 = digestBuiltinAgentFrameworkManifest(adapter);
+  const implementationSha256 = digestBuiltinAgentFrameworkImplementation(adapter);
   const reports = adapter.manifest.implementation.platforms.map((platform) => {
     const checks = AGENT_FRAMEWORK_CONFORMANCE_CHECK_IDS.map((id) => ({
       id,
@@ -50,9 +52,10 @@ function admittedRegistry(
         id: adapter.manifest.adapter.id,
         version: adapter.manifest.adapter.version,
         manifestSha256,
+        implementationSha256,
       },
       frameworkVersion: adapter.manifest.framework.testedVersions[0],
-      cliVersion: '0.75.2',
+      cliVersion: '0.76.0',
       environment: {
         platform,
         architecture: 'x64',

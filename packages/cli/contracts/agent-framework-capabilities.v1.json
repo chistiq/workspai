@@ -425,10 +425,10 @@
   },
   "publication": {
     "manifestSchema": "contracts/workspace-intelligence/agent-framework-adapter-manifest.v1.json",
-    "conformanceSchema": "contracts/workspace-intelligence/agent-framework-conformance-report.v1.json",
+    "conformanceSchema": "contracts/workspace-intelligence/agent-framework-conformance-report.v2.json",
     "changePlanSchema": "contracts/workspace-intelligence/agent-framework-change-plan.v1.json",
     "ownershipReceiptSchema": "contracts/workspace-intelligence/agent-framework-ownership-receipt.v1.json",
-    "admissionCandidateSchema": "contracts/workspace-intelligence/agent-framework-admission-candidate.v1.json",
+    "admissionCandidateSchema": "contracts/workspace-intelligence/agent-framework-admission-candidate.v2.json",
     "requiredChecks": [
       "manifest-schema",
       "protocol-version",

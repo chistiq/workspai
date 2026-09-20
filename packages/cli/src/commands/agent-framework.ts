@@ -244,6 +244,7 @@ export function registerAgentFrameworkCommands(agentCommand: Command): void {
           framework: entry.manifest.framework.name,
           runtime: entry.manifest.implementation.runtimes[0],
           frameworkVersion: entry.manifest.framework.testedVersions[0],
+          stability: entry.manifest.adapter.stability,
           status: resolution.status,
           blockers: resolution.blockers,
         };
@@ -258,7 +259,7 @@ export function registerAgentFrameworkCommands(agentCommand: Command): void {
         for (const adapter of adapters) {
           const icon = adapter.status === 'admitted' ? chalk.green('●') : chalk.red('■');
           console.log(
-            `${icon} ${adapter.framework} · ${adapter.runtime} · ${adapter.frameworkVersion} · ${adapter.status}`
+            `${icon} ${adapter.framework} · ${adapter.runtime} · ${adapter.frameworkVersion} · ${adapter.stability} · ${adapter.status}`
           );
         }
       }

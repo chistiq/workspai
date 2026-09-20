@@ -2,15 +2,28 @@ import fs from 'fs';
 import path from 'path';
 
 import { detectNodePackageManager } from './utils/node-package-manager.js';
-import { getDefaultPythonCommand } from './utils/platform-capabilities.js';
+import {
+  argvPathFrom,
+  getDefaultPythonCommand,
+  getVenvPipPath,
+  getVenvPythonPath,
+  portablePathFrom,
+  resolvePythonLifecycleInterpreter,
+} from './utils/platform-capabilities.js';
 
 export const POLYGLOT_LIFECYCLE_PLAN_SCHEMA_VERSION = 'polyglot-lifecycle-plan.v1' as const;
+
+export type PolyglotLifecycleArgvStep = {
+  executable: string;
+  args: string[];
+};
 
 export type PolyglotLifecycleStage = {
   stage: 'init' | 'test' | 'build' | 'start';
   command: string;
   confidence: 'high' | 'medium';
   preflight: 'executable-and-inputs' | 'executable';
+  argvSequence?: PolyglotLifecycleArgvStep[];
 };
 
 export type PolyglotRuntimeUnit = {
@@ -481,12 +494,144 @@ function isOwnedWorkspaceMember(
   );
 }
 
+function quoteLifecycleToken(token: string): string {
+  if (/^[A-Za-z0-9_./:@%+,=\\-]+$/.test(token)) {
+    return token;
+  }
+  return `"${token.replace(/(["\\])/g, '\\$1')}"`;
+}
+
+function formatArgvSequence(steps: PolyglotLifecycleArgvStep[]): string {
+  return steps
+    .map((step) =>
+      [quoteLifecycleToken(step.executable), ...step.args.map(quoteLifecycleToken)].join(' ')
+    )
+    .join(' && ');
+}
+
 function stage(
   name: PolyglotLifecycleStage['stage'],
   command: string,
-  confidence: PolyglotLifecycleStage['confidence'] = 'high'
+  confidence: PolyglotLifecycleStage['confidence'] = 'high',
+  argvSequence?: PolyglotLifecycleArgvStep[]
 ): PolyglotLifecycleStage {
-  return { stage: name, command, confidence, preflight: 'executable-and-inputs' };
+  return {
+    stage: name,
+    command,
+    confidence,
+    preflight: 'executable-and-inputs',
+    ...(argvSequence && argvSequence.length > 0 ? { argvSequence } : {}),
+  };
+}
+
+function pythonLifecycleStages(input: {
+  projectRoot: string;
+  unitRoot: string;
+  contents: string;
+  poetryManaged: boolean;
+}): PolyglotLifecycleStage[] {
+  const { unitRoot, contents, poetryManaged } = input;
+  const resolution = resolvePythonLifecycleInterpreter({
+    unitRoot,
+    projectRoot: input.projectRoot,
+  });
+  const hasStartScript =
+    hasTomlScript(contents, 'tool.poetry.scripts', 'start') ||
+    hasTomlScript(contents, 'project.scripts', 'start');
+  const hasMainModule = fs.existsSync(path.join(unitRoot, 'main.py'));
+  const requiresUvLock =
+    /^\s*\[tool\.workspai\]\s*$[\s\S]*?^\s*lifecycle-lock-tool\s*=\s*["']uv["']\s*$/m.test(
+      contents
+    );
+  const venvPythonPath = getVenvPythonPath(resolution.venvPath);
+  const displayVenvPython = portablePathFrom(unitRoot, venvPythonPath);
+  const argvVenvPython = argvPathFrom(unitRoot, venvPythonPath);
+  const displayPython = poetryManaged ? getDefaultPythonCommand() : displayVenvPython;
+  const testCommand = pythonTestCommand(unitRoot, contents, poetryManaged, displayPython);
+
+  if (poetryManaged) {
+    return [
+      stage('init', 'poetry install'),
+      ...(testCommand ? [stage('test', testCommand)] : []),
+      ...(hasMainModule
+        ? [stage('build', `${displayPython} -m compileall .`)]
+        : /\[build-system\]/.test(contents)
+          ? [stage('build', 'poetry build', 'medium')]
+          : []),
+      ...(hasMainModule
+        ? [stage('start', `${displayPython} main.py`)]
+        : hasStartScript
+          ? [stage('start', 'poetry run start', 'medium')]
+          : []),
+    ];
+  }
+
+  const venvDir = argvPathFrom(unitRoot, resolution.venvPath);
+  const pipAvailable =
+    resolution.pipAvailable || fs.existsSync(getVenvPipPath(resolution.venvPath));
+  const initSteps: PolyglotLifecycleArgvStep[] = [];
+  if (!resolution.venvExists) {
+    initSteps.push({
+      executable: getDefaultPythonCommand(),
+      args: ['-m', 'venv', venvDir],
+    });
+  }
+  if (!resolution.venvExists || !pipAvailable) {
+    initSteps.push({
+      executable: argvVenvPython,
+      args: ['-m', 'ensurepip', '--upgrade'],
+    });
+  }
+  initSteps.push({
+    executable: argvVenvPython,
+    args: ['-m', 'pip', 'install', '-e', '.'],
+  });
+  if (requiresUvLock) {
+    initSteps.push({
+      executable: 'uv',
+      args: ['lock'],
+    });
+  }
+
+  const pytestOwned = Boolean(
+    testCommand && (testCommand.includes(' -m pytest') || testCommand.includes('pytest'))
+  );
+
+  return [
+    stage('init', formatArgvSequence(initSteps), 'high', initSteps),
+    ...(testCommand
+      ? [
+          stage('test', testCommand, 'high', [
+            {
+              executable: argvVenvPython,
+              args: pytestOwned ? ['-m', 'pytest'] : ['-m', 'unittest', 'discover', '-s', 'tests'],
+            },
+          ]),
+        ]
+      : []),
+    ...(hasMainModule
+      ? [
+          stage('build', `${displayVenvPython} -m compileall .`, 'high', [
+            { executable: argvVenvPython, args: ['-m', 'compileall', '.'] },
+          ]),
+        ]
+      : /\[build-system\]/.test(contents)
+        ? [
+            stage('build', `${displayVenvPython} -m build`, 'medium', [
+              { executable: argvVenvPython, args: ['-m', 'build'] },
+            ]),
+          ]
+        : []),
+    ...(hasMainModule
+      ? [
+          stage('start', `${displayVenvPython} main.py`, 'high', [
+            { executable: argvVenvPython, args: ['main.py'] },
+          ]),
+        ]
+      : hasStartScript
+        ? [stage('start', 'start', 'medium')]
+        : []),
+  ];
 }
 
 function nodeStages(root: string, contents: string): PolyglotLifecycleStage[] {
@@ -618,26 +763,12 @@ function manifestUnit(projectRoot: string, manifest: string): PolyglotRuntimeUni
     runtime = 'python';
     ecosystem = 'python';
     const poetryManaged = /^\s*\[tool\.poetry\]\s*$/m.test(contents);
-    const python = getDefaultPythonCommand();
-    const hasStartScript =
-      hasTomlScript(contents, 'tool.poetry.scripts', 'start') ||
-      hasTomlScript(contents, 'project.scripts', 'start');
-    const hasMainModule = fs.existsSync(path.join(root, 'main.py'));
-    const testCommand = pythonTestCommand(root, contents, poetryManaged, python);
-    stages = [
-      stage('init', poetryManaged ? 'poetry install' : `${python} -m pip install -e .`),
-      ...(testCommand ? [stage('test', testCommand)] : []),
-      ...(hasMainModule
-        ? [stage('build', `${python} -m compileall .`)]
-        : /\[build-system\]/.test(contents)
-          ? [stage('build', poetryManaged ? 'poetry build' : `${python} -m build`, 'medium')]
-          : []),
-      ...(hasMainModule
-        ? [stage('start', `${python} main.py`)]
-        : hasStartScript
-          ? [stage('start', poetryManaged ? 'poetry run start' : 'start', 'medium')]
-          : []),
-    ];
+    stages = pythonLifecycleStages({
+      projectRoot,
+      unitRoot: root,
+      contents,
+      poetryManaged,
+    });
   } else if (name === 'go.mod') {
     runtime = 'go';
     ecosystem = 'go';
