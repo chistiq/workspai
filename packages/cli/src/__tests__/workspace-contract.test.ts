@@ -299,6 +299,53 @@ describe('workspace contract registry', () => {
     expect(contract.projects[0].ports).toEqual([{ name: 'http', port: 3000, protocol: 'http' }]);
   });
 
+  it('infers runtime for Core-shaped FastAPI markers that omit runtime', async () => {
+    const workspacePath = await makeTempDir('rk-contract-core-fastapi-runtime-');
+    await fsExtra.outputJson(path.join(workspacePath, 'quantum-api', '.workspai', 'project.json'), {
+      kit_name: 'fastapi.standard',
+      profile: 'fastapi/standard',
+      rapidkit_version: '0.6.1',
+    });
+
+    const contract = await buildWorkspaceContract({ workspacePath });
+    expect(contract.projects[0]).toMatchObject({
+      slug: 'quantum-api',
+      runtime: 'python',
+      framework: 'fastapi',
+      kit: 'fastapi.standard',
+    });
+  });
+
+  it('does not invent HTTP ports for Electron or VS Code extension kits', async () => {
+    const workspacePath = await makeTempDir('rk-contract-nonservice-ports-');
+    await fsExtra.outputJson(
+      path.join(workspacePath, 'atlas-desktop', '.workspai', 'project.json'),
+      {
+        schema_version: '1.0',
+        runtime: 'node',
+        kind: 'desktop',
+        kit_name: 'desktop.electron',
+      }
+    );
+    await fsExtra.outputJson(
+      path.join(workspacePath, 'zenith-extension', '.workspai', 'project.json'),
+      {
+        schema_version: '1.0',
+        runtime: 'node',
+        kind: 'extension',
+        kit_name: 'extension.vscode',
+      }
+    );
+
+    const { contract } = await writeWorkspaceContract({ workspacePath });
+    expect(contract.projects.find((project) => project.slug === 'atlas-desktop')?.ports).toEqual(
+      []
+    );
+    expect(contract.projects.find((project) => project.slug === 'zenith-extension')?.ports).toEqual(
+      []
+    );
+  });
+
   it('does not rewrite canonical contract artifacts when sync has no semantic changes', async () => {
     const workspacePath = await makeTempDir('rk-contract-idempotent-');
     await fsExtra.outputJson(path.join(workspacePath, 'api', '.workspai', 'project.json'), {

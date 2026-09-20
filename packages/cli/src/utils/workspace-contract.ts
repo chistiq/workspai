@@ -37,9 +37,11 @@ import {
 import type { WorkspaceKnowledgeGraph } from '../contracts/workspace-knowledge-graph-contract.js';
 import { isPythonVirtualEnvironmentDirectory } from './workspace-scan-policy.js';
 import {
+  detectBackendFrameworkFromHints,
   detectBackendFrameworkFromProject,
   isWorkspaiManagedLinkedProjectMetadata,
 } from './backend-framework-contract.js';
+import { resolveKitDefinition } from './kit-registry.js';
 import { readWorkspaceMarker } from '../workspace-marker.js';
 
 export const WORKSPACE_CONTRACT_PATH = WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract;
@@ -291,6 +293,9 @@ function isNonServiceKit(kit?: string): boolean {
   const value = (kit || '').toLowerCase();
   return (
     value.includes('vscode-extension') ||
+    value.includes('desktop.electron') ||
+    value.startsWith('extension.') ||
+    (value.startsWith('desktop.') && !value.includes('tauri')) ||
     value.includes('agent.microsoft') ||
     value.includes('agent.openai')
   );
@@ -632,14 +637,22 @@ export async function buildWorkspaceContract(input: {
       ? detectBackendFrameworkFromProject(projectPath, payload)
       : undefined;
     const hasLiveDetection = liveDetection !== undefined && liveDetection.key !== 'unknown';
+    const hinted = detectBackendFrameworkFromHints({
+      runtime: typeof payload.runtime === 'string' ? payload.runtime : undefined,
+      framework: typeof payload.framework === 'string' ? payload.framework : undefined,
+      kitName: metadataKit,
+    });
+    const kitDefinition = resolveKitDefinition(metadataKit);
     const runtime = hasLiveDetection
       ? liveDetection.runtime
-      : typeof payload.runtime === 'string'
-        ? payload.runtime
-        : undefined;
+      : hinted.runtime !== 'unknown'
+        ? hinted.runtime
+        : kitDefinition?.runtime;
     const framework = hasLiveDetection
       ? liveDetection.key
       : (typeof payload.framework === 'string' && payload.framework) ||
+        (hinted.key !== 'unknown' ? hinted.key : undefined) ||
+        kitDefinition?.framework ||
         projectKindFromKit(metadataKit);
     const kitPrefix = registryEntry?.relationship === 'adopted' ? 'adopted' : 'imported';
     const kit = hasLiveDetection ? `${kitPrefix}.${liveDetection.key}` : metadataKit;
