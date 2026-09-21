@@ -1788,4 +1788,81 @@ describe('workspace-run', { timeout: 30_000 }, () => {
 
     await fsExtra.remove(workspacePath);
   });
+
+  it('keeps bounded package-manager diagnostics when npm leaves stdout and stderr empty', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-workspace-run-'));
+    const projectPath = await createProjectWithoutContext(workspacePath, 'node-api');
+    await fsExtra.writeJSON(path.join(projectPath, 'package.json'), {
+      name: 'node-api',
+      private: true,
+      dependencies: { 'fixture-dep': '1.0.0' },
+    });
+    await fsExtra.ensureDir(path.join(projectPath, '.workspai'));
+    await fsExtra.writeJSON(path.join(projectPath, '.workspai', 'context.json'), {
+      name: 'node-api',
+      runtime: 'node',
+      kind: 'gateway',
+      category: 'gateway',
+    });
+    await fsExtra.writeJSON(path.join(projectPath, '.workspai', 'project.json'), {
+      name: 'node-api',
+      runtime: 'node',
+      kind: 'gateway',
+      category: 'gateway',
+    });
+
+    const execaMock = execa as unknown as ReturnType<typeof vi.fn>;
+    const npmInstallResult = {
+      exitCode: 1,
+      stdout: '',
+      stderr: '',
+      shortMessage: 'Command failed with exit code 1: npm install',
+      message:
+        'Command failed with exit code 1: npm install\nnpm error code ENOTFOUND\ngetaddrinfo ENOTFOUND registry.npmjs.org',
+    };
+    execaMock.mockImplementation(async (cmd: string, args: string[] = []) => {
+      if (args.includes('install') || String(cmd).includes('install')) {
+        return npmInstallResult;
+      }
+      return { exitCode: 0, stdout: '{}', stderr: '' };
+    });
+
+    const harvested = await runWorkspaceStage({
+      workspacePath,
+      stage: 'init',
+      enforceGates: false,
+      json: true,
+    });
+    expect(harvested.projects[0]?.status).toBe('failed');
+    expect(harvested.projects[0]?.errorCategory).toBe('dependency');
+    expect(harvested.projects[0]?.executionCommand).toMatch(/npm install/);
+    expect(harvested.projects[0]?.failureDiagnostic?.outputExcerpt).toContain(
+      'ENOTFOUND registry.npmjs.org'
+    );
+    expect(harvested.projects[0]?.reason).toContain('ENOTFOUND');
+
+    execaMock.mockImplementation(async (cmd: string, args: string[] = []) => {
+      if (args.includes('install') || String(cmd).includes('install')) {
+        return { exitCode: 1, stdout: '', stderr: '' };
+      }
+      return { exitCode: 0, stdout: '{}', stderr: '' };
+    });
+
+    const sparse = await runWorkspaceStage({
+      workspacePath,
+      stage: 'init',
+      enforceGates: false,
+      json: true,
+    });
+    expect(sparse.projects[0]?.errorCategory).toBe('unknown');
+    expect(sparse.projects[0]?.reason).toBe('Stage failed with exit code 1');
+    expect(sparse.projects[0]?.failureDiagnostic).toMatchObject({
+      category: 'unknown',
+      exitCode: 1,
+      outputExcerpt: 'Stage failed with exit code 1',
+    });
+    expect(sparse.projects[0]?.failureDiagnostic?.command).toContain('npm install');
+
+    await fsExtra.remove(workspacePath);
+  });
 });

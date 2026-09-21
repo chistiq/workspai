@@ -429,7 +429,8 @@ independent proof for this scaffold. See
 Interactive `workspai create` shows these kits under **AI Gateway** with the
 hint **Unified model access and routing**. A model identifier is runtime
 configuration, not a kit. Create does not install dependencies, call a model,
-or store credentials. The official Go Client SDK remains beta (`v0.8.11` on
+or store credentials. Attach is not supported for Gateway in this release.
+The official Go Client SDK remains beta (`v0.8.11` on
 2026-09-21) and is not admitted. See
 [AI Gateway](./model-gateways.md).
 

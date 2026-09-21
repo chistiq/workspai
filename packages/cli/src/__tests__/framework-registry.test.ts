@@ -32,6 +32,16 @@ describe('framework command preflight', () => {
     expect(result.reason).toContain(root);
   });
 
+  it('classifies npm 10 registry transport failures as dependencies', () => {
+    expect(
+      categorizeError(
+        'npm error code EAI_AGAIN\nnpm error syscall getaddrinfo\nnpm error network',
+        undefined,
+        'init'
+      )
+    ).toBe('dependency');
+  });
+
   it('classifies missing CMake packages as dependency failures', () => {
     expect(
       categorizeError(

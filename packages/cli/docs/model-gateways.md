@@ -45,6 +45,37 @@ npx workspai create project gateway.openrouter.python <name>
 
 Create does not install dependencies, call a model, or write credentials.
 
+Attach is not supported for AI Gateway in this release. Do not use
+`agent framework attach` or any gateway-specific attach command. Adopt an
+existing OpenRouter project only by creating a new gateway kit or by adding
+the generated starter beside user-owned code. Repeated Create is not Attach.
+
+## Version upgrades
+
+Exact SDK pins live only in
+[`version-baselines.v1.json`](../src/model-gateways/version-baselines.v1.json).
+`releaseChannel: stable` means the upstream SDK release is stable. It does not
+mean the Workspai adapter passed Linux, macOS, and Windows qualification.
+
+The supported upgrade path is read-only until a human reviews the proposal:
+
+```text
+discover → propose → review → qualify → merge
+```
+
+```bash
+npm --workspace workspai run propose:model-gateway:versions -- \
+  --baseline src/model-gateways/version-baselines.v1.json \
+  --report test-results/model-gateway-version-discovery.json
+```
+
+The command does not commit, push, open a pull request, or write the baseline
+unless `--write` is passed after the on-disk file matches the validated
+in-memory document and every candidate agrees across registry and GitHub.
+A normal SDK upgrade should not require editing generator source when the
+upstream contract is compatible. Three-OS qualification must be green on the
+same commit before a Workspai release can present these kits as qualified.
+
 ## Intentionally unsupported languages
 
 The official Go SDK (`github.com/OpenRouterTeam/go-sdk`) was evaluated on
@@ -164,4 +195,9 @@ Do not copy versions into unrelated files.
 Workspai source readiness is not release qualification. These kits are not
 described as `stable`, `release-ready`, `admitted`, or `published` until Linux,
 macOS, and Windows CI prove generated-project installation and lifecycle on the
-same commit SHA.
+same commit SHA. The dedicated workflow is
+`.github/workflows/model-gateway-qualification.yml`. Each OS job qualifies both
+the TypeScript and Python OpenRouter adapters; there is no unused kit axis.
+Discovery is
+`.github/workflows/model-gateway-version-discovery.yml`. A green job that
+skipped installation or lifecycle is not qualified.

@@ -54,32 +54,43 @@ describe('model gateway project kits', () => {
   });
 
   it('pins SDK versions from the reviewed baseline document', () => {
-    expect(MODEL_GATEWAY_BASELINES_REVIEWED_AT).toBe('2026-09-21');
+    expect(MODEL_GATEWAY_BASELINES_REVIEWED_AT).toMatch(/^\d{4}-\d{2}-\d{2}$/);
     const typescript = BUILTIN_MODEL_GATEWAY_VERSION_BASELINES.find(
       (entry) => entry.adapterId === 'openrouter-typescript'
     );
     const python = BUILTIN_MODEL_GATEWAY_VERSION_BASELINES.find(
       (entry) => entry.adapterId === 'openrouter-python'
     );
-    expect(typescript?.sdkVersion).toBe('1.3.11');
-    expect(python?.sdkVersion).toBe('1.2.11');
+    expect(typescript?.releaseChannel).toBe('stable');
+    expect(python?.releaseChannel).toBe('stable');
     expect(openRouterTypeScriptSdkVersion()).toBe(packageVersion(typescript!, '@openrouter/sdk'));
     expect(openRouterPythonSdkVersion()).toBe(packageVersion(python!, 'openrouter'));
+    expect(JSON.stringify(typescript?.packages.map((entry) => entry.version))).not.toMatch(
+      /\^|~|latest|\*/
+    );
     expect(EXCLUDED_MODEL_GATEWAY_LANGUAGES).toEqual([
       expect.objectContaining({
         language: 'go',
-        latestObservedVersion: 'v0.8.11',
         declaredMaturity: 'beta',
       }),
     ]);
   });
 
   it('emits deterministic TypeScript and Python gateway projects without secrets', async () => {
+    const typescriptBaseline = BUILTIN_MODEL_GATEWAY_VERSION_BASELINES.find(
+      (entry) => entry.adapterId === 'openrouter-typescript'
+    );
+    const pythonBaseline = BUILTIN_MODEL_GATEWAY_VERSION_BASELINES.find(
+      (entry) => entry.adapterId === 'openrouter-python'
+    );
+    if (!typescriptBaseline || !pythonBaseline) {
+      throw new Error('Missing OpenRouter gateway baselines.');
+    }
     for (const kit of listModelGatewayProjectKits()) {
       const first = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-gateway-a-'));
       const second = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-gateway-b-'));
       roots.push(first, second);
-      const generatedAt = '2026-09-21T12:00:00.000Z';
+      const generatedAt = '2020-01-01T00:00:00.000Z';
       await generateModelGatewayProject({
         projectPath: first,
         projectName: 'route-gateway',
@@ -116,9 +127,15 @@ describe('model gateway project kits', () => {
       expect(envExample).toContain('OPENROUTER_MODEL=');
       if (kit.runtime === 'node') {
         const packageJson = await fsExtra.readJson(path.join(first, 'package.json'));
-        expect(packageJson.dependencies['@openrouter/sdk']).toBe('1.3.11');
-        expect(packageJson.devDependencies.typescript).toBe('5.9.3');
-        expect(packageJson.devDependencies['@types/node']).toBe('22.20.3');
+        expect(packageJson.dependencies['@openrouter/sdk']).toBe(
+          packageVersion(typescriptBaseline, '@openrouter/sdk')
+        );
+        expect(packageJson.devDependencies.typescript).toBe(
+          packageVersion(typescriptBaseline, 'typescript')
+        );
+        expect(packageJson.devDependencies['@types/node']).toBe(
+          packageVersion(typescriptBaseline, '@types/node')
+        );
         expect(JSON.stringify(packageJson)).not.toMatch(/\^|~|latest|\*/);
         const policy = await fsExtra.readFile(path.join(first, 'gateway.policy.json'), 'utf8');
         expect(policy).toContain('enforceDistillableText');
@@ -137,7 +154,7 @@ describe('model gateway project kits', () => {
         );
       } else {
         const pyproject = await fsExtra.readFile(path.join(first, 'pyproject.toml'), 'utf8');
-        expect(pyproject).toContain('openrouter==1.2.11');
+        expect(pyproject).toContain(`openrouter==${packageVersion(pythonBaseline, 'openrouter')}`);
         expect(pyproject).not.toContain('openrouter>=');
         const policy = await fsExtra.readFile(path.join(first, 'gateway.policy.json'), 'utf8');
         expect(policy).toContain('enforce_distillable_text');

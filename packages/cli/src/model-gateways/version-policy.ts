@@ -172,3 +172,36 @@ export function sdkCorePackage(baseline: ModelGatewayVersionBaseline): ModelGate
   }
   return dependency;
 }
+
+const UNSTABLE_VERSION = /(?:^|[.-])(?:alpha|beta|rc|canary|next|dev|preview)(?:[.-]|$)/i;
+
+export function isEligibleStableSdkVersion(version: string): boolean {
+  return (
+    VERSION_PATTERN.test(version.trim()) &&
+    !UNSTABLE_VERSION.test(version) &&
+    !version.startsWith('0.')
+  );
+}
+
+function versionCore(version: string): number[] {
+  const match = version.trim().match(/^(\d+(?:\.\d+)*)/);
+  return (match?.[1] ?? '0').split('.').map((part) => Number(part));
+}
+
+export function compareStableSdkVersions(left: string, right: string): number {
+  const leftCore = versionCore(left);
+  const rightCore = versionCore(right);
+  const length = Math.max(leftCore.length, rightCore.length);
+  for (let index = 0; index < length; index += 1) {
+    const difference = (leftCore[index] ?? 0) - (rightCore[index] ?? 0);
+    if (difference !== 0) return difference;
+  }
+  return 0;
+}
+
+export function selectLatestStableSdkVersion(versions: readonly string[]): string | null {
+  const eligible = versions
+    .map((version) => version.trim().replace(/^v/i, ''))
+    .filter((version) => isEligibleStableSdkVersion(version));
+  return eligible.sort(compareStableSdkVersions).at(-1) ?? null;
+}

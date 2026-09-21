@@ -15,7 +15,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `gateway.openrouter.python` (`openrouter` `1.2.11`). Generated projects are
   server-owned, pin reviewed SDK baselines, keep the model as runtime
   configuration, and do not call a model during Create. The official Go SDK
-  remains beta and is not included on the Create surface.
+  remains beta and is not included on the Create surface. Attach is unsupported
+  for this surface. Version discovery and three-OS qualification workflows are
+  read-only and do not admit a Workspai release by themselves.
 
 ### Changed
 
@@ -23,6 +25,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Create, Workspace Run/Verify polyglot lifecycle, and doctor runtime adapters
   now recognize `gateway` as a first-class project category distinct from
   Agent Framework.
+- Model Gateway qualification CI runs one job per OS that qualifies both
+  TypeScript and Python adapters, instead of an unused kit axis that duplicated
+  the same suites.
 
 ### Fixed
 
@@ -36,6 +41,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `validateCommand` accepts a space-containing executable path only when that
   path exists, then falls back to the first token so commands such as
   `go build ./...` still resolve through `which`.
+- Model Gateway version discovery is a read-only `discover → propose → review
+  → qualify → merge` path. Registry and GitHub must agree before a baseline
+  proposal can be written. Workspace lifecycle qualification no longer returns
+  green when package installation fails.
+- Qualification treats sparse workspace-run init receipts (`errorCategory:
+  unknown` and `Stage failed with exit code 1`, including missing npm/pip
+  excerpts) as registry infrastructure, not product failure, and retries once.
+- Generated `.workspai/project.json` `contracts.consumes` is derived from the
+  kit `gatewayId` instead of a hardcoded OpenRouter value.
 
 ## [0.76.0] - 2026-09-20
 

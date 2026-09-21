@@ -7,6 +7,7 @@ import {
   isAdmittedAgentFrameworkProjectKit,
 } from '../agent-frameworks/project-kits.js';
 import { describeModelGatewayProjectKits } from '../model-gateways/project-kits.js';
+import { modelGatewayPickerHint } from '../model-gateways/qualification-policy.js';
 
 export const CREATE_KIT_CATEGORY_IDS = [
   'backend',
@@ -101,7 +102,7 @@ export function buildKitPickerChoices(category?: CreateKitCategoryId): Categoriz
   const gatewayChoices = describeModelGatewayProjectKits().map((kit) => ({
     value: kit.id,
     label: `AI Gateway · ${kit.label}`,
-    hint: `${kit.runtime} · tested baseline`,
+    hint: modelGatewayPickerHint(kit.runtime),
     name: kit.label,
     category: 'gateway' as const,
   }));

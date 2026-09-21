@@ -16,6 +16,13 @@ import {
   OPENROUTER_SORT_VALUES,
 } from './common.js';
 import { OPENROUTER_POLICY_PARITY_CASES } from './policy-parity.js';
+import type { ModelGatewayAdapter } from '../../adapter.js';
+import {
+  MODEL_GATEWAY_LIFECYCLE_STAGES,
+  MODEL_GATEWAY_UNSUPPORTED_CAPABILITIES,
+  renderGeneratedLines as lines,
+  renderOpenRouterEnvExample,
+} from '../../generated.js';
 
 const BASELINE = getModelGatewayVersionBaseline('openrouter-python');
 if (!BASELINE) {
@@ -26,10 +33,6 @@ const SDK_VERSION = packageVersion(BASELINE, 'openrouter');
 
 export function openRouterPythonSdkVersion(): string {
   return SDK_VERSION;
-}
-
-function lines(value: string[]): string {
-  return `${value.join('\n')}\n`;
 }
 
 function renderPyproject(name: string): string {
@@ -84,24 +87,15 @@ function renderPolicy(): string {
 }
 
 function renderEnvExample(): string {
-  return lines([
-    '# Required. Server-side only. Never expose this value to browsers, frontend',
-    '# environment prefixes, client bundles, or committed files.',
-    'OPENROUTER_API_KEY=',
-    '',
-    '# Required. Choose a model slug at runtime. Workspai does not select a billable',
-    '# model for you. List current slugs at https://openrouter.ai/models',
-    'OPENROUTER_MODEL=',
-    '',
-    '# Optional application attribution. These map to the official Python SDK',
-    '# constructor fields http_referer and x_open_router_title, and to the SDK',
-    '# environment names OPENROUTER_HTTP_REFERER and OPENROUTER_X_OPEN_ROUTER_TITLE.',
-    'OPENROUTER_HTTP_REFERER=',
-    'OPENROUTER_X_OPEN_ROUTER_TITLE=',
-    '',
-    '# Optional timeout in milliseconds. Defaults to 30000 when omitted.',
-    'OPENROUTER_TIMEOUT_MS=',
-  ]);
+  return renderOpenRouterEnvExample({
+    attributionComment: [
+      '# Optional application attribution. These map to the official Python SDK',
+      '# constructor fields http_referer and x_open_router_title, and to the SDK',
+      '# environment names OPENROUTER_HTTP_REFERER and OPENROUTER_X_OPEN_ROUTER_TITLE.',
+    ],
+    refererName: 'OPENROUTER_HTTP_REFERER',
+    titleName: 'OPENROUTER_X_OPEN_ROUTER_TITLE',
+  });
 }
 
 function renderReadme(projectName: string): string {
@@ -1534,3 +1528,24 @@ export async function generateOpenRouterPythonGateway(input: {
   );
   await writeGeneratorFile(path.join(input.projectPath, 'tests', 'test_gateway.py'), renderTests());
 }
+
+export const openRouterPythonAdapter: ModelGatewayAdapter = {
+  id: 'openrouter-python',
+  gatewayId: 'openrouter',
+  gatewayName: 'OpenRouter',
+  kitId: 'gateway.openrouter.python',
+  aliases: [
+    'gateway.openrouter.python',
+    'openrouter.python',
+    'gateway.openrouter.py',
+    'openrouter-python',
+  ],
+  label: 'OpenRouter · Python',
+  runtime: 'python',
+  requiredEnvironment: ['OPENROUTER_API_KEY', 'OPENROUTER_MODEL'],
+  versionBaselineId: 'openrouter-python',
+  capabilities: MODEL_GATEWAY_UNSUPPORTED_CAPABILITIES,
+  lifecycle: { stages: MODEL_GATEWAY_LIFECYCLE_STAGES },
+  attach: 'unsupported',
+  generate: generateOpenRouterPythonGateway,
+};

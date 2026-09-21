@@ -13,6 +13,12 @@ import {
 import { buildWorkspaceModel, writeWorkspaceModel } from '../workspace-model.js';
 import { runWorkspaceStage } from '../workspace-run.js';
 import { buildWorkspaceVerify } from '../workspace-verify.js';
+import {
+  assertGatewayQualificationStage,
+  classifyGatewayLifecycleReport,
+  ModelGatewayQualificationError,
+  runGatewayInitWithRegistryRetry,
+} from '../model-gateways/qualification-gate.js';
 
 const roots: string[] = [];
 
@@ -20,12 +26,6 @@ afterEach(async () => {
   vi.restoreAllMocks();
   await Promise.all(roots.splice(0).map((root) => fsExtra.remove(root)));
 });
-
-function looksLikeRegistryFailure(text: string): boolean {
-  return /ENOTFOUND|ECONNREFUSED|ETIMEDOUT|401 Unauthorized|403 Forbidden|404 Not Found|EAI_AGAIN|npm ERR!|Could not find a version|Failed to establish|No matching distribution|HTTPError|read ECONNRESET/i.test(
-    text
-  );
-}
 
 describe('OpenRouter gateway Workspai lifecycle', () => {
   it('creates both kits through the production CLI and exercises workspace run/verify', async () => {
@@ -257,16 +257,16 @@ describe('OpenRouter gateway Workspai lifecycle', () => {
       delete process.env.OPENROUTER_API_KEY;
       delete process.env.OPENROUTER_MODEL;
       try {
-        const initReport = await runWorkspaceStage({
-          workspacePath,
-          stage: 'init',
-          json: true,
-          enforceGates: false,
-        });
-        const initText = JSON.stringify(initReport);
-        if (looksLikeRegistryFailure(initText)) {
-          return;
-        }
+        const initReport = await runGatewayInitWithRegistryRetry(
+          () =>
+            runWorkspaceStage({
+              workspacePath,
+              stage: 'init',
+              json: true,
+              enforceGates: false,
+            }),
+          { attempts: 2, delayMs: 1_000 }
+        );
         const initFailures = initReport.projects
           .filter((project) => project.status === 'failed')
           .map(
@@ -274,7 +274,12 @@ describe('OpenRouter gateway Workspai lifecycle', () => {
               `${project.projectName}: ${project.reason ?? ''} ${project.errorMessage ?? ''} ${project.failureDiagnostic?.outputExcerpt ?? ''}`
           )
           .join('\n');
-        expect(initReport.summary.failed, initFailures).toBe(0);
+        assertGatewayQualificationStage({
+          stage: 'init',
+          failed: initReport.summary.failed,
+          report: initReport,
+          detail: initFailures,
+        });
 
         const testReport = await runWorkspaceStage({
           workspacePath,
@@ -293,9 +298,32 @@ describe('OpenRouter gateway Workspai lifecycle', () => {
                 .join(' | ')}`
           )
           .join('\n');
-        if (!looksLikeRegistryFailure(`${testText}\n${testFailures}`)) {
-          expect(testReport.summary.failed, testFailures).toBe(0);
-        }
+        assertGatewayQualificationStage({
+          stage: 'test',
+          failed: testReport.summary.failed,
+          report: testReport,
+          detail: testFailures,
+        });
+
+        const buildReport = await runWorkspaceStage({
+          workspacePath,
+          stage: 'build',
+          json: true,
+          enforceGates: false,
+        });
+        const buildFailures = buildReport.projects
+          .filter((project) => project.status === 'failed')
+          .map(
+            (project) =>
+              `${project.projectName}: ${project.reason ?? ''} ${project.errorMessage ?? ''} ${project.failureDiagnostic?.outputExcerpt ?? ''}`
+          )
+          .join('\n');
+        assertGatewayQualificationStage({
+          stage: 'build',
+          failed: buildReport.summary.failed,
+          report: buildReport,
+          detail: buildFailures,
+        });
 
         const startReport = await runWorkspaceStage({
           workspacePath,
@@ -315,4 +343,129 @@ describe('OpenRouter gateway Workspai lifecycle', () => {
       process.chdir(previousCwd);
     }
   }, 600_000);
+
+  it('does not return a passing qualification result for a registry outage', async () => {
+    expect(() =>
+      assertGatewayQualificationStage({
+        stage: 'init',
+        failed: 1,
+        detail: 'npm ERR! 404 Not Found @openrouter/sdk',
+      })
+    ).toThrow(ModelGatewayQualificationError);
+    try {
+      assertGatewayQualificationStage({
+        stage: 'init',
+        failed: 1,
+        detail: 'npm ERR! 404 Not Found @openrouter/sdk',
+      });
+    } catch (error) {
+      expect(error).toBeInstanceOf(ModelGatewayQualificationError);
+      expect((error as ModelGatewayQualificationError).classification).toBe('registry');
+    }
+
+    const sparseUnknownInitReport = {
+      summary: { failed: 1 },
+      projects: [
+        {
+          status: 'failed',
+          errorCategory: 'unknown',
+          reason: 'Stage failed with exit code 1',
+          errorMessage: 'Stage failed with exit code 1',
+          executionCommand: '[node:.] npm install',
+          failureDiagnostic: {
+            category: 'unknown',
+            exitCode: 1,
+            command: 'npm install',
+            timedOut: false,
+            timeoutMs: 300_000,
+          },
+        },
+      ],
+    };
+    expect(classifyGatewayLifecycleReport(sparseUnknownInitReport, 'init')).toBe('registry');
+    try {
+      assertGatewayQualificationStage({
+        stage: 'init',
+        failed: 1,
+        report: sparseUnknownInitReport,
+      });
+      throw new Error('expected sparse init receipt to fail qualification');
+    } catch (error) {
+      expect(error).toBeInstanceOf(ModelGatewayQualificationError);
+      expect((error as ModelGatewayQualificationError).classification).toBe('registry');
+      expect((error as Error).message).toContain('QUALIFICATION_INFRA');
+    }
+
+    let sparseAttempts = 0;
+    await runGatewayInitWithRegistryRetry(
+      async () => {
+        sparseAttempts += 1;
+        return sparseUnknownInitReport;
+      },
+      { attempts: 2, delayMs: 0 }
+    );
+    expect(sparseAttempts).toBe(2);
+
+    const assertionFailureReport = {
+      summary: { failed: 1 },
+      projects: [
+        {
+          status: 'failed',
+          errorCategory: 'test-failure',
+          reason: 'Stage failed with exit code 1: AssertionError',
+          errorMessage: 'Stage failed with exit code 1: AssertionError',
+          executionCommand: '[python:.] python -m unittest',
+          failureDiagnostic: {
+            category: 'test-failure',
+            exitCode: 1,
+            command: 'python -m unittest',
+            timedOut: false,
+            timeoutMs: 90_000,
+            outputExcerpt: 'AssertionError: 1 != 2',
+          },
+        },
+      ],
+    };
+    expect(classifyGatewayLifecycleReport(assertionFailureReport, 'test')).toBe('product');
+
+    let productAttempts = 0;
+    await runGatewayInitWithRegistryRetry(
+      async () => {
+        productAttempts += 1;
+        return {
+          summary: { failed: 1 },
+          projects: [
+            {
+              status: 'failed',
+              errorCategory: 'runtime',
+              reason: 'TypeError: boom',
+              failureDiagnostic: {
+                category: 'runtime',
+                command: 'node src/main.ts',
+                outputExcerpt: 'TypeError: boom',
+              },
+            },
+          ],
+        };
+      },
+      { attempts: 2, delayMs: 0 }
+    );
+    expect(productAttempts).toBe(1);
+
+    await expect(
+      runGatewayInitWithRegistryRetry(
+        async () => ({
+          summary: { failed: 1 },
+          projects: [{ status: 'failed', errorMessage: 'ENOTFOUND registry.npmjs.org' }],
+        }),
+        { attempts: 2, delayMs: 0 }
+      ).then((report) =>
+        assertGatewayQualificationStage({
+          stage: 'init',
+          failed: report.summary.failed,
+          report,
+        })
+      )
+    ).rejects.toBeInstanceOf(ModelGatewayQualificationError);
+  });
 });

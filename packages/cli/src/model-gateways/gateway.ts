@@ -9,12 +9,12 @@ export type ModelGatewayRuntime = ModelGatewayBaselineRuntime;
 export type ModelGatewayKitId = 'gateway.openrouter.typescript' | 'gateway.openrouter.python';
 
 export type ModelGatewayProjectKit = {
-  id: ModelGatewayKitId;
+  id: string;
   aliases: string[];
   label: string;
   runtime: ModelGatewayRuntime;
   adapterId: string;
-  gatewayId: ModelGatewayId;
+  gatewayId: string;
   gatewayName: string;
   requiredEnvironment: string[];
 };

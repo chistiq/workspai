@@ -16,6 +16,13 @@ import {
   OPENROUTER_SORT_VALUES,
 } from './common.js';
 import { OPENROUTER_POLICY_PARITY_CASES } from './policy-parity.js';
+import type { ModelGatewayAdapter } from '../../adapter.js';
+import {
+  MODEL_GATEWAY_LIFECYCLE_STAGES,
+  MODEL_GATEWAY_UNSUPPORTED_CAPABILITIES,
+  renderGeneratedLines as lines,
+  renderOpenRouterEnvExample,
+} from '../../generated.js';
 
 const BASELINE = getModelGatewayVersionBaseline('openrouter-typescript');
 if (!BASELINE) {
@@ -28,10 +35,6 @@ const TYPES_NODE_VERSION = packageVersion(BASELINE, '@types/node');
 
 export function openRouterTypeScriptSdkVersion(): string {
   return SDK_VERSION;
-}
-
-function lines(value: string[]): string {
-  return `${value.join('\n')}\n`;
 }
 
 function renderPackageJson(name: string): string {
@@ -113,23 +116,14 @@ function renderPolicy(): string {
 }
 
 function renderEnvExample(): string {
-  return lines([
-    '# Required. Server-side only. Never expose this value to browsers, frontend',
-    '# environment prefixes, client bundles, or committed files.',
-    'OPENROUTER_API_KEY=',
-    '',
-    '# Required. Choose a model slug at runtime. Workspai does not select a billable',
-    '# model for you. List current slugs at https://openrouter.ai/models',
-    'OPENROUTER_MODEL=',
-    '',
-    '# Optional application attribution. These map to the official TypeScript SDK',
-    '# fields httpReferer and appTitle.',
-    'OPENROUTER_HTTP_REFERER=',
-    'OPENROUTER_APP_TITLE=',
-    '',
-    '# Optional timeout in milliseconds. Defaults to 30000 when omitted.',
-    'OPENROUTER_TIMEOUT_MS=',
-  ]);
+  return renderOpenRouterEnvExample({
+    attributionComment: [
+      '# Optional application attribution. These map to the official TypeScript SDK',
+      '# fields httpReferer and appTitle.',
+    ],
+    refererName: 'OPENROUTER_HTTP_REFERER',
+    titleName: 'OPENROUTER_APP_TITLE',
+  });
 }
 
 function renderReadme(projectName: string): string {
@@ -1806,3 +1800,24 @@ export async function generateOpenRouterTypeScriptGateway(input: {
   await writeGeneratorFile(path.join(input.projectPath, 'src', 'index.ts'), renderIndex());
   await writeGeneratorFile(path.join(input.projectPath, 'tests', 'gateway.test.ts'), renderTests());
 }
+
+export const openRouterTypeScriptAdapter: ModelGatewayAdapter = {
+  id: 'openrouter-typescript',
+  gatewayId: 'openrouter',
+  gatewayName: 'OpenRouter',
+  kitId: 'gateway.openrouter.typescript',
+  aliases: [
+    'gateway.openrouter.typescript',
+    'openrouter.typescript',
+    'gateway.openrouter.ts',
+    'openrouter-typescript',
+  ],
+  label: 'OpenRouter · TypeScript',
+  runtime: 'node',
+  requiredEnvironment: ['OPENROUTER_API_KEY', 'OPENROUTER_MODEL'],
+  versionBaselineId: 'openrouter-typescript',
+  capabilities: MODEL_GATEWAY_UNSUPPORTED_CAPABILITIES,
+  lifecycle: { stages: MODEL_GATEWAY_LIFECYCLE_STAGES },
+  attach: 'unsupported',
+  generate: generateOpenRouterTypeScriptGateway,
+};

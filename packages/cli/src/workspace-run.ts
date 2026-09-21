@@ -1094,6 +1094,8 @@ async function runRapidkitSelfCommand(
       stderr: commandTimedOut
         ? `${result.stderr ?? ''}${result.stderr ? '\n' : ''}Stage timed out after ${timeoutMs}ms`
         : result.stderr,
+      shortMessage: result.shortMessage,
+      message: result.message,
     };
   } catch (error) {
     const timedOut =
@@ -1138,6 +1140,29 @@ function isVitestRuntime(): boolean {
   return (
     process.env.VITEST === 'true' || process.env.VITEST === '1' || process.env.NODE_ENV === 'test'
   );
+}
+
+function stringifyCommandStream(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Buffer.isBuffer(value)) return value.toString('utf8');
+  if (value == null) return '';
+  return String(value);
+}
+
+function collectCommandOutput(result: {
+  stdout?: unknown;
+  stderr?: unknown;
+  shortMessage?: unknown;
+  message?: unknown;
+}): { stdout: string; stderr: string } {
+  const stdout = stringifyCommandStream(result.stdout);
+  const stderr = stringifyCommandStream(result.stderr);
+  if (stdout.trim() || stderr.trim()) {
+    return { stdout, stderr };
+  }
+  const message = stringifyCommandStream(result.message).trim();
+  const shortMessage = stringifyCommandStream(result.shortMessage).trim();
+  return { stdout, stderr: message || shortMessage };
 }
 
 function boundedFailureOutput(lines: string[], limit = 8): string {
@@ -1453,6 +1478,7 @@ async function executeStageCommand(
                 let combinedStderr = '';
                 let lastExit = 0;
                 let timedOut = false;
+                let lastProcessMessage = '';
                 for (const step of materializedArgv) {
                   const stepResult = await execa(step.executable, step.args, {
                     cwd: projectPath,
@@ -1486,13 +1512,21 @@ async function executeStageCommand(
                       '\nMissing admitted lock tool `uv`. Install uv and retry; Workspai does not fall back to an unlocked pip freeze.';
                   }
                   if (lastExit !== 0) {
+                    lastProcessMessage = [stepResult.message, stepResult.shortMessage]
+                      .filter((value): value is string => typeof value === 'string')
+                      .join('\n');
                     break;
                   }
                 }
+                const captured = collectCommandOutput({
+                  stdout: combinedStdout,
+                  stderr: combinedStderr,
+                  shortMessage: lastProcessMessage,
+                });
                 return {
                   exitCode: lastExit,
-                  stdout: combinedStdout.trim(),
-                  stderr: combinedStderr.trim(),
+                  stdout: captured.stdout,
+                  stderr: captured.stderr,
                   timedOut,
                 };
               })()
@@ -1521,8 +1555,9 @@ async function executeStageCommand(
       (result as { timedOut?: unknown }).timedOut
     );
     exitCode = commandTimedOut ? 124 : Number(result.exitCode ?? 0);
-    stdout = result.stdout;
-    stderr = result.stderr;
+    const captured = collectCommandOutput(result);
+    stdout = captured.stdout;
+    stderr = captured.stderr;
     healthStatus =
       stage === 'start'
         ? (result as { healthStatus?: { healthy: boolean; reason?: string } }).healthStatus
@@ -1545,15 +1580,25 @@ async function executeStageCommand(
       error !== null &&
       'timedOut' in error &&
       Boolean((error as { timedOut?: unknown }).timedOut);
+    const message = timedOut
+      ? `Stage timed out after ${timeoutMs}ms`
+      : error instanceof Error
+        ? error.message
+        : 'Command execution failed';
+    const category = timedOut ? 'timeout' : 'runtime';
     return {
       exitCode: timedOut ? 124 : 1,
       command: resolvedCommand,
-      message: timedOut
-        ? `Stage timed out after ${timeoutMs}ms`
-        : error instanceof Error
-          ? error.message
-          : 'Command execution failed',
-      errorCategory: timedOut ? 'timeout' : 'runtime',
+      message,
+      errorCategory: category,
+      failureDiagnostic: {
+        category,
+        exitCode: timedOut ? 124 : 1,
+        command: resolvedCommand,
+        timedOut,
+        timeoutMs,
+        outputExcerpt: message,
+      },
     };
   }
 
@@ -1597,15 +1642,15 @@ async function executeStageCommand(
     (exitCode === 143 && durationMs >= Math.floor(timeoutMs * 0.8));
   const normalizedCategory = exitCode === 0 ? undefined : timedOut ? 'timeout' : errorCategory;
   const failureDiagnostic =
-    exitCode === 0 || !normalizedCategory
+    exitCode === 0
       ? undefined
       : {
-          category: normalizedCategory,
+          category: (normalizedCategory ?? 'unknown') as ErrorCategory,
           exitCode,
           command: resolvedCommand,
           timedOut,
           timeoutMs,
-          ...(outputExcerpt ? { outputExcerpt } : {}),
+          outputExcerpt: outputExcerpt || `Stage failed with exit code ${exitCode}`,
         };
 
   return {
