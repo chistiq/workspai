@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.77.0] - 2026-09-21
+
 ### Added
 
 - Introduced the first-class **AI Gateway** Create category (`Unified model
@@ -17,7 +19,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   configuration, and do not call a model during Create. The official Go SDK
   remains beta and is not included on the Create surface. Attach is unsupported
   for this surface. Version discovery and three-OS qualification workflows are
-  read-only and do not admit a Workspai release by themselves.
+  read-only and do not admit a Workspai release by themselves. This release
+  keeps the surface `source-ready`; it does not label the kits `qualified` or
+  `stable`.
 
 ### Changed
 
@@ -27,8 +31,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Agent Framework.
 - Model Gateway qualification CI runs one job per OS that qualifies both
   TypeScript and Python adapters, instead of an unused kit axis that duplicated
-  the same suites. Job-level cache env no longer uses `runner.temp` or a
-  duplicate `NPM_CONFIG_CACHE`; `setup-node` owns the npm cache.
+  the same suites. Path-triggered runs and manual `full` mode use Linux, macOS,
+  and Windows. Manual `fast` mode stays on Linux. Job-level cache env no longer
+  uses `runner.temp` or a duplicate `NPM_CONFIG_CACHE`; `setup-node` owns the
+  npm cache.
+- Model Gateway version discovery prints the sdk-core candidate diff when the
+  registry and GitHub agree. Exit status `10` means `update-available`; it is
+  not a count of updates. Runtime-support pins are not candidates, and a `0.x`
+  Go release stays excluded.
 
 ### Fixed
 
@@ -36,9 +46,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   strings, NaN, and non-finite values while preserving accepted numeric strings
   for the SDK. Stream cleanup in both generated gateways is once-only and
   prefers iterator `return()`/`close()` over a second SDK close/cancel.
-- Workspace Run `start` executes a single materialized argv step without a
-  shell, so Python gateway projects whose install path contains spaces fail
-  closed on missing credentials instead of being split by `/bin/sh`.
+- Workspace Run stage commands, including `&&` chains, execute as argv and are
+  not passed to a shell. An absolute interpreter path can no longer be expanded
+  by the shell, and Python gateway projects whose install path contains spaces
+  still fail closed on missing credentials.
 - `validateCommand` accepts a space-containing executable path only when that
   path exists, then falls back to the first token so commands such as
   `go build ./...` still resolve through `which`.

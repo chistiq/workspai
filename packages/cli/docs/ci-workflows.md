@@ -13,7 +13,7 @@ Map of GitHub Actions workflows in this repository. Use this when editing CI to 
 | Official generator smoke  | `.github/workflows/frontend-generator-smoke.yml`          | Contract-driven official-generator drift gate                                             |
 | Agent Framework matrix    | `.github/workflows/agent-framework-conformance.yml`       | Affected-family Linux PR gate plus manual twelve-lane release qualification and admission |
 | Agent Framework discovery | `.github/workflows/agent-framework-version-discovery.yml` | Weekly PyPI/NuGet candidate report; no commit, PR, or contract rewrite                    |
-| Model Gateway matrix      | `.github/workflows/model-gateway-qualification.yml`       | Linux PR gate plus manual three-OS generated-project and lifecycle qualification          |
+| Model Gateway matrix      | `.github/workflows/model-gateway-qualification.yml`       | Three-OS generated-project and lifecycle qualification; manual fast mode stays on Linux |
 | Model Gateway discovery   | `.github/workflows/model-gateway-version-discovery.yml`   | Weekly npm/PyPI/GitHub candidate report; no baseline write, commit, or PR                 |
 | Security                  | `.github/workflows/security.yml`                          | Path-aware scanning plus the always-resolved `Security Gate`                              |
 | Manual npm release        | `.github/workflows/release-npm-manual.yml`                | Maintainer-only release gate and publish workflow                                         |
@@ -43,9 +43,11 @@ version-update branch can promote a green candidate.
 OpenRouter AI Gateway kits are not part of the Agent Framework conformance
 matrix. They use a dedicated qualification workflow for generated-project
 install, tests, smoke, missing-key startup, Workspace Run, and Workspace
-Verify on Linux, macOS, and Windows. Weekly discovery reports newer stable SDK
-versions without writing the baseline or opening a pull request. See
-[AI Gateway](./model-gateways.md).
+Verify. Path-triggered runs and manual `full` mode qualify both adapters on
+Linux, macOS, and Windows. Manual `fast` mode is the only single-OS path.
+Weekly discovery reports newer stable sdk-core versions, with registry and
+GitHub agreement shown as a candidate diff. It does not write the baseline or
+open a pull request. See [AI Gateway](./model-gateways.md).
 
 The PR template at `.github/agent-framework-version-update.md` is for that
 human pin update. It is not opened by the weekly discovery workflow.
@@ -134,7 +136,7 @@ Validate or preview the current CLI announcement locally:
 npm --workspace workspai run check:release-announcement
 npm --workspace workspai run release:announcement -- \
   --product workspai-cli \
-  --tag v0.76.0 \
+  --tag v0.77.0 \
   --markdown-output /tmp/workspai-discord-announcement.md
 ```
 

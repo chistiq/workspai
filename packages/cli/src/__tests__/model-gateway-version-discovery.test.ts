@@ -212,6 +212,8 @@ describe('model gateway workflows', () => {
     expect(qualification).toContain('ubuntu-latest');
     expect(qualification).toContain('macos-latest');
     expect(qualification).toContain('windows-latest');
+    expect(qualification).toContain("inputs.qualification_mode == 'fast'");
+    expect(qualification).not.toContain("inputs.qualification_mode == 'full'");
     expect(qualification).toContain('OpenRouter gateways');
     expect(qualification).not.toContain('kit: [typescript, python]');
     expect(qualification).not.toContain('matrix.kit');
@@ -221,6 +223,9 @@ describe('model gateway workflows', () => {
     expect(qualification).toContain('model-gateway-workspace-lifecycle.test.ts');
     expect(qualification).toContain('model-gateway-policy-parity.test.ts');
     expect(discovery).toContain('propose-model-gateway-version-update.ts');
+    expect(discovery).toContain('diff -u');
+    expect(discovery).toContain('proposed.json');
+    expect(discovery).not.toContain('0 current, 10 update available');
     expect(discovery).not.toContain('--write');
     expect(YAML.parse(discovery).permissions).toEqual({ contents: 'read' });
     expect(YAML.parse(qualification).permissions).toEqual({

@@ -5,6 +5,41 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
+## v0.77.0 (September 21, 2026)
+
+### Source-ready OpenRouter AI Gateway kits
+
+Workspai 0.77.0 adds AI Gateway Create kits for the OpenRouter TypeScript and
+Python Client SDKs. The kits are source-ready. This release does not label
+them qualified or stable.
+
+**What's New:**
+
+- Add `gateway.openrouter.typescript` (`@openrouter/sdk` 1.3.11) and
+  `gateway.openrouter.python` (`openrouter` 1.2.11).
+- Keep Create server-owned, pinned, and free of live model calls. Attach stays
+  unsupported, and the beta Go SDK stays off the Create surface.
+- Keep Doctor and the workspace model on framework `openrouter`, kind
+  `gateway`, and the authored Node.js or Python runtime.
+- Qualify both adapters on Linux, macOS, and Windows when the qualification
+  paths change. Manual fast mode stays on Linux.
+- Show sdk-core version candidates as a diff. Discovery does not write the
+  baseline or admit a release.
+
+**Compatibility:** Existing commands and schema versions remain supported.
+OpenAI Agents SDK adapters stay stable. Microsoft adapters stay preview.
+Workspace Run lifecycle commands run as argv, including `&&` chains, and are
+not passed to a shell.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.77.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.77.0/packages/cli/releases/RELEASE_NOTES_v0.77.0.md)
+
 ## v0.76.0 (September 20, 2026)
 
 ### Stable OpenAI Agents SDK Adapters

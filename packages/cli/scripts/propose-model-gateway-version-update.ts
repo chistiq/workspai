@@ -37,7 +37,16 @@ async function main(): Promise<void> {
   const reportPath = argument('--report');
   const writeRequested = hasFlag('--write');
   const discovery = await discoverModelGatewayVersions();
-  if (reportPath) await writeJson(path.resolve(reportPath), discovery);
+  if (reportPath) {
+    const resolvedReportPath = path.resolve(reportPath);
+    await writeJson(resolvedReportPath, discovery);
+    if (discovery.proposedDocument) {
+      await writeJson(
+        path.join(path.dirname(resolvedReportPath), 'proposed.json'),
+        discovery.proposedDocument
+      );
+    }
+  }
   process.stdout.write(formatModelGatewayDiscoverySummary(discovery));
 
   if (discovery.outcome !== 'update-available') {

@@ -19,10 +19,9 @@ port. Do not copy these templates into an Agent Framework kit.
 
 ## Current kits
 
-These kits are source-ready in this worktree. That is not Workspai release
-admission. Local Linux success may justify only
-`source-stable, awaiting cross-platform qualification`. SDK `1.x` stability is
-an upstream classification, not a Workspai release gate.
+These kits ship as source-ready. That is not Workspai release admission and
+does not label them `stable` or `qualified`. SDK `1.x` stability is an upstream
+classification, not a Workspai release gate.
 
 | Kit | Runtime | Official Client SDK | Reviewed |
 | --- | --- | --- | --- |
@@ -161,10 +160,10 @@ Python: create a virtualenv, `python -m pip install -e .`, `python -m compileall
 `python -m unittest discover -s tests`, `python main.py --smoke`, `python main.py`.
 
 Workspace Run uses those same manifests and the generated project's declared
-polyglot unit commands. A single-step `start` is executed as argv, not a shell
-string, so Python venv paths that contain spaces still fail closed for missing
-credentials. `test` and `--smoke` inject a fake transport. They do not require
-a live `OPENROUTER_API_KEY`.
+polyglot unit commands. Stage commands, including `&&` chains and a multi-step
+`start`, run as argv. They are not passed to a shell, so an absolute interpreter
+path cannot be expanded by `/bin/sh`. `test` and `--smoke` inject a fake
+transport. They do not require a live `OPENROUTER_API_KEY`.
 
 Streaming uses the official Client SDK event stream. Opening and iterating the
 stream are both normalized: configuration errors stay configuration errors,
@@ -193,11 +192,13 @@ Do not copy versions into unrelated files.
 ## Qualification boundary
 
 Workspai source readiness is not release qualification. These kits are not
-described as `stable`, `release-ready`, `admitted`, or `published` until Linux,
+described as `stable`, `release-ready`, `admitted`, or `qualified` until Linux,
 macOS, and Windows CI prove generated-project installation and lifecycle on the
-same commit SHA. The dedicated workflow is
-`.github/workflows/model-gateway-qualification.yml`. Each OS job qualifies both
-the TypeScript and Python OpenRouter adapters; there is no unused kit axis.
-Discovery is
-`.github/workflows/model-gateway-version-discovery.yml`. A green job that
+same commit SHA, and a later admission change records that evidence. The
+dedicated workflow is `.github/workflows/model-gateway-qualification.yml`.
+Path-triggered runs and manual `full` mode each qualify both the TypeScript and
+Python OpenRouter adapters on Linux, macOS, and Windows. Manual `fast` mode
+stays on Linux. There is no unused kit axis. Discovery is
+`.github/workflows/model-gateway-version-discovery.yml`. Its job summary shows
+the sdk-core candidate diff when registry and GitHub agree. A green job that
 skipped installation or lifecycle is not qualified.

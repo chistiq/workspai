@@ -65,13 +65,33 @@ jobs:
         env:
           DISCOVERY_STATUS: ${{ steps.discover.outputs.status }}
         run: |
-          echo "### Model Gateway version discovery" >> "$GITHUB_STEP_SUMMARY"
-          echo "This workflow does not write the baseline, commit, open a pull request, or admit a Workspai release." >> "$GITHUB_STEP_SUMMARY"
-          echo "Exit status: ${DISCOVERY_STATUS:-unknown} (0 current, 10 update available)." >> "$GITHUB_STEP_SUMMARY"
           REPORT=packages/cli/test-results/model-gateway-version-discovery/report.json
-          if [ -f "$REPORT" ]; then
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo '```json' >> "$GITHUB_STEP_SUMMARY"
-            python3 -c "import json,pathlib; d=json.loads(pathlib.Path('$REPORT').read_text()); print(json.dumps({'outcome': d.get('outcome'), 'summary': d.get('summary')}, indent=2))" >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-          fi
+          PROPOSED=packages/cli/test-results/model-gateway-version-discovery/proposed.json
+          BASELINE=packages/cli/src/model-gateways/version-baselines.v1.json
+          {
+            echo "### Model Gateway version candidates"
+            echo "Discovery compares each pinned sdk-core package with the newest eligible stable registry release and requires the same version on GitHub. Runtime-support pins stay unchanged. Exit status ${DISCOVERY_STATUS:-unknown} is an outcome code (0 current, 10 update-available, 20 disagreement, 30 unavailable, 40 invalid), not a count of updates."
+            echo "This workflow does not write the baseline, commit, open a pull request, or admit a Workspai release."
+            echo
+            if [ -f "$REPORT" ]; then
+              node --input-type=module -e '
+                import fs from "node:fs";
+                const report = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
+                for (const adapter of report.adapters ?? []) {
+                  console.log(`- ${adapter.adapterId} ${adapter.packageName}: pinned ${adapter.pinnedVersion} -> registry ${adapter.registryVersion ?? "n/a"} / GitHub ${adapter.githubVersion ?? "n/a"} (${adapter.status})`);
+                }
+                for (const entry of report.excluded ?? []) {
+                  console.log(`- excluded ${entry.language} ${entry.module}: observed ${entry.pinnedObservation} -> ${entry.latestObservedVersion ?? "n/a"} (${entry.status}; ${entry.detail})`);
+                }
+              ' "$REPORT"
+            fi
+            if [ -f "$PROPOSED" ]; then
+              echo
+              echo '```diff'
+              diff -u "$BASELINE" "$PROPOSED" || true
+              echo '```'
+            elif [ "${DISCOVERY_STATUS:-}" = "0" ]; then
+              echo
+              echo "No newer sdk-core candidate was found."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

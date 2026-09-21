@@ -739,11 +739,10 @@ export function resolveWorkspaceRunStageTimeoutMs(stage: string, runtime: Runtim
 
 function parseDirectLifecycleCommand(command: string): { file: string; args: string[] } | null {
   const normalized = command.trim();
-  // Manifest-derived lifecycle commands are usually simple argv sequences.
-  // Avoid a shell for those commands so timeout/cancellation targets the real
-  // package manager or toolchain process instead of orphaning a child that
-  // keeps stdout/stderr open. Commands that require shell syntax retain the
-  // compatibility fallback below.
+  // Manifest-derived lifecycle commands are argv sequences. Workspace Run does
+  // not pass them through a shell, including when an earlier step materializes
+  // an absolute interpreter path. `&&` chains are split by the caller before
+  // this parser sees a single segment.
   if (!normalized || /[&|;<>()$`"'\n\r]/.test(normalized)) {
     return null;
   }
@@ -798,6 +797,79 @@ function materializePythonArgvSequence(
 
 function formatArgvSequence(steps: LifecycleArgvStep[]): string {
   return steps.map((step) => [step.executable, ...step.args].join(' ')).join(' && ');
+}
+
+function directLifecycleSteps(command: string): LifecycleArgvStep[] | null {
+  const segments = command.split(/\s&&\s/);
+  const steps: LifecycleArgvStep[] = [];
+  for (const segment of segments) {
+    const parsed = parseDirectLifecycleCommand(segment);
+    if (!parsed) return null;
+    steps.push({ executable: parsed.file, args: parsed.args });
+  }
+  return steps.length > 0 ? steps : null;
+}
+
+async function runDirectArgvSteps(
+  projectPath: string,
+  steps: LifecycleArgvStep[],
+  timeoutMs: number
+): Promise<{
+  exitCode: number;
+  stdout: string;
+  stderr: string;
+  timedOut: boolean;
+}> {
+  let combinedStdout = '';
+  let combinedStderr = '';
+  let lastExit = 0;
+  let timedOut = false;
+  let lastMessage = '';
+  let lastShortMessage = '';
+  for (const step of steps) {
+    const stepResult = await execa(step.executable, step.args, {
+      cwd: projectPath,
+      reject: false,
+      timeout: timeoutMs,
+      forceKillAfterDelay: 1000,
+    });
+    combinedStdout += `${stepResult.stdout ?? ''}\n`;
+    combinedStderr += `${stepResult.stderr ?? ''}\n`;
+    timedOut = Boolean(
+      typeof stepResult === 'object' &&
+      stepResult !== null &&
+      'timedOut' in stepResult &&
+      (stepResult as { timedOut?: unknown }).timedOut
+    );
+    const rawExit = stepResult.exitCode;
+    const failed =
+      timedOut ||
+      (typeof rawExit === 'number'
+        ? rawExit !== 0
+        : Boolean((stepResult as { failed?: boolean }).failed));
+    lastExit = timedOut ? 124 : typeof rawExit === 'number' ? rawExit : failed ? 127 : 0;
+    if (lastExit !== 0 && step.executable === 'uv') {
+      combinedStderr +=
+        '\nMissing admitted lock tool `uv`. Install uv and retry; Workspai does not fall back to an unlocked pip freeze.';
+    }
+    if (lastExit !== 0) {
+      lastMessage = typeof stepResult.message === 'string' ? stepResult.message : '';
+      lastShortMessage = typeof stepResult.shortMessage === 'string' ? stepResult.shortMessage : '';
+      break;
+    }
+  }
+  const captured = collectCommandOutput({
+    stdout: combinedStdout,
+    stderr: combinedStderr,
+    message: lastMessage,
+    shortMessage: lastShortMessage,
+  });
+  return {
+    exitCode: lastExit,
+    stdout: captured.stdout,
+    stderr: captured.stderr,
+    timedOut,
+  };
 }
 
 async function validateArgvSequenceBeforeMutation(
@@ -880,7 +952,6 @@ function delay(ms: number): Promise<void> {
 
 async function runStartupSmoke(input: {
   projectPath: string;
-  finalCommand: string;
   useRapidkitWrapper: boolean;
   runtime: RuntimeFamily;
   framework?: string;
@@ -903,28 +974,36 @@ async function runStartupSmoke(input: {
     };
   }
 
-  const subprocess = (input.useRapidkitWrapper && entrypoint
-    ? execa(process.execPath, [entrypoint, 'start'], {
-        cwd: input.projectPath,
-        reject: false,
-        timeout: input.timeoutMs,
-        env: {
-          ...process.env,
-          RAPIDKIT_WORKSPACE_RUN_CHILD: '1',
-        },
-      })
-    : input.argv
-      ? execa(input.argv.executable, input.argv.args, {
+  const subprocess = (
+    input.useRapidkitWrapper && entrypoint
+      ? execa(process.execPath, [entrypoint, 'start'], {
           cwd: input.projectPath,
           reject: false,
           timeout: input.timeoutMs,
+          env: {
+            ...process.env,
+            RAPIDKIT_WORKSPACE_RUN_CHILD: '1',
+          },
         })
-      : execa(input.finalCommand, [], {
-          cwd: input.projectPath,
-          reject: false,
-          shell: true,
-          timeout: input.timeoutMs,
-        })) as unknown as StartupSubprocess;
+      : input.argv
+        ? execa(input.argv.executable, input.argv.args, {
+            cwd: input.projectPath,
+            reject: false,
+            timeout: input.timeoutMs,
+          })
+        : null
+  ) as StartupSubprocess | null;
+  if (!subprocess) {
+    return {
+      exitCode: 127,
+      stdout: '',
+      stderr: 'Refusing to execute a lifecycle start command through a shell.',
+      healthStatus: {
+        healthy: false,
+        reason: 'Lifecycle start commands run as argv, not a shell.',
+      },
+    };
+  }
 
   const completion = Promise.resolve(subprocess).then(
     (result) => ({ kind: 'exit' as const, result }),
@@ -1457,96 +1536,68 @@ async function executeStageCommand(
   const startedAt = Date.now();
 
   try {
+    const lifecycleSteps = materializedArgv?.length
+      ? materializedArgv
+      : directLifecycleSteps(finalCommand);
+    const refusedShell = {
+      exitCode: 127,
+      stdout: '',
+      stderr: 'Refusing to execute a lifecycle command through a shell.',
+      timedOut: false,
+    };
     const result =
       stage === 'start'
-        ? await runStartupSmoke({
-            projectPath,
-            finalCommand: resolvedCommand,
-            useRapidkitWrapper,
-            runtime,
-            framework,
-            timeoutMs,
-            argv: materializedArgv?.length === 1 ? materializedArgv[0] : undefined,
-          })
+        ? await (async () => {
+            if (useRapidkitWrapper) {
+              return runStartupSmoke({
+                projectPath,
+                useRapidkitWrapper,
+                runtime,
+                framework,
+                timeoutMs,
+              });
+            }
+            if (!lifecycleSteps?.length) {
+              return {
+                ...refusedShell,
+                healthStatus: {
+                  healthy: false,
+                  reason: 'Lifecycle start commands run as argv, not a shell.',
+                },
+              };
+            }
+            if (lifecycleSteps.length > 1) {
+              const prefix = await runDirectArgvSteps(
+                projectPath,
+                lifecycleSteps.slice(0, -1),
+                timeoutMs
+              );
+              if (prefix.exitCode !== 0) {
+                return {
+                  ...prefix,
+                  healthStatus: {
+                    healthy: false,
+                    reason: 'A start prerequisite exited before readiness.',
+                  },
+                };
+              }
+            }
+            return runStartupSmoke({
+              projectPath,
+              useRapidkitWrapper,
+              runtime,
+              framework,
+              timeoutMs,
+              argv: lifecycleSteps[lifecycleSteps.length - 1],
+            });
+          })()
         : useRapidkitWrapper
           ? stage === 'init' && isVitestRuntime()
             ? await runRapidkitInitInProcess(projectPath)
             : await runRapidkitSelfCommand([stage], projectPath, timeoutMs, streamOutput)
-          : materializedArgv?.length
-            ? await (async () => {
-                let combinedStdout = '';
-                let combinedStderr = '';
-                let lastExit = 0;
-                let timedOut = false;
-                let lastProcessMessage = '';
-                for (const step of materializedArgv) {
-                  const stepResult = await execa(step.executable, step.args, {
-                    cwd: projectPath,
-                    reject: false,
-                    timeout: timeoutMs,
-                    forceKillAfterDelay: 1000,
-                  });
-                  combinedStdout += `${stepResult.stdout ?? ''}\n`;
-                  combinedStderr += `${stepResult.stderr ?? ''}\n`;
-                  timedOut = Boolean(
-                    typeof stepResult === 'object' &&
-                    stepResult !== null &&
-                    'timedOut' in stepResult &&
-                    (stepResult as { timedOut?: unknown }).timedOut
-                  );
-                  const rawExit = stepResult.exitCode;
-                  const failed =
-                    timedOut ||
-                    (typeof rawExit === 'number'
-                      ? rawExit !== 0
-                      : Boolean((stepResult as { failed?: boolean }).failed));
-                  lastExit = timedOut
-                    ? 124
-                    : typeof rawExit === 'number'
-                      ? rawExit
-                      : failed
-                        ? 127
-                        : 0;
-                  if (lastExit !== 0 && step.executable === 'uv') {
-                    combinedStderr +=
-                      '\nMissing admitted lock tool `uv`. Install uv and retry; Workspai does not fall back to an unlocked pip freeze.';
-                  }
-                  if (lastExit !== 0) {
-                    lastProcessMessage = [stepResult.message, stepResult.shortMessage]
-                      .filter((value): value is string => typeof value === 'string')
-                      .join('\n');
-                    break;
-                  }
-                }
-                const captured = collectCommandOutput({
-                  stdout: combinedStdout,
-                  stderr: combinedStderr,
-                  shortMessage: lastProcessMessage,
-                });
-                return {
-                  exitCode: lastExit,
-                  stdout: captured.stdout,
-                  stderr: captured.stderr,
-                  timedOut,
-                };
-              })()
-            : await (async () => {
-                const directCommand = parseDirectLifecycleCommand(finalCommand);
-                return directCommand
-                  ? execa(directCommand.file, directCommand.args, {
-                      cwd: projectPath,
-                      reject: false,
-                      timeout: timeoutMs,
-                      forceKillAfterDelay: 1000,
-                    })
-                  : execa(finalCommand, [], {
-                      cwd: projectPath,
-                      reject: false,
-                      shell: true,
-                      timeout: timeoutMs,
-                      forceKillAfterDelay: 1000,
-                    });
-              })();
+          : lifecycleSteps?.length
+            ? await runDirectArgvSteps(projectPath, lifecycleSteps, timeoutMs)
+            : refusedShell;
 
     commandTimedOut = Boolean(
       typeof result === 'object' &&
