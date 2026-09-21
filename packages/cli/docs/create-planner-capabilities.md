@@ -22,6 +22,7 @@ Native create is reserved for Workspai-owned kits with deterministic contracts:
 - Spring Boot
 - ASP.NET Core Web API
 - Rust / Axum
+- OpenRouter AI Gateway (TypeScript and Python)
 
 These kits can be exposed through `workspai create project` because Workspai can
 create the project and immediately produce the expected `.workspai` metadata,

@@ -6,12 +6,14 @@ import {
   describeAgentFrameworkProjectKits,
   isAdmittedAgentFrameworkProjectKit,
 } from '../agent-frameworks/project-kits.js';
+import { describeModelGatewayProjectKits } from '../model-gateways/project-kits.js';
 
 export const CREATE_KIT_CATEGORY_IDS = [
   'backend',
   'frontend',
   'desktop',
   'agent',
+  'gateway',
   'extension',
   'gaming',
 ] as const;
@@ -31,6 +33,7 @@ const CREATE_KIT_CATEGORIES: ReadonlyArray<{
   { id: 'frontend', label: 'Frontend', hint: 'Web applications' },
   { id: 'desktop', label: 'Desktop', hint: 'Native desktop applications' },
   { id: 'agent', label: 'AI Agent', hint: 'Governed agent runtimes' },
+  { id: 'gateway', label: 'AI Gateway', hint: 'Unified model access and routing' },
   { id: 'extension', label: 'Extension', hint: 'Editor and platform extensions' },
   { id: 'gaming', label: 'Gaming', hint: 'Game runtimes and tooling' },
 ];
@@ -95,7 +98,21 @@ export function buildKitPickerChoices(category?: CreateKitCategoryId): Categoriz
     category: 'agent' as const,
   }));
 
-  const choices = [...registeredChoices, ...frontendChoices, ...officialChoices, ...agentChoices]
+  const gatewayChoices = describeModelGatewayProjectKits().map((kit) => ({
+    value: kit.id,
+    label: `AI Gateway · ${kit.label}`,
+    hint: `${kit.runtime} · tested baseline`,
+    name: kit.label,
+    category: 'gateway' as const,
+  }));
+
+  const choices = [
+    ...registeredChoices,
+    ...frontendChoices,
+    ...officialChoices,
+    ...agentChoices,
+    ...gatewayChoices,
+  ]
     .filter((choice) => !category || choice.category === category)
     .sort((left, right) => {
       const leftCategory = CREATE_KIT_CATEGORY_IDS.indexOf(left.category);

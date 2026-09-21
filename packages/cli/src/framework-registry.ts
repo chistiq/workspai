@@ -779,10 +779,32 @@ export async function validateCommand(
   reason?: string;
 }> {
   // Parse command (handle pipes, &&, ||, etc.)
-  const cmd = command
-    .split(/[&|;]\s*/)[0]
-    .trim()
-    .split(/\s+/)[0];
+  const firstSegment = command.split(/[&|;]\s*/)[0].trim();
+
+  const tryPath = async (candidate: string): Promise<boolean> => {
+    const executablePath = path.isAbsolute(candidate)
+      ? candidate
+      : path.resolve(cwd ?? process.cwd(), candidate);
+    try {
+      await fs.promises.access(
+        executablePath,
+        process.platform === 'win32' ? fs.constants.F_OK : fs.constants.X_OK
+      );
+      return true;
+    } catch {
+      return false;
+    }
+  };
+
+  // An argv-only executable can be an absolute path that contains spaces.
+  if (
+    (firstSegment.includes('/') || firstSegment.includes('\\')) &&
+    (await tryPath(firstSegment))
+  ) {
+    return { valid: true };
+  }
+
+  const cmd = firstSegment.split(/\s+/)[0];
 
   // Shell builtins that don't need validation
   const builtins = ['echo', 'cd', 'pwd', 'test', 'true', 'false', 'exit'];

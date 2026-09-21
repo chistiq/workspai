@@ -1,6 +1,10 @@
 import { listFrontendGenerators } from '../frontend-project.js';
 import { listOfficialProjectGenerators } from '../official-project.js';
 import { listAgentFrameworkProjectKits } from '../agent-frameworks/project-kits.js';
+import {
+  listModelGatewayProjectKits,
+  lookupModelGatewayProjectKit,
+} from '../model-gateways/project-kits.js';
 import { listInteractiveKits, normalizeKitId } from './kit-registry.js';
 
 export type CreatePlannerLane = 'native' | 'official' | 'existing';
@@ -36,6 +40,7 @@ export interface CreatePlannerCapability {
 const NATIVE_CREATE_KITS = new Set([
   ...listInteractiveKits().map((kit) => kit.id),
   ...listAgentFrameworkProjectKits().map((kit) => kit.id),
+  ...listModelGatewayProjectKits().flatMap((kit) => [kit.id, ...kit.aliases]),
 ]);
 
 export const OFFICIAL_CREATE_CANDIDATES: OfficialCreateCandidate[] = [
@@ -176,6 +181,20 @@ export function resolveCreatePlannerCapability(input: {
       canExecuteCreate: false,
       requested,
       reason: 'Existing projects enter Workspace Intelligence through adopt/import.',
+    };
+  }
+
+  const gatewayKit =
+    lookupModelGatewayProjectKit(input.kitId) ?? lookupModelGatewayProjectKit(input.framework);
+  if (gatewayKit) {
+    return {
+      lane: 'native',
+      status: 'available',
+      canExecuteCreate: true,
+      requested,
+      resolved: gatewayKit.id,
+      reason:
+        'Workspai owns the create contract, project marker, registry, doctor, and workspace model path.',
     };
   }
 

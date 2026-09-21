@@ -719,10 +719,112 @@ for (const relativePath of [
   assertFile(relativePath);
 }
 
+function smokeCreateOpenRouterGatewayKits() {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'workspai-gateway-kit-smoke-'));
+  const workspaceName = 'gateway-kit-workspace';
+  const workspacePath = path.join(tempDir, workspaceName);
+  const createWorkspace = spawnSync(
+    process.execPath,
+    [
+      cliPath,
+      'create',
+      'workspace',
+      workspaceName,
+      '--output',
+      tempDir,
+      '--profile',
+      'minimal',
+      '--skip-python-engine',
+      '--skip-git',
+      '--yes',
+    ],
+    { cwd: tempDir, encoding: 'utf8', env: cliEnv(), stdio: ['ignore', 'pipe', 'pipe'] }
+  );
+  if (createWorkspace.status !== 0) {
+    fail(
+      `gateway kit workspace creation failed with exit ${createWorkspace.status}\n${createWorkspace.stdout}\n${createWorkspace.stderr}`
+    );
+  }
+
+  const scenarios = [
+    {
+      kit: 'gateway.openrouter.typescript',
+      name: 'openrouter-ts-gateway',
+      expectedFiles: [
+        'README.md',
+        '.env.example',
+        '.gitignore',
+        'gateway.policy.json',
+        'package.json',
+        'tsconfig.json',
+        'src/port.ts',
+        'src/config.ts',
+        'src/openrouter-gateway.ts',
+        'src/main.ts',
+        'tests/gateway.test.ts',
+        '.workspai/project.json',
+      ],
+    },
+    {
+      kit: 'gateway.openrouter.python',
+      name: 'openrouter-py-gateway',
+      expectedFiles: [
+        'README.md',
+        '.env.example',
+        '.gitignore',
+        'gateway.policy.json',
+        'pyproject.toml',
+        'main.py',
+        'src/model_gateway/port.py',
+        'src/model_gateway/config.py',
+        'src/model_gateway/gateway.py',
+        'src/model_gateway/main.py',
+        'tests/test_gateway.py',
+        '.workspai/project.json',
+      ],
+    },
+  ];
+  try {
+    for (const scenario of scenarios) {
+      const result = spawnSync(
+        process.execPath,
+        [cliPath, 'create', 'project', scenario.kit, scenario.name, '--skip-git', '--yes'],
+        {
+          cwd: workspacePath,
+          encoding: 'utf8',
+          env: cliEnv(),
+          stdio: ['ignore', 'pipe', 'pipe'],
+        }
+      );
+      if (result.status !== 0) {
+        fail(
+          `${scenario.kit} create failed with exit ${result.status}\n${result.stdout}\n${result.stderr}`
+        );
+      }
+      const combined = `${result.stdout}\n${result.stderr}`;
+      if (/openrouter\.ai|chat\.completions|Authorization: Bearer/i.test(combined)) {
+        fail(`${scenario.kit} create output looks like a live model call\n${combined}`);
+      }
+      assertGeneratedProject(path.join(workspacePath, scenario.name), scenario.expectedFiles);
+      const envExample = fs.readFileSync(
+        path.join(workspacePath, scenario.name, '.env.example'),
+        'utf8'
+      );
+      if (/sk-or-[A-Za-z0-9]/.test(envExample) || /OPENROUTER_API_KEY=.+/.test(envExample)) {
+        fail(`${scenario.kit} .env.example must not contain a credential value`);
+      }
+    }
+    log(`verified ${scenarios.length} model gateway create scenarios`);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
 assertPackContents();
 assertCliContracts();
 smokeCreateNpmBackedKits();
 smokeCreateAgentFrameworkKits();
+smokeCreateOpenRouterGatewayKits();
 smokeCreateOfflineFallbackKits();
 
 log('enterprise package smoke passed');

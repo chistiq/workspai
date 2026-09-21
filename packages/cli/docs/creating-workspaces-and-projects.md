@@ -16,9 +16,9 @@ For a compact list of command syntax, see
 A **workspace** is the shared home for related projects, rules, and saved
 Workspai reports.
 
-A **project** is an application, service, or governed agent, such as a FastAPI
-API, Go service, Spring Boot service, .NET API, frontend application, or
-Microsoft Agent Framework entrypoint.
+A **project** is an application, service, governed agent, or model gateway, such as a FastAPI
+API, Go service, Spring Boot service, .NET API, frontend application,
+Microsoft Agent Framework entrypoint, or OpenRouter AI Gateway.
 
 The canonical commands are:
 
@@ -42,6 +42,7 @@ does not have exactly the same behavior.
 | Turn the current folder into a workspace before creating        | `npx workspai create project gofiber.standard api --create-workspace --yes` |
 | Create a project without workspace management                   | `npx workspai create project gofiber.standard api --no-workspace --yes`     |
 | Create a governed Microsoft Agent Framework project             | `npx workspai create project agent.microsoft.python support-agent`          |
+| Create a server-owned OpenRouter AI Gateway                     | `npx workspai create project gateway.openrouter.typescript model-gateway`   |
 | Preview a supported create plan                                 | `npx workspai create project frontend.nextjs web --dry-run`                 |
 
 # Creating a workspace
@@ -418,6 +419,20 @@ npx workspai change verify --change <change-id> --json
 independent proof for this scaffold. See
 [Agent Framework Adapter Contract](./agent-framework-adapters.md).
 
+## AI Gateway kits
+
+| Kit | Runtime | Tested baseline | Layout |
+| --- | --- | --- | --- |
+| `gateway.openrouter.typescript` | Node.js | `@openrouter/sdk` `1.3.11`, TypeScript `5.9.3`, `@types/node` `22.20.3` | Server-owned OpenRouter Client SDK starter with `gateway.policy.json`, credentialless `node:test`, and `.env.example` |
+| `gateway.openrouter.python` | Python | `openrouter` `1.2.11` | Server-owned OpenRouter Client SDK starter with `gateway.policy.json`, credentialless `unittest`, and `.env.example` |
+
+Interactive `workspai create` shows these kits under **AI Gateway** with the
+hint **Unified model access and routing**. A model identifier is runtime
+configuration, not a kit. Create does not install dependencies, call a model,
+or store credentials. The official Go Client SDK remains beta (`v0.8.11` on
+2026-09-21) and is not admitted. See
+[AI Gateway](./model-gateways.md).
+
 ## Desktop, extension, and additional backend generators
 
 | Category  | Project           | Kit                | Creation owner                        |
@@ -428,10 +443,11 @@ independent proof for this scaffold. See
 | Desktop   | Electron Forge    | `desktop.electron` | create-electron-app                   |
 | Extension | VS Code Extension | `extension.vscode` | generator-code                        |
 
-Every generated project receives a canonical `kind` and `category`. The five
-user-facing creation categories are `backend`, `frontend`, `desktop`, `agent`, and `extension`;
-they remain visible in the Workspace Model and Knowledge Graph so consumers do
-not have to guess a project’s role from its runtime.
+Every generated project receives a canonical `kind` and `category`. The
+user-facing creation categories are `backend`, `frontend`, `desktop`, `agent`,
+`gateway`, and `extension`; they remain visible in the Workspace Model and
+Knowledge Graph so consumers do not have to guess a project’s role from its
+runtime.
 
 Official generators may download packages and therefore need network access.
 Each available integration requests the upstream latest stable channel rather

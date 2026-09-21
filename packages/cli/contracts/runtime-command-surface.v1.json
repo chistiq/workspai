@@ -4373,7 +4373,9 @@
       "agent.microsoft.python",
       "agent.microsoft.dotnet",
       "agent.openai.python",
-      "agent.openai.typescript"
+      "agent.openai.typescript",
+      "gateway.openrouter.typescript",
+      "gateway.openrouter.python"
     ],
     "officialCreate": [
       "frontend.nextjs",

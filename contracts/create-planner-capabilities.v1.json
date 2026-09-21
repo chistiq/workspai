@@ -158,6 +158,30 @@
       "versionPolicy": "tested-baseline",
       "moduleSupport": false,
       "workspacePythonEngine": "none"
+    },
+    {
+      "id": "gateway.openrouter.typescript",
+      "runtime": "node",
+      "framework": "openrouter",
+      "plannerFramework": "openrouter",
+      "category": "gateway",
+      "owner": "workspai",
+      "stability": "stable",
+      "versionPolicy": "tested-baseline",
+      "moduleSupport": false,
+      "workspacePythonEngine": "none"
+    },
+    {
+      "id": "gateway.openrouter.python",
+      "runtime": "python",
+      "framework": "openrouter",
+      "plannerFramework": "openrouter",
+      "category": "gateway",
+      "owner": "workspai",
+      "stability": "stable",
+      "versionPolicy": "tested-baseline",
+      "moduleSupport": false,
+      "workspacePythonEngine": "none"
     }
   ],
   "officialCreate": [

@@ -136,6 +136,8 @@ describe('workspace intelligence architecture contract', () => {
         'gofiber.standard',
         'gogin.standard',
         'dotnet.webapi.clean',
+        'gateway.openrouter.typescript',
+        'gateway.openrouter.python',
       ])
     );
     expect(contract.createPlannerReality.officialCreate).toEqual(

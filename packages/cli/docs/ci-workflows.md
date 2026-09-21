@@ -38,6 +38,10 @@ maintenance requirement after every routine adapter edit.
 It never sets Foundry or OpenAI credentials. Only a reviewed admission on the protected
 version-update branch can promote a green candidate.
 
+OpenRouter AI Gateway kits are not part of the Agent Framework conformance
+matrix. They are covered by the CLI test matrix, generated-project verification,
+and enterprise package create smoke. See [AI Gateway](./model-gateways.md).
+
 The PR template at `.github/agent-framework-version-update.md` is for that
 human pin update. It is not opened by the weekly discovery workflow.
 

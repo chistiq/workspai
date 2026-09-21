@@ -110,8 +110,8 @@ npx workspai create
 ```
 
 Choose whether to create a workspace, scaffold a project, or add existing
-software. Project starters are grouped as Backend, Frontend, Desktop, and
-Extension.
+software. Project starters are grouped as Backend, Frontend, Desktop, AI
+Agent, AI Gateway, Extension, and Gaming.
 
 ```bash
 # Optional global installation

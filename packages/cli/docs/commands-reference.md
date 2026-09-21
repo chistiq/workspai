@@ -82,6 +82,8 @@ npx workspai change capsule validate --change <change-id> [--workspace <path>] [
 npx workspai change capsule export --change <change-id> --output <path> [--workspace <path>] [--json]
 npx workspai create project agent.microsoft.python <name> [--agent-name <name>] [--skip-git]
 npx workspai create project agent.microsoft.dotnet <name> [--agent-name <name>] [--skip-git]
+npx workspai create project gateway.openrouter.typescript <name> [--skip-git] [--json]
+npx workspai create project gateway.openrouter.python <name> [--skip-git] [--json]
 npx workspai agent bootstrap [--project <path>] [--for-agent <host>] [--no-live-inputs] [--strict] [--json]
 npx workspai agent framework list [--json]
 npx workspai agent framework plan --project <name> --runtime <python|dotnet|node> [--framework <id>] --name <agent> [--goal <goal-id>] [--workspace <path>] [--json]

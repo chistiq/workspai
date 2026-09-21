@@ -390,6 +390,32 @@ async function readProjectDeclaredName(projectPath: string): Promise<string | nu
   return null;
 }
 
+async function projectDeclaresGatewayCategory(projectPath: string): Promise<boolean> {
+  for (const relativeConfigPath of [
+    path.join('.workspai', 'project.json'),
+    path.join('.workspai', 'context.json'),
+    path.join('.rapidkit', 'project.json'),
+    path.join('.rapidkit', 'context.json'),
+  ]) {
+    const configPath = path.join(projectPath, relativeConfigPath);
+    if (!(await pathExists(configPath))) {
+      continue;
+    }
+    try {
+      const payload = await readJsonFile<Record<string, unknown>>(configPath);
+      for (const key of ['kind', 'category', 'project_type'] as const) {
+        const value = payload[key];
+        if (typeof value === 'string' && value.trim().toLowerCase() === 'gateway') {
+          return true;
+        }
+      }
+    } catch {
+      // Keep lifecycle selection resilient for malformed metadata.
+    }
+  }
+  return false;
+}
+
 async function filterProjectsByScope(
   workspacePath: string,
   projects: string[],
@@ -859,6 +885,7 @@ async function runStartupSmoke(input: {
   runtime: RuntimeFamily;
   framework?: string;
   timeoutMs: number;
+  argv?: LifecycleArgvStep;
 }): Promise<{
   exitCode: number;
   stdout: string;
@@ -886,12 +913,18 @@ async function runStartupSmoke(input: {
           RAPIDKIT_WORKSPACE_RUN_CHILD: '1',
         },
       })
-    : execa(input.finalCommand, [], {
-        cwd: input.projectPath,
-        reject: false,
-        shell: true,
-        timeout: input.timeoutMs,
-      })) as unknown as StartupSubprocess;
+    : input.argv
+      ? execa(input.argv.executable, input.argv.args, {
+          cwd: input.projectPath,
+          reject: false,
+          timeout: input.timeoutMs,
+        })
+      : execa(input.finalCommand, [], {
+          cwd: input.projectPath,
+          reject: false,
+          shell: true,
+          timeout: input.timeoutMs,
+        })) as unknown as StartupSubprocess;
 
   const completion = Promise.resolve(subprocess).then(
     (result) => ({ kind: 'exit' as const, result }),
@@ -1408,6 +1441,7 @@ async function executeStageCommand(
             runtime,
             framework,
             timeoutMs,
+            argv: materializedArgv?.length === 1 ? materializedArgv[0] : undefined,
           })
         : useRapidkitWrapper
           ? stage === 'init' && isVitestRuntime()
@@ -1946,16 +1980,19 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
         }));
       row.runtimeExecutions = runtimeExecutions;
 
+      const useDeclaredLifecycleUnits =
+        lifecyclePlan.polyglot ||
+        Boolean(runtimeFilter) ||
+        plannedUnits.length > 1 ||
+        (plannedUnits.length === 1 && plannedUnits[0]?.unit.root !== '.') ||
+        (await projectDeclaresGatewayCategory(projectPath));
+
       // The project shortcut is safe only for one concrete runtime unit. Two
       // independent manifests can use the same language; collapsing those to
       // one root wrapper silently skips work just as surely as collapsing a
-      // polyglot project would.
-      if (
-        !lifecyclePlan.polyglot &&
-        !runtimeFilter &&
-        runtimeExecutions.length === 1 &&
-        plannedUnits[0]?.unit.root === '.'
-      ) {
+      // polyglot project would. Gateway kits stay on the declared polyglot
+      // unit commands because they are not Rapidkit wrapper-owned adapters.
+      if (!useDeclaredLifecycleUnits && runtimeExecutions.length === 1) {
         const detected = await detectProjectFramework(projectPath);
         row.framework = detected.framework;
         row.runtimeDetected = detected.runtime;
@@ -1998,12 +2035,7 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
         return;
       }
 
-      if (
-        lifecyclePlan.polyglot ||
-        runtimeFilter ||
-        plannedUnits.length > 1 ||
-        (plannedUnits.length === 1 && plannedUnits[0]?.unit.root !== '.')
-      ) {
+      if (useDeclaredLifecycleUnits) {
         if (plannedUnits.length === 0) {
           row.status = 'failed';
           row.reason = runtimeFilter
