@@ -72,6 +72,44 @@ describe('streaming canonical digest', () => {
     }
   });
 
+  it('matches whole-object canonical JSON when assembling interned nested fragments', () => {
+    const shared = Object.freeze({
+      id: 'entity:workspai:file:sha256:ab',
+      identityScheme: 'workspai.graph.entity-identity',
+      kind: 'file',
+      scope: { kind: 'project', projectIds: ['demo'] },
+    });
+    const projected: Record<string, unknown> = {
+      authority: 'observed',
+      confidence: 0.7,
+      derivation: 'extracted',
+      evidence: [{ id: 'evidence:1' }],
+      factId: 'fact:1',
+      factType: 'source.declaration',
+      freshness: { status: 'current' },
+      inputDigest: { algorithm: 'sha256', value: 'a'.repeat(64) },
+      object: shared,
+      predicate: 'defines',
+      provenance: { sourceKind: 'source-file' },
+      scope: shared.scope,
+      subject: shared,
+      truthLifecycle: 'current',
+      unknownZones: [],
+    };
+    const interned = `{${Object.keys(projected)
+      .sort()
+      .map((key) => {
+        const nested = canonicalizeGraphValue(projected[key]);
+        if (!nested.accepted) throw new Error('nested canonicalization failed');
+        return `${JSON.stringify(key)}:${nested.value}`;
+      })
+      .join(',')}}`;
+    const whole = canonicalizeGraphValue(projected);
+    expect(whole.accepted).toBe(true);
+    if (!whole.accepted) return;
+    expect(interned).toBe(whole.value);
+  });
+
   it('is deterministic under object key permutation', async () => {
     const left = await streamedBytes({ z: 1, a: { y: 2, x: 3 } });
     const right = await streamedBytes({ a: { x: 3, y: 2 }, z: 1 });

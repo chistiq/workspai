@@ -231,9 +231,11 @@ describe('buildRepoGraph', () => {
   it('extracts evidence-backed literal routes across supported framework surfaces', async () => {
     const contents = {
       'src/server.ts':
-        "// router.get('/commented-out', handler);\nrouter.get('/node-health', handler);\nrouter.get(dynamicRoute, handler);\n",
-      'api.py': "@app.post('/python-orders')\ndef orders(): pass\n",
-      'main.go': 'package main\nfunc routes() { router.DELETE("/go-items/:id", handler) }\n',
+        "import express from 'express';\nconst router = express.Router();\n// router.get('/commented-out', handler);\nrouter.get('/node-health', handler);\nrouter.get(dynamicRoute, handler);\n",
+      'api.py':
+        "from flask import Flask\napp = Flask(__name__)\n@app.post('/python-orders')\ndef orders(): pass\n",
+      'main.go':
+        'package main\nimport "net/http"\nfunc routes() { http.HandleFunc("/go-items/:id", handler) }\n',
       'Api.java': '@PutMapping("/java-users/{id}")\nvoid update() {}\n',
       'Program.cs': 'app.MapPatch("/dotnet-jobs/{id}", Handler);\n',
     };
@@ -273,8 +275,61 @@ describe('buildRepoGraph', () => {
     );
   });
 
+  it('does not treat ordinary Map.get or headers.get as unsupported routes', async () => {
+    const source =
+      'const headers = new Headers();\nheaders.get("content-type");\nconst values = new Map<string, string>();\nvalues.get("id");\n';
+    const sourceInput: GraphProviderInput = {
+      locator: 'src/util.ts',
+      mediaType: 'text/typescript',
+      byteLength: new TextEncoder().encode(source).byteLength,
+      digest: {
+        algorithm: 'sha256',
+        value: createHash('sha256').update(source).digest('hex'),
+      },
+    };
+    const result = await buildRepoGraph({
+      ...request(
+        createStandardRepositoryProviders(),
+        ports([sourceInput], { 'src/util.ts': source })
+      ),
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+    });
+
+    expect(result.graph?.nodes.some((node) => node.kind === 'endpoint')).toBe(false);
+    expect(result.quality.unknownZones).not.toContainEqual(
+      expect.objectContaining({ code: 'graph.dynamic-route-unsupported' })
+    );
+  });
+
+  it('admits an ASP.NET root route as a non-empty endpoint identity', async () => {
+    const source = 'app.MapGet("/", () => Results.Ok());\napp.MapHealthChecks("/health/live");\n';
+    const sourceInput: GraphProviderInput = {
+      locator: 'Program.cs',
+      mediaType: 'text/plain',
+      byteLength: new TextEncoder().encode(source).byteLength,
+      digest: {
+        algorithm: 'sha256',
+        value: createHash('sha256').update(source).digest('hex'),
+      },
+    };
+    const result = await buildRepoGraph({
+      ...request(
+        createStandardRepositoryProviders(),
+        ports([sourceInput], { 'Program.cs': source })
+      ),
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+    });
+
+    const endpoints = result.graph?.nodes.filter((node) => node.kind === 'endpoint') ?? [];
+    expect(endpoints.length).toBeGreaterThanOrEqual(1);
+    expect(result.quality.unknownZones).not.toContainEqual(
+      expect.objectContaining({ code: 'graph.literal-route-identity-unsupported' })
+    );
+  });
+
   it('marks computed routes unknown instead of inventing an endpoint', async () => {
-    const source = 'router.get(routeFromConfiguration, handler);\n';
+    const source =
+      "import express from 'express';\nconst router = express.Router();\nrouter.get(routeFromConfiguration, handler);\n";
     const sourceInput: GraphProviderInput = {
       locator: 'src/server.ts',
       mediaType: 'text/typescript',
@@ -296,6 +351,173 @@ describe('buildRepoGraph', () => {
     expect(result.graph?.nodes.some((node) => node.kind === 'endpoint')).toBe(false);
     expect(result.quality.unknownZones).toContainEqual(
       expect.objectContaining({ code: 'graph.dynamic-route-unsupported' })
+    );
+  });
+
+  it('binds aliased Express routers and does not omit their dynamic paths', async () => {
+    const source =
+      "import express from 'express';\nconst api = express.Router();\napi.get('/items', handler);\napi.get(routeFromConfig, handler);\n";
+    const sourceInput: GraphProviderInput = {
+      locator: 'src/api.ts',
+      mediaType: 'text/typescript',
+      byteLength: new TextEncoder().encode(source).byteLength,
+      digest: {
+        algorithm: 'sha256',
+        value: createHash('sha256').update(source).digest('hex'),
+      },
+    };
+    const result = await buildRepoGraph({
+      ...request(
+        createStandardRepositoryProviders(),
+        ports([sourceInput], { 'src/api.ts': source })
+      ),
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+    });
+
+    expect(result.graph?.nodes.some((node) => node.kind === 'endpoint')).toBe(true);
+    expect(result.quality.unknownZones).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.dynamic-route-unsupported',
+        scope: 'src/api.ts',
+      })
+    );
+    expect(result.quality.unknownZones).not.toContainEqual(
+      expect.objectContaining({ code: 'graph.route-receiver-unproven' })
+    );
+  });
+
+  it('binds require() and named Router construction as proven receivers', async () => {
+    const source =
+      "import * as express from 'express';\nconst { Router } = require('express');\nconst app = express();\nconst api = Router();\napp.get('/star-health', handler);\napi.post('/named-items', handler);\n";
+    const sourceInput: GraphProviderInput = {
+      locator: 'src/require.ts',
+      mediaType: 'text/javascript',
+      byteLength: new TextEncoder().encode(source).byteLength,
+      digest: {
+        algorithm: 'sha256',
+        value: createHash('sha256').update(source).digest('hex'),
+      },
+    };
+    const result = await buildRepoGraph({
+      ...request(
+        createStandardRepositoryProviders(),
+        ports([sourceInput], { 'src/require.ts': source })
+      ),
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+    });
+    expect(
+      result.graph?.nodes.filter((node) => node.kind === 'endpoint').length
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  it('binds require()() factory invocation as a proven Express or Fastify receiver', async () => {
+    const source =
+      "const app = require('express')();\nconst server = require('fastify')({ logger: true });\napp.get('/health', handler);\nserver.get('/ready', handler);\n";
+    const sourceInput: GraphProviderInput = {
+      locator: 'src/cjs-app.ts',
+      mediaType: 'text/javascript',
+      byteLength: new TextEncoder().encode(source).byteLength,
+      digest: {
+        algorithm: 'sha256',
+        value: createHash('sha256').update(source).digest('hex'),
+      },
+    };
+    const result = await buildRepoGraph({
+      ...request(
+        createStandardRepositoryProviders(),
+        ports([sourceInput], { 'src/cjs-app.ts': source })
+      ),
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+    });
+    expect(
+      result.graph?.nodes.filter((node) => node.kind === 'endpoint').length
+    ).toBeGreaterThanOrEqual(2);
+    expect(result.quality.unknownZones).not.toContainEqual(
+      expect.objectContaining({ code: 'graph.route-receiver-unproven' })
+    );
+  });
+
+  it('binds chained factory and constructor HTTP calls from import evidence', async () => {
+    const contents = {
+      'src/express-chain.ts':
+        "import express from 'express';\nexpress().get('/express-chain', handler);\nexpress.Router().post('/express-router', handler);\nconst app = express();\napp.get('/fluent-get', handler).post('/fluent-post', handler);\n",
+      'src/hono-chain.ts':
+        "import { Hono } from 'hono';\nnew Hono().get('/hono-chain', handler);\n",
+      'src/cjs-chain.ts': "require('express')().get('/cjs-chain', handler);\n",
+    };
+    const inputs = Object.entries(contents).map(([locator, content]) => ({
+      locator,
+      mediaType: 'text/plain',
+      byteLength: new TextEncoder().encode(content).byteLength,
+      digest: {
+        algorithm: 'sha256' as const,
+        value: createHash('sha256').update(content).digest('hex'),
+      },
+    }));
+    const result = await buildRepoGraph({
+      ...request(createStandardRepositoryProviders(), ports(inputs, contents)),
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+    });
+    expect(
+      result.graph?.nodes.filter((node) => node.kind === 'endpoint').length
+    ).toBeGreaterThanOrEqual(6);
+    expect(result.quality.unknownZones).not.toContainEqual(
+      expect.objectContaining({ code: 'graph.route-receiver-unproven' })
+    );
+  });
+
+  it('does not invent Python or Go routes from unproven receiver names', async () => {
+    const contents = {
+      'api.py': "@app.get('/python-unproven')\ndef orders(): pass\n",
+      'main.go': 'package main\nfunc routes() { router.GET("/go-unproven", handler) }\n',
+    };
+    const inputs = Object.entries(contents).map(([locator, content]) => ({
+      locator,
+      mediaType: 'text/plain',
+      byteLength: new TextEncoder().encode(content).byteLength,
+      digest: {
+        algorithm: 'sha256' as const,
+        value: createHash('sha256').update(content).digest('hex'),
+      },
+    }));
+    const result = await buildRepoGraph({
+      ...request(createStandardRepositoryProviders(), ports(inputs, contents)),
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+    });
+    expect(result.graph?.nodes.some((node) => node.kind === 'endpoint')).toBe(false);
+    expect(result.quality.unknownZones).toContainEqual(
+      expect.objectContaining({ code: 'graph.route-receiver-unproven', scope: 'api.py' })
+    );
+    expect(result.quality.unknownZones).toContainEqual(
+      expect.objectContaining({ code: 'graph.route-receiver-unproven', scope: 'main.go' })
+    );
+  });
+
+  it('does not mark uncertain route-shaped calls complete and does not invent endpoints', async () => {
+    const source = 'const api = createSurface();\napi.get(routeFromConfig, handler);\n';
+    const sourceInput: GraphProviderInput = {
+      locator: 'src/surface.ts',
+      mediaType: 'text/typescript',
+      byteLength: new TextEncoder().encode(source).byteLength,
+      digest: {
+        algorithm: 'sha256',
+        value: createHash('sha256').update(source).digest('hex'),
+      },
+    };
+    const result = await buildRepoGraph({
+      ...request(
+        createStandardRepositoryProviders(),
+        ports([sourceInput], { 'src/surface.ts': source })
+      ),
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+    });
+
+    expect(result.graph?.nodes.some((node) => node.kind === 'endpoint')).toBe(false);
+    expect(result.quality.unknownZones).toContainEqual(
+      expect.objectContaining({
+        code: 'graph.route-receiver-unproven',
+        scope: 'src/surface.ts',
+      })
     );
   });
 
@@ -353,6 +575,12 @@ describe('buildRepoGraph', () => {
       })
     );
     expect(result.metrics.providerTimings?.length).toBeGreaterThan(0);
+    expect(result.metrics.phaseTimings?.some((timing) => timing.phase === 'inventory')).toBe(true);
+    expect(result.metrics.phaseTimings?.some((timing) => timing.phase === 'composition')).toBe(
+      true
+    );
+    expect(result.metrics.cacheHits).toBeGreaterThanOrEqual(0);
+    expect(result.metrics.cacheMisses).toBeGreaterThanOrEqual(0);
     expect(result.graph.nodes).toContainEqual(expect.objectContaining({ kind: 'branch' }));
     expect(result.graph.edges).toContainEqual(
       expect.objectContaining({ relation: 'contains', state: 'accepted' })
@@ -503,7 +731,7 @@ describe('buildRepoGraph', () => {
     });
     if (!result.graph) throw new Error(JSON.stringify(result.diagnostics, null, 2));
 
-    expect(result).toMatchObject({ status: 'complete', metrics: { providerFacts: 9 } });
+    expect(result).toMatchObject({ status: 'complete', metrics: { providerFacts: 10 } });
     const importEdges = result.graph.edges.filter((edge) => edge.relation === 'imports');
     expect(importEdges).toHaveLength(2);
     expect(result.graph.nodes).toContainEqual(expect.objectContaining({ kind: 'module' }));

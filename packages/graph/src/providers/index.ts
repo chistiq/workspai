@@ -23,6 +23,41 @@ export {
   REPOSITORY_ROUTES_PROVIDER_ID,
   createRepositoryRoutesProvider,
 } from './repository-routes.js';
+export {
+  GRAPH_EXTRACTION_SUPPORT,
+  extractionSupportFor,
+  type GraphExtractionSupport,
+  type GraphExtractionSupportClaim,
+  type GraphExtractionTier,
+} from './extraction-pipeline.js';
+export {
+  ECMASCRIPT_SYNTAX_VERSION,
+  scanEcmascriptCallChains,
+  tokenizeEcmascript,
+} from './ecmascript-syntax.js';
+export {
+  GRAPH_CONTENT_ADDRESSED_FACTS_LIMIT,
+  GRAPH_CONTENT_ADDRESSED_FACTS_LIMIT_BYTES,
+  GRAPH_CONTENT_ADDRESSED_FACTS_MAX_ENTRY_BYTES,
+  GRAPH_CONTENT_ADDRESSED_FACTS_SCHEMA,
+  consumeContentAddressedFactCacheStats,
+  contentAddressedCompute,
+  contentAddressedFactCacheStats,
+  contentAddressedFactKey,
+  contentAddressedGet,
+  createContentAddressedFactSession,
+  disposeContentAddressedFactSession,
+  runWithContentAddressedFactSession,
+  runWithOwnedContentAddressedFactSession,
+} from './content-addressed-facts.js';
+export {
+  GRAPH_GO_HTTP_RUNTIME_CAPABILITIES,
+  GRAPH_JS_HTTP_RUNTIME_CAPABILITIES,
+  GRAPH_JS_HTTP_SPECIFIERS,
+  GRAPH_PYTHON_HTTP_RUNTIME_CAPABILITIES,
+  goHttpMethodsFor,
+  pythonHttpConstructorsFor,
+} from './http-runtime-capabilities.js';
 export { COMPOSE_TOPOLOGY_PROVIDER_ID, createComposeTopologyProvider } from './compose-topology.js';
 export { CODEOWNERS_PROVIDER_ID, createCodeownersProvider } from './codeowners.js';
 export {
@@ -37,7 +72,11 @@ export { BUILD_TOPOLOGY_PROVIDER_ID, createBuildTopologyProvider } from './build
 export {
   SOURCE_DECLARATIONS_PROVIDER_ID,
   NATIVE_DECLARATION_MIN_FILES,
+  DECLARATION_KEYWORD_LOOKBEHIND,
+  CONSTRUCTOR_LOOKBEHIND,
   createSourceDeclarationsProvider,
+  isConstructorCall,
+  isKeywordDeclarationName,
 } from './source-declarations.js';
 export {
   extractPublishedMatrixDeclarations,

@@ -5,6 +5,7 @@ export {
   admitDeclaredGraphLocator,
   classifyGraphRelativeLocator,
   decodeGraphLocatorState,
+  graphLocatorSurvivesIdentityRendering,
   opaqueGraphDeclaredLocator,
   shapeGraphRelativeLocator,
   type GraphOpaqueDeclaredLocatorPrefix,
@@ -73,4 +74,20 @@ export {
   type GraphContentStateMerkleLeaf,
 } from './content-state-merkle.js';
 export { shardMembershipLocator } from './shard-membership.js';
+export {
+  admittedFactCanonicalOf,
+  isGraphFactAdmitted,
+  markAdmittedGraphSnapshot,
+  markGraphFactAdmitted,
+  rememberAdmittedFactCanonical,
+} from './admitted-graph-facts.js';
 export { graphInputMediaType } from './input-media-type.js';
+export {
+  classifyModuleSpecifier,
+  directoryOfLocator,
+  extensionOfLocator,
+  joinPortableLocatorPath,
+  resolveEcmaScriptModuleLocator,
+  resolveRelativePortableLocator,
+  type GraphModuleSpecifierClass,
+} from './module-resolution.js';

@@ -1,4 +1,5 @@
 import type { GraphStructuralLanguage } from '../contracts/structural-extractor-profile.js';
+import { contentAddressedCompute, contentAddressedFactKey } from './content-addressed-facts.js';
 
 export const MATRIX_SOURCE_MASK_VERSION = 'workspai.graph.matrix-source-mask.v1';
 
@@ -17,6 +18,29 @@ export function maskMatrixSourceLiterals(
   if (language === 'go') return maskQuoted(source, 'go');
   if (language === 'node' || language === null) return maskQuoted(source, 'js');
   return maskQuoted(source, 'clike');
+}
+
+/**
+ * Content-addressed code view. Strings are immutable, so cache hits return the
+ * stored snapshot without copying. The mask algorithm version is part of the key.
+ */
+export function maskMatrixSourceLiteralsCached(
+  source: string,
+  language: GraphStructuralLanguage | null,
+  contentDigest: string
+): string {
+  if (!/^[a-f0-9]{64}$/u.test(contentDigest)) {
+    return maskMatrixSourceLiterals(source, language);
+  }
+  return contentAddressedCompute(
+    contentAddressedFactKey({
+      extractorId: 'workspai.graph.matrix-source-mask',
+      extractorVersion: MATRIX_SOURCE_MASK_VERSION,
+      contentDigest,
+      configuration: language ?? 'unknown',
+    }),
+    () => maskMatrixSourceLiterals(source, language)
+  );
 }
 
 export function isMatrixCodeChannelIndex(

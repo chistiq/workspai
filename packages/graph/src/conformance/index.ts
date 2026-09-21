@@ -82,6 +82,7 @@ export {
   admitDeclaredGraphLocator,
   classifyGraphRelativeLocator,
   decodeGraphLocatorState,
+  graphLocatorSurvivesIdentityRendering,
   opaqueGraphDeclaredLocator,
   type GraphOpaqueDeclaredLocatorPrefix,
   type GraphRelativeLocatorClass,

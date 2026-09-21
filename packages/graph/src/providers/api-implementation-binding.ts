@@ -15,7 +15,7 @@ import {
   extractMatrixDeclarations,
   matrixLanguageFor,
 } from './matrix-source-language.js';
-import { maskMatrixSourceLiterals, matchAllInMatrixCodeView } from './matrix-source-mask.js';
+import { maskMatrixSourceLiteralsCached, matchAllInMatrixCodeView } from './matrix-source-mask.js';
 import { createObservedEdgeFact, extensionOf } from './observed-edge-fact.js';
 import { openApiEndpointIdentityLocator, openApiOperationIds } from './openapi-contracts.js';
 import { parseStructuredDocuments } from './structured-documents.js';
@@ -121,8 +121,16 @@ interface HttpRegistrationContext {
   readonly factories: ReadonlySet<string>;
 }
 
-function createHttpRegistrationContext(source: string, locator: string): HttpRegistrationContext {
-  const codeView = maskMatrixSourceLiterals(source, matrixLanguageFor(locator));
+function createHttpRegistrationContext(
+  source: string,
+  locator: string,
+  contentDigest: string
+): HttpRegistrationContext {
+  const codeView = maskMatrixSourceLiteralsCached(
+    source,
+    matrixLanguageFor(locator),
+    contentDigest
+  );
   const collections = collectionReceiverNames(source, codeView);
   const frameworkImports = httpFrameworkImportNames(source, codeView);
   return {
@@ -316,7 +324,11 @@ export function createApiImplementationBindingProvider(): GraphProviderRuntime {
             diagnostics: [],
           });
           if (isGeneratedSource(input.locator, source)) continue;
-          const registration = createHttpRegistrationContext(source, input.locator);
+          const registration = createHttpRegistrationContext(
+            source,
+            input.locator,
+            input.digest.value
+          );
           const declarations = extractMatrixDeclarations(
             source,
             matrixLanguageFor(input.locator),

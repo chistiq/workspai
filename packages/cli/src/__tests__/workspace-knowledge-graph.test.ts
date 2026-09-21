@@ -843,10 +843,14 @@ describe('workspace knowledge graph', () => {
     ]);
     for (const endpoint of graph.entities.filter((entity) => entity.kind === 'endpoint')) {
       expect(endpoint.identity.key).not.toContain('\0');
+      expect(endpoint.identity.key.length).toBeGreaterThan(0);
+      expect(endpoint.label.trim().length).toBeGreaterThan(0);
       const proof = graph.proofs.find((candidate) => endpoint.proofIds.includes(candidate.id));
       expect(proof).toMatchObject({ provider: 'source-structure', trust: 'observed' });
       expect(proof?.line).toBeGreaterThan(0);
     }
+    const rootRoute = graph.entities.find((entity) => entity.label === 'GET /');
+    expect(rootRoute?.identity.key).toMatch(/^source-endpoint:dotnet-api:.+:GET:\/$/u);
 
     const compound = searchKnowledgeGraph(graph, {
       query: 'Where is the Axum router and health handler defined?',

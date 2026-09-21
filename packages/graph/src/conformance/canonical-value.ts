@@ -1,12 +1,13 @@
 import type { GraphValidationResult } from '../contracts/index.js';
 
-type CanonicalJson =
-  null | boolean | number | string | CanonicalJson[] | { [key: string]: CanonicalJson };
-
 const FORBIDDEN_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 const MAX_CANONICAL_DEPTH = 256;
 const MAX_CANONICAL_VALUES = 1_000_000;
 const utf8 = new TextEncoder();
+
+function canonicalPath(parts: readonly string[]): string {
+  return parts.length === 0 ? '' : `/${parts.join('/')}`;
+}
 
 function normalize(
   value: unknown,
@@ -15,7 +16,7 @@ function normalize(
   state: { count: number },
   depth: number,
   maxValues: number
-): CanonicalJson {
+): unknown {
   state.count += 1;
   if (state.count > maxValues) throw new Error(`${path}: value budget exceeded`);
   if (depth > MAX_CANONICAL_DEPTH) throw new Error(`${path}: nesting budget exceeded`);
@@ -36,7 +37,7 @@ function normalize(
   if (typeof value === 'object' && value !== null) {
     if (active.has(value)) throw new Error(`${path}: cyclic value`);
     active.add(value);
-    const result: Record<string, CanonicalJson> = {};
+    const result: Record<string, unknown> = {};
     for (const key of Object.keys(value).sort()) {
       if (FORBIDDEN_KEYS.has(key)) throw new Error(`${path}/${key}: forbidden key`);
       const item = (value as Record<string, unknown>)[key];
@@ -146,7 +147,7 @@ export async function streamCanonicalGraphValue(
       pendingChars += text.length;
       if (pendingChars >= STREAM_FLUSH_CHARS) flush();
     };
-    streamNormalized(input, '', new Set(), state, 0, maxValues, emit, options);
+    streamNormalized(input, [], new Set(), state, 0, maxValues, emit, options);
     flush();
     if (options.yield) await options.yield();
     return { accepted: true, value: { bytes: state.bytes }, issues: [] };
@@ -184,7 +185,7 @@ export function cloneCanonicalGraphValue<T>(
 
 function streamNormalized(
   value: unknown,
-  path: string,
+  path: string[],
   active: Set<object>,
   state: { count: number; bytes: number; visits: number; path: string },
   depth: number,
@@ -192,12 +193,16 @@ function streamNormalized(
   emit: (text: string) => void,
   options: StreamCanonicalGraphValueOptions
 ): void {
-  options.throwIfAborted?.();
   state.count += 1;
   state.visits += 1;
-  state.path = path;
-  if (state.count > maxValues) throw new Error(`${path}: value budget exceeded`);
-  if (depth > MAX_CANONICAL_DEPTH) throw new Error(`${path}: nesting budget exceeded`);
+  if (state.visits === 1 || (state.visits & 4095) === 0) {
+    options.throwIfAborted?.();
+    state.path = canonicalPath(path);
+  }
+  if (state.count > maxValues) throw new Error(`${canonicalPath(path)}: value budget exceeded`);
+  if (depth > MAX_CANONICAL_DEPTH) {
+    throw new Error(`${canonicalPath(path)}: nesting budget exceeded`);
+  }
 
   if (value === null) {
     emit('null');
@@ -212,40 +217,33 @@ function streamNormalized(
     return;
   }
   if (typeof value === 'number') {
-    if (!Number.isFinite(value)) throw new Error(`${path}: non-finite number`);
+    if (!Number.isFinite(value)) throw new Error(`${canonicalPath(path)}: non-finite number`);
     emit(JSON.stringify(Object.is(value, -0) ? 0 : value));
     return;
   }
   if (Array.isArray(value)) {
-    if (active.has(value)) throw new Error(`${path}: cyclic value`);
+    if (active.has(value)) throw new Error(`${canonicalPath(path)}: cyclic value`);
     active.add(value);
     emit('[');
     for (let index = 0; index < value.length; index += 1) {
       if (index > 0) emit(',');
-      streamNormalized(
-        value[index],
-        `${path}/${index}`,
-        active,
-        state,
-        depth + 1,
-        maxValues,
-        emit,
-        options
-      );
+      path.push(String(index));
+      streamNormalized(value[index], path, active, state, depth + 1, maxValues, emit, options);
+      path.pop();
     }
     emit(']');
     active.delete(value);
     return;
   }
   if (typeof value === 'object' && value !== null) {
-    if (active.has(value)) throw new Error(`${path}: cyclic value`);
+    if (active.has(value)) throw new Error(`${canonicalPath(path)}: cyclic value`);
     active.add(value);
     const keys = Object.keys(value).sort();
     emit('{');
     for (let index = 0; index < keys.length; index += 1) {
       const key = keys[index];
       if (key === undefined) continue;
-      if (FORBIDDEN_KEYS.has(key)) throw new Error(`${path}/${key}: forbidden key`);
+      if (FORBIDDEN_KEYS.has(key)) throw new Error(`${canonicalPath(path)}/${key}: forbidden key`);
       const item = (value as Record<string, unknown>)[key];
       if (
         item === undefined ||
@@ -253,18 +251,20 @@ function streamNormalized(
         typeof item === 'symbol' ||
         typeof item === 'bigint'
       ) {
-        throw new Error(`${path}/${key}: non-JSON value`);
+        throw new Error(`${canonicalPath(path)}/${key}: non-JSON value`);
       }
       if (index > 0) emit(',');
       emit(JSON.stringify(key));
       emit(':');
-      streamNormalized(item, `${path}/${key}`, active, state, depth + 1, maxValues, emit, options);
+      path.push(key);
+      streamNormalized(item, path, active, state, depth + 1, maxValues, emit, options);
+      path.pop();
     }
     emit('}');
     active.delete(value);
     return;
   }
-  throw new Error(`${path}: non-JSON value`);
+  throw new Error(`${canonicalPath(path)}: non-JSON value`);
 }
 
 function addMeasuredBytes(

@@ -1,14 +1,17 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import type { WisDigestReference, WisEvidenceReference } from '@workspai/shared/contracts';
 
 import {
   GRAPH_CANONICAL_GRAPH_CONTRACT,
   GRAPH_QUALITY_CONTRACT,
+  type GraphDerivationLineage,
   type GraphDiagnostic,
   type GraphEdge,
   type GraphEntityAlias,
   type GraphEntityReference,
   type GraphFactFreshness,
   type GraphGeneration,
+  type GraphOntologyProfile,
   type GraphOntologyRelationDefinition,
   type GraphProofState,
   type GraphQualityReport,
@@ -28,17 +31,38 @@ import {
   validateGraphQualityReport,
 } from '../conformance/graph.js';
 import { assessGraphEvidenceIndependence } from '../conformance/lineage.js';
+import {
+  admittedFactCanonicalOf,
+  isGraphFactAdmitted,
+  markAdmittedGraphSnapshot,
+  markGraphFactAdmitted,
+  rememberAdmittedFactCanonical,
+} from '../domain/admitted-graph-facts.js';
 import { structurizeUnknownZone } from '../domain/unknown-cause.js';
 import type { GraphExecutionPorts, GraphWorkerTaskResult } from '../ports/index.js';
+import { recordGraphDataMovement } from './data-movement.js';
 import { digestCanonicalGraphInput } from './digest-canonical-graph-input.js';
+import {
+  compositionSourcesAreIdenticalFacts,
+  internedCompositionNode,
+  lastSessionFactDigestAnchor,
+  rememberInternedCompositionNode,
+  rememberSessionFactDigestAnchor,
+} from './locator-fact-shards.js';
 import type {
   GraphCompositionDecision,
   GraphCompositionIdentityFreeze,
   GraphCompositionOutput,
   GraphCompositionRequest,
   GraphCompositionResult,
+  GraphCompositionSemanticReceipt,
   GraphCompositionSource,
   GraphReferenceCompositionTaskOutput,
+} from './composition-types.js';
+import {
+  GRAPH_COMPOSITION_ORDERING_RULES,
+  GRAPH_COMPOSITION_RECEIPT_SCHEMA,
+  compositionSemanticReceiptsEqual,
 } from './composition-types.js';
 import {
   mergeShardedCompositionOutputs,
@@ -78,7 +102,130 @@ const utf8 = new TextEncoder();
 const COMPACT_GRAPH_VALUE_LIMIT = 64;
 const CANONICAL_DIGEST = 'workspai.graph.canonical-json.v1' as const;
 
+interface ComposeCanonicalIntern {
+  readonly admitted: Set<object>;
+  readonly objects: Map<object, string>;
+  readonly facts: Map<GraphWorkspaceFact, string>;
+  readonly proofs: Map<GraphWorkspaceFact, string>;
+}
+
+const composeCanonicalIntern = new AsyncLocalStorage<ComposeCanonicalIntern>();
+const admittedCompositionSnapshots = new WeakSet<GraphCompositionSource>();
+const snapshotFactCanonicalKeys = new WeakMap<GraphCompositionSource, readonly string[]>();
+
+function createComposeCanonicalIntern(): ComposeCanonicalIntern {
+  return {
+    admitted: new Set(),
+    objects: new Map(),
+    facts: new Map(),
+    proofs: new Map(),
+  };
+}
+
+function runWithComposeCanonicalIntern<T>(fn: () => T): T {
+  return composeCanonicalIntern.run(createComposeCanonicalIntern(), fn);
+}
+
+function seedAdmittedFacts(
+  sources: readonly GraphCompositionSource[],
+  intern = composeCanonicalIntern.getStore()
+): void {
+  if (!intern) return;
+  for (const source of sources) {
+    intern.admitted.add(source as object);
+    intern.admitted.add(source.batch as object);
+    intern.admitted.add(source.manifest as object);
+    for (const fact of source.batch.facts) {
+      intern.admitted.add(fact as object);
+      intern.admitted.add(fact.subject as object);
+      intern.admitted.add(fact.scope as object);
+      intern.admitted.add(fact.evidence as object);
+      intern.admitted.add(fact.provenance as object);
+      intern.admitted.add(fact.freshness as object);
+      intern.admitted.add(fact.truthLifecycle as object);
+      intern.admitted.add(fact.inputDigest as object);
+      intern.admitted.add(fact.unknownZones as object);
+      if (fact.extensions) intern.admitted.add(fact.extensions as object);
+      if (typeof fact.object === 'object' && fact.object !== null) {
+        intern.admitted.add(fact.object as object);
+      }
+    }
+  }
+}
+
+function markAdmittedCompositionSource(source: GraphCompositionSource): void {
+  admittedCompositionSnapshots.add(source);
+  markAdmittedGraphSnapshot(source);
+}
+
+export function snapshotAdmittedGraphCompositionSource(
+  source: GraphCompositionSource
+): GraphCompositionSource {
+  recordGraphDataMovement('cloned');
+  const detached = structuredClone({
+    manifest: source.manifest,
+    batch: { ...source.batch, facts: [] as GraphWorkspaceFact[] },
+  });
+  detached.batch.facts = source.batch.facts.map((fact) => {
+    if (isGraphFactAdmitted(fact)) return fact;
+    recordGraphDataMovement('cloned');
+    const cloned = deepFreeze(structuredClone(fact));
+    recordGraphDataMovement('frozen');
+    markGraphFactAdmitted(cloned);
+    return cloned;
+  });
+  const snapshot = deepFreeze(detached);
+  recordGraphDataMovement('frozen');
+  markAdmittedCompositionSource(snapshot);
+  return snapshot;
+}
+
+export function adoptFrozenGraphCompositionSource(
+  source: GraphCompositionSource
+): GraphCompositionSource {
+  if (admittedCompositionSnapshots.has(source)) return source;
+  const frozen = deepFreeze(source);
+  recordGraphDataMovement('frozen');
+  markAdmittedCompositionSource(frozen);
+  return frozen;
+}
+
+export function retainOrIsolateGraphCompositionSource(
+  source: GraphCompositionSource
+): GraphCompositionSource {
+  if (admittedCompositionSnapshots.has(source)) return source;
+  if (
+    source.batch.facts.length > 0 &&
+    source.batch.facts.every((fact) => isGraphFactAdmitted(fact))
+  ) {
+    return adoptFrozenGraphCompositionSource(source);
+  }
+  return snapshotAdmittedGraphCompositionSource(source);
+}
+
 function canonical(input: unknown): string {
+  if (typeof input === 'string') return JSON.stringify(input);
+  if (typeof input === 'number' && Number.isFinite(input)) {
+    return JSON.stringify(Object.is(input, -0) ? 0 : input);
+  }
+  if (typeof input === 'boolean' || input === null) return JSON.stringify(input);
+  if (input !== null && typeof input === 'object') {
+    const owned = admittedFactCanonicalOf(input);
+    if (owned !== undefined) return owned;
+    const intern = composeCanonicalIntern.getStore();
+    if (intern?.admitted.has(input) || isGraphFactAdmitted(input)) {
+      const cached = intern?.objects.get(input);
+      if (cached !== undefined) return cached;
+      recordGraphDataMovement('canonicalized');
+      const result = canonicalizeGraphValue(input);
+      if (!result.accepted)
+        throw new Error(result.issues[0]?.message ?? 'Canonicalization failed.');
+      intern?.objects.set(input, result.value);
+      rememberAdmittedFactCanonical(input, result.value);
+      return result.value;
+    }
+  }
+  recordGraphDataMovement('canonicalized');
   const result = canonicalizeGraphValue(input);
   if (!result.accepted) throw new Error(result.issues[0]?.message ?? 'Canonicalization failed.');
   return result.value;
@@ -124,10 +271,50 @@ function digestNow(
   const sync = ports.digest.digestSync;
   if (!sync || !isCompactGraphValue(input)) return undefined;
   const bytes = utf8.encode(canonical(input));
+  recordGraphDataMovement('serialized');
   if (maxBytes !== undefined && bytes.byteLength > maxBytes) {
     throw new Error('/: byte budget exceeded');
   }
+  recordGraphDataMovement('hashed');
   return digestReference(sync(bytes));
+}
+
+function proofSliceCanonical(fact: GraphWorkspaceFact): string {
+  const intern = composeCanonicalIntern.getStore();
+  const cached = intern?.proofs.get(fact);
+  if (cached !== undefined) return cached;
+  const projected: Record<string, unknown> = {
+    evidence: fact.evidence,
+    factId: fact.factId,
+    inputDigest: fact.inputDigest,
+  };
+  const value = `{${Object.keys(projected)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonical(projected[key])}`)
+    .join(',')}}`;
+  if (intern && intern.admitted.has(fact)) intern.proofs.set(fact, value);
+  return value;
+}
+
+function digestProofInput(
+  facts: readonly FactRecord[],
+  ports: GraphExecutionPorts
+): WisDigestReference | undefined {
+  const sync = ports.digest.digestSync;
+  if (!sync) return undefined;
+  return digestReference(
+    sync(utf8.encode(`[${facts.map(({ fact }) => proofSliceCanonical(fact)).join(',')}]`))
+  );
+}
+
+function lineageIndex(
+  lineages: readonly GraphDerivationLineage[] | undefined
+): ReadonlyMap<string, GraphDerivationLineage> {
+  const byId = new Map<string, GraphDerivationLineage>();
+  for (const lineage of lineages ?? []) {
+    if (!byId.has(lineage.factId)) byId.set(lineage.factId, lineage);
+  }
+  return byId;
 }
 
 async function digest(
@@ -189,8 +376,10 @@ async function digestSortedValues<T>(
       streamer.update(utf8.encode(item.key));
     }
     streamer.update(utf8.encode(']'));
+    recordGraphDataMovement('hashed');
     return digestReference(await streamer.digest());
   }
+  recordGraphDataMovement('hashed');
   return (
     digestRankedMaterial(ranked, ports) ??
     (await digest(
@@ -198,6 +387,106 @@ async function digestSortedValues<T>(
       ports
     ))
   );
+}
+
+async function streamSortedCanonicalKeys(
+  ranked: readonly { readonly key: string }[],
+  ports: GraphExecutionPorts
+): Promise<WisDigestReference> {
+  const streamer = ports.digest.createStreamingDigest?.();
+  if (streamer) {
+    streamer.update(utf8.encode('['));
+    for (const [index, item] of ranked.entries()) {
+      if (index > 0) streamer.update(utf8.encode(','));
+      streamer.update(utf8.encode(item.key));
+    }
+    streamer.update(utf8.encode(']'));
+    recordGraphDataMovement('hashed');
+    return digestReference(await streamer.digest());
+  }
+  recordGraphDataMovement('hashed');
+  return (
+    digestRankedMaterial(ranked, ports) ??
+    (await digest(
+      ranked.map((item) => JSON.parse(item.key)),
+      ports
+    ))
+  );
+}
+
+function mergeSortedFactDigestEntries(
+  left: readonly {
+    readonly fact: GraphWorkspaceFact;
+    readonly key: string;
+    readonly index: number;
+  }[],
+  right: readonly {
+    readonly fact: GraphWorkspaceFact;
+    readonly key: string;
+    readonly index: number;
+  }[]
+): { fact: GraphWorkspaceFact; key: string; index: number }[] {
+  const merged: { fact: GraphWorkspaceFact; key: string; index: number }[] = [];
+  let leftIndex = 0;
+  let rightIndex = 0;
+  while (leftIndex < left.length && rightIndex < right.length) {
+    const leftEntry = left[leftIndex]!;
+    const rightEntry = right[rightIndex]!;
+    const order = leftEntry.key.localeCompare(rightEntry.key) || leftEntry.index - rightEntry.index;
+    if (order <= 0) {
+      merged.push(leftEntry);
+      leftIndex += 1;
+    } else {
+      merged.push(rightEntry);
+      rightIndex += 1;
+    }
+  }
+  while (leftIndex < left.length) merged.push(left[leftIndex++]!);
+  while (rightIndex < right.length) merged.push(right[rightIndex++]!);
+  return merged;
+}
+
+async function digestFactSet(
+  sources: readonly GraphCompositionSource[],
+  ports: GraphExecutionPorts
+): Promise<WisDigestReference> {
+  const facts = sources.flatMap((source) => source.batch.facts);
+  const previous = lastSessionFactDigestAnchor();
+  if (
+    previous &&
+    previous.facts.length === facts.length &&
+    facts.every((fact, index) => fact === previous.facts[index])
+  ) {
+    return previous.digest;
+  }
+  const keys = factCanonicalKeys(sources);
+  const uniqueKeys = new Set(keys).size === keys.length;
+  const indexByFact = new Map(facts.map((fact, index) => [fact, index]));
+  let sortedEntries: { fact: GraphWorkspaceFact; key: string; index: number }[];
+  if (previous && uniqueKeys) {
+    const kept = previous.sortedEntries.flatMap((entry) => {
+      const index = indexByFact.get(entry.fact);
+      return index === undefined ? [] : [{ fact: entry.fact, key: entry.key, index }];
+    });
+    const keptFacts = new Set(kept.map((entry) => entry.fact));
+    const added = facts.flatMap((fact, index) =>
+      keptFacts.has(fact) ? [] : [{ fact, key: keys[index] ?? semanticFactCanonical(fact), index }]
+    );
+    added.sort((left, right) => left.key.localeCompare(right.key) || left.index - right.index);
+    sortedEntries = mergeSortedFactDigestEntries(kept, added);
+  } else {
+    sortedEntries = facts
+      .map((fact, index) => ({ fact, key: keys[index] ?? semanticFactCanonical(fact), index }))
+      .sort((left, right) => left.key.localeCompare(right.key) || left.index - right.index);
+  }
+  const digest = await streamSortedCanonicalKeys(sortedEntries, ports);
+  recordGraphDataMovement('sorted');
+  rememberSessionFactDigestAnchor({
+    facts: Object.freeze([...facts]),
+    sortedEntries: Object.freeze(sortedEntries),
+    digest,
+  });
+  return digest;
 }
 
 function deepFreeze<T>(input: T): Readonly<T> {
@@ -214,6 +503,256 @@ function deepFreeze<T>(input: T): Readonly<T> {
     Object.freeze(value);
   }
   return input;
+}
+
+function rememberSnapshotFactCanonicals(
+  sources: readonly GraphCompositionSource[],
+  keys: readonly string[]
+): void {
+  let offset = 0;
+  for (const source of sources) {
+    if (!admittedCompositionSnapshots.has(source)) {
+      offset += source.batch.facts.length;
+      continue;
+    }
+    const next = offset + source.batch.facts.length;
+    snapshotFactCanonicalKeys.set(source, keys.slice(offset, next));
+    offset = next;
+  }
+}
+
+function factCanonicalKeys(sources: readonly GraphCompositionSource[]): string[] {
+  const cached: string[] = [];
+  let complete = true;
+  for (const source of sources) {
+    const stored = snapshotFactCanonicalKeys.get(source);
+    if (!stored || stored.length !== source.batch.facts.length) {
+      complete = false;
+      break;
+    }
+    cached.push(...stored);
+  }
+  if (complete) return cached;
+  const keys = sources.flatMap((source) => source.batch.facts.map(semanticFactCanonical));
+  rememberSnapshotFactCanonicals(sources, keys);
+  return keys;
+}
+
+function admitCompositionSources(
+  sources: readonly GraphCompositionSource[]
+): GraphValidationResult<readonly GraphCompositionSource[]> {
+  const admittedSources: GraphCompositionSource[] = [];
+  const admissionIssues: GraphValidationIssue[] = [];
+  for (const [index, source] of sources.entries()) {
+    if (admittedCompositionSnapshots.has(source)) {
+      admittedSources.push(source);
+      continue;
+    }
+    if (
+      source.batch.facts.length > 0 &&
+      source.batch.facts.every((fact) => isGraphFactAdmitted(fact))
+    ) {
+      admittedSources.push(adoptFrozenGraphCompositionSource(source));
+      continue;
+    }
+    recordGraphDataMovement('schemaWalked', source.batch.facts.length);
+    const admission = admitGraphProviderOutput(source.manifest, source.batch);
+    if (!admission.accepted) {
+      admissionIssues.push(
+        ...admission.issues.map((item) => ({ ...item, path: `/sources/${index}${item.path}` }))
+      );
+      continue;
+    }
+    try {
+      admittedSources.push(
+        snapshotAdmittedGraphCompositionSource({
+          manifest: admission.manifest,
+          batch: admission.batch,
+        })
+      );
+    } catch {
+      admissionIssues.push(
+        issue(
+          'GRAPH_COMPOSITION_SOURCE_NOT_SNAPSHOTTABLE',
+          `/sources/${index}`,
+          'Admitted provider output could not be detached into an immutable snapshot.'
+        )
+      );
+    }
+  }
+  return admissionIssues.length > 0
+    ? { accepted: false, issues: admissionIssues }
+    : { accepted: true, value: Object.freeze(admittedSources), issues: [] };
+}
+
+async function computeSemanticDigestBundle(
+  sources: readonly GraphCompositionSource[],
+  ontology: GraphOntologyProfile,
+  policy: GraphCompositionRequest['policy'],
+  ports: GraphExecutionPorts,
+  factSetOverride?: WisDigestReference
+) {
+  return {
+    ontology: await digest(ontology, ports),
+    proofPolicies: await digest(
+      ontology.relations.map((relation) => relation.proofPolicy),
+      ports
+    ),
+    inputs: await digestSortedValues(
+      sources.flatMap((source) => source.batch.inputs),
+      ports
+    ),
+    facts: factSetOverride ?? (await digestFactSet(sources, ports)),
+    providers: await digestSortedValues(
+      sources.map((source) => source.manifest),
+      ports
+    ),
+    extractors: await digestSortedValues(
+      sources.map((source) =>
+        Object.freeze({
+          id: source.manifest.id,
+          version: source.manifest.version,
+          contractVersions: source.manifest.contractVersions,
+        })
+      ),
+      ports
+    ),
+    compositionPolicy: await digest(policy, ports),
+    redaction: await digestSortedValues(
+      sources.map((source) => source.batch.redaction),
+      ports
+    ),
+    scope: await digestSortedValues(
+      sources.map((source) => source.batch.scope),
+      ports
+    ),
+    coverage: await digestSortedValues(
+      sources.flatMap((source) => source.batch.coverage),
+      ports
+    ),
+    unknownZones: await digestSortedValues(
+      sources.flatMap((source) => source.batch.unknownZones),
+      ports
+    ),
+    unsupportedZones: await digestSortedValues(
+      sources.flatMap((source) => source.batch.unsupportedZones),
+      ports
+    ),
+    ordering: await digest(GRAPH_COMPOSITION_ORDERING_RULES, ports),
+  };
+}
+
+function semanticReceiptFromBundle(
+  architectureEpoch: string,
+  bundle: Awaited<ReturnType<typeof computeSemanticDigestBundle>>
+): GraphCompositionSemanticReceipt {
+  return Object.freeze({
+    schema: GRAPH_COMPOSITION_RECEIPT_SCHEMA,
+    graphSchema: GRAPH_CANONICAL_GRAPH_CONTRACT,
+    architectureEpoch,
+    ontologySetDigest: bundle.ontology,
+    proofPolicySetDigest: bundle.proofPolicies,
+    inputsDigest: bundle.inputs,
+    factSetDigest: bundle.facts,
+    providerSetDigest: bundle.providers,
+    extractorSetDigest: bundle.extractors,
+    compositionPolicyDigest: bundle.compositionPolicy,
+    redactionPolicyDigest: bundle.redaction,
+    scopeDigest: bundle.scope,
+    coverageDigest: bundle.coverage,
+    unknownZoneDigest: bundle.unknownZones,
+    unsupportedZoneDigest: bundle.unsupportedZones,
+    orderingRuleDigest: bundle.ordering,
+    orderingRuleId: GRAPH_COMPOSITION_ORDERING_RULES.id,
+  });
+}
+
+export async function compositionQualityDigestMatches(
+  quality: GraphQualityReport,
+  expected: WisDigestReference,
+  ports: GraphExecutionPorts
+): Promise<boolean> {
+  const actual = await digest(
+    {
+      integrity: quality.integrity,
+      coverage: quality.coverage,
+      proofStates: quality.proofStates,
+      unknownZones: quality.unknownZones,
+      unsupportedZones: quality.unsupportedZones,
+      staleZones: quality.staleZones,
+      conflicts: quality.conflicts,
+      orphans: quality.orphans,
+      providerFailures: quality.providerFailures,
+    },
+    ports
+  );
+  return actual.algorithm === expected.algorithm && actual.value === expected.value;
+}
+
+export async function computeGraphCompositionSemanticReceipt(
+  request: Pick<GraphCompositionRequest, 'ontology' | 'sources' | 'policy'>,
+  ports: GraphExecutionPorts
+): Promise<GraphValidationResult<GraphCompositionSemanticReceipt>> {
+  return runWithComposeCanonicalIntern(() =>
+    computeGraphCompositionSemanticReceiptWithIntern(request, ports)
+  );
+}
+
+/**
+ * Recomputes every receipt field except the fact-set digest. The fact-set
+ * digest may be reused only when the caller proves the current facts are the
+ * same admitted frozen objects that bound the previous receipt. That is
+ * session-owned snapshot identity, not caller-object caching.
+ */
+export async function sessionOwnedCompositionReceiptStillBinds(
+  request: Pick<GraphCompositionRequest, 'ontology' | 'sources' | 'policy'>,
+  previousSources: readonly GraphCompositionSource[],
+  previous: GraphCompositionSemanticReceipt,
+  ports: GraphExecutionPorts
+): Promise<boolean> {
+  if (!compositionSourcesAreIdenticalFacts(request.sources, previousSources)) return false;
+  return runWithComposeCanonicalIntern(async () => {
+    ports.cancellation.throwIfAborted();
+    const ontology = validateGraphOntologyProfile(request.ontology);
+    if (!ontology.accepted) return false;
+    const admitted = admitCompositionSources(request.sources);
+    if (!admitted.accepted) return false;
+    seedAdmittedFacts(admitted.value);
+    const bundle = await computeSemanticDigestBundle(
+      admitted.value,
+      request.ontology,
+      request.policy,
+      ports,
+      previous.factSetDigest
+    );
+    return compositionSemanticReceiptsEqual(
+      semanticReceiptFromBundle(request.policy.architectureEpoch, bundle),
+      previous
+    );
+  });
+}
+
+async function computeGraphCompositionSemanticReceiptWithIntern(
+  request: Pick<GraphCompositionRequest, 'ontology' | 'sources' | 'policy'>,
+  ports: GraphExecutionPorts
+): Promise<GraphValidationResult<GraphCompositionSemanticReceipt>> {
+  ports.cancellation.throwIfAborted();
+  const ontology = validateGraphOntologyProfile(request.ontology);
+  if (!ontology.accepted) return { accepted: false, issues: ontology.issues };
+  const admitted = admitCompositionSources(request.sources);
+  if (!admitted.accepted) return admitted;
+  seedAdmittedFacts(admitted.value);
+  const bundle = await computeSemanticDigestBundle(
+    admitted.value,
+    request.ontology,
+    request.policy,
+    ports
+  );
+  return {
+    accepted: true,
+    value: semanticReceiptFromBundle(request.policy.architectureEpoch, bundle),
+    issues: [],
+  };
 }
 
 function aggregateCoverage(
@@ -267,6 +806,22 @@ function semanticFact(fact: GraphWorkspaceFact): unknown {
     unknownZones: fact.unknownZones,
     ...(fact.extensions ? { extensions: fact.extensions } : {}),
   };
+}
+
+function semanticFactCanonical(fact: GraphWorkspaceFact): string {
+  const owned = admittedFactCanonicalOf(fact);
+  if (owned !== undefined) return owned;
+  const intern = composeCanonicalIntern.getStore();
+  const cached = intern?.facts.get(fact);
+  if (cached !== undefined) return cached;
+  const projected = semanticFact(fact) as Record<string, unknown>;
+  const value = `{${Object.keys(projected)
+    .sort()
+    .map((key) => `${JSON.stringify(key)}:${canonical(projected[key])}`)
+    .join(',')}}`;
+  if (intern && intern.admitted.has(fact)) intern.facts.set(fact, value);
+  rememberAdmittedFactCanonical(fact, value);
+  return value;
 }
 
 function mergeEntityAliases(entities: readonly GraphEntityReference[]): {
@@ -416,21 +971,29 @@ function mergeEntityAliases(entities: readonly GraphEntityReference[]): {
         if (alias.id !== root) aliases.set(alias.id, alias);
       }
     }
-    nodes.push(
-      Object.freeze({
-        id: root,
-        identityScheme: rootEntity.identityScheme,
-        kind: rootEntity.kind,
-        scope: rootEntity.scope,
-        ...(aliases.size > 0
-          ? {
-              aliases: Object.freeze(
-                [...aliases.values()].sort((left, right) => left.id.localeCompare(right.id))
-              ),
-            }
-          : {}),
-      })
-    );
+    const aliasList =
+      aliases.size > 0
+        ? Object.freeze(
+            [...aliases.values()].sort((left, right) => left.id.localeCompare(right.id))
+          )
+        : undefined;
+    const internKey = `${root}\0${rootEntity.kind}\0${scopeKey(rootEntity)}\0${(aliasList ?? [])
+      .map((alias) => `${alias.id}:${alias.reason}`)
+      .join(',')}`;
+    const interned = internedCompositionNode(internKey);
+    if (interned) {
+      nodes.push(interned);
+      continue;
+    }
+    const node = Object.freeze({
+      id: root,
+      identityScheme: rootEntity.identityScheme,
+      kind: rootEntity.kind,
+      scope: rootEntity.scope,
+      ...(aliasList ? { aliases: aliasList } : {}),
+    });
+    rememberInternedCompositionNode(internKey, node);
+    nodes.push(node);
   }
 
   return {
@@ -674,13 +1237,13 @@ function uniqueEvidence(facts: readonly FactRecord[]): readonly WisEvidenceRefer
 
 function evidenceGroups(
   candidate: EdgeCandidate,
-  request: GraphCompositionRequest,
+  lineageByFactId: ReadonlyMap<string, GraphDerivationLineage>,
   roots: readonly string[]
 ): readonly { readonly root: string; readonly evidence: readonly WisEvidenceReference[] }[] {
   return Object.freeze(
     roots.map((root) => {
       const records = candidate.facts.filter(({ fact }) => {
-        const lineage = request.lineages?.find((entry) => entry.factId === fact.factId);
+        const lineage = lineageByFactId.get(fact.factId);
         return lineage
           ? lineage.evidenceRoots.includes(root)
           : fact.evidence.some((item) => item.id === root);
@@ -757,19 +1320,23 @@ function assessFactEligibility(
 
 function evaluateProof(
   candidate: EdgeCandidate,
-  request: GraphCompositionRequest
+  request: GraphCompositionRequest,
+  lineageByFactId: ReadonlyMap<string, GraphDerivationLineage>
 ): { state: GraphProofState; drivers: readonly string[]; roots: readonly string[] } {
   const freshness = aggregateFreshness(candidate.facts);
   const lineages = candidate.facts.map(
     ({ fact }) =>
-      request.lineages?.find((lineage) => lineage.factId === fact.factId) ?? {
+      lineageByFactId.get(fact.factId) ?? {
         factId: fact.factId,
         derivation: fact.derivation,
         evidenceRoots: fact.evidence.map((item) => item.id),
         parentFactIds: [],
       }
   );
-  const independence = assessGraphEvidenceIndependence(lineages);
+  const independence =
+    lineages.length < 2
+      ? { rejectedPairs: [] as const }
+      : assessGraphEvidenceIndependence(lineages);
   const roots = sortUnique(lineages.flatMap((lineage) => lineage.evidenceRoots));
   if (freshness.status === 'stale')
     return { state: 'insufficient', drivers: ['all graph truth must remain current'], roots };
@@ -1250,6 +1817,13 @@ export async function composeGraph(
   request: GraphCompositionRequest,
   ports: GraphExecutionPorts
 ): Promise<GraphCompositionResult> {
+  return runWithComposeCanonicalIntern(() => composeGraphWithIntern(request, ports));
+}
+
+async function composeGraphWithIntern(
+  request: GraphCompositionRequest,
+  ports: GraphExecutionPorts
+): Promise<GraphCompositionResult> {
   try {
     ports.cancellation.throwIfAborted();
     const ontology = validateGraphOntologyProfile(request.ontology);
@@ -1303,19 +1877,12 @@ export async function composeGraph(
         ),
       ]);
     }
-    const admittedSources: GraphCompositionSource[] = [];
-    const admissionIssues: GraphValidationIssue[] = [];
     const admitStartedAt = performance.now();
-    for (const [index, source] of request.sources.entries()) {
-      const admission = admitGraphProviderOutput(source.manifest, source.batch);
-      if (admission.accepted) admittedSources.push(source);
-      else
-        admissionIssues.push(
-          ...admission.issues.map((item) => ({ ...item, path: `/sources/${index}${item.path}` }))
-        );
-    }
+    const admitted = admitCompositionSources(request.sources);
     const admitMs = Math.max(0, Math.round(performance.now() - admitStartedAt));
-    if (admissionIssues.length > 0) return failure('invalid-input', admissionIssues);
+    if (!admitted.accepted) return failure('invalid-input', admitted.issues);
+    seedAdmittedFacts(admitted.value);
+    const admittedSources = [...admitted.value];
     // Provider batches can be much larger than the standalone canonical-value
     // budget. Their admitted identity is the deterministic ordering key; the
     // complete payload is still bound by the semantic digests below.
@@ -1377,6 +1944,7 @@ export async function composeGraph(
     let outputBytes = 0;
     if (shardPlan.shards.length <= 1) {
       const workerResult = await executeWorker(normalizedRequest);
+      recordGraphDataMovement('workerTransferred');
       const workerFailure = compositionWorkerFailure(workerResult);
       if (workerFailure) return workerFailure;
       compactOutput = workerResult.output as PreparedComposition;
@@ -1405,6 +1973,7 @@ export async function composeGraph(
           sources: shardSources,
           identityFreeze: freeze,
         });
+        recordGraphDataMovement('workerTransferred');
         const workerFailure = compositionWorkerFailure(workerResult);
         if (workerFailure) return workerFailure;
         const shardOutput = workerResult.output as PreparedComposition;
@@ -1528,26 +2097,21 @@ export async function composeGraph(
       }
     }
 
+    const lineageByFactId = lineageIndex(normalizedRequest.lineages);
     const semanticStartedAt = performance.now();
+    const semanticBundle = await computeSemanticDigestBundle(
+      normalizedSources,
+      request.ontology,
+      request.policy,
+      ports
+    );
     const semanticDigests = {
-      ontology: await digest(request.ontology, ports),
-      proofPolicies: await digest(
-        request.ontology.relations.map((relation) => relation.proofPolicy),
-        ports
-      ),
-      inputs: await digestSortedValues(
-        normalizedSources.flatMap((source) => source.batch.inputs),
-        ports
-      ),
-      facts: await digestSortedValues(
-        normalizedSources.flatMap((source) => source.batch.facts).map(semanticFact),
-        ports
-      ),
-      providers: await digestSortedValues(
-        normalizedSources.map((source) => source.manifest),
-        ports
-      ),
-      compositionPolicy: await digest(request.policy, ports),
+      ontology: semanticBundle.ontology,
+      proofPolicies: semanticBundle.proofPolicies,
+      inputs: semanticBundle.inputs,
+      facts: semanticBundle.facts,
+      providers: semanticBundle.providers,
+      compositionPolicy: semanticBundle.compositionPolicy,
     };
     const semanticDigestMs = Math.max(0, Math.round(performance.now() - semanticStartedAt));
 
@@ -1555,7 +2119,7 @@ export async function composeGraph(
     const evaluatedProofs = new Map(
       eligibleCandidates.map((candidate) => [
         candidate.key,
-        evaluateProof(candidate, normalizedRequest),
+        evaluateProof(candidate, normalizedRequest, lineageByFactId),
       ])
     );
     const functional = new Set(request.policy.functionalRelations);
@@ -1587,7 +2151,10 @@ export async function composeGraph(
         evidence: fact.evidence,
       }));
       const edgeDigest = digestNow(candidate.key, ports) ?? (await digest(candidate.key, ports));
-      const proofInputDigest = digestNow(proofInput, ports) ?? (await digest(proofInput, ports));
+      const proofInputDigest =
+        digestProofInput(candidate.facts, ports) ??
+        digestNow(proofInput, ports) ??
+        (await digest(proofInput, ports));
       const state = conflict
         ? 'disputed'
         : proof.state === 'insufficient'
@@ -1645,7 +2212,7 @@ export async function composeGraph(
           authorities: sortUnique(
             candidate.facts.map(({ fact }) => fact.authority)
           ) as GraphEdge['proof']['authorities'],
-          corroborationGroups: evidenceGroups(candidate, normalizedRequest, proof.roots),
+          corroborationGroups: evidenceGroups(candidate, lineageByFactId, proof.roots),
           counterEvidence,
           missingRequirements: proof.state === 'insufficient' ? proof.drivers : [],
           evaluatedAt,
@@ -1673,6 +2240,7 @@ export async function composeGraph(
     }
 
     const edgeProofMs = Math.max(0, Math.round(performance.now() - proofStartedAt));
+    recordGraphDataMovement('indexed', Math.max(1, edges.length));
     edges.sort((left, right) => left.id.localeCompare(right.id));
     decisions.sort((left, right) => left.edgeKey.localeCompare(right.edgeKey));
     const uniqueDisputes = [
@@ -1834,11 +2402,31 @@ export async function composeGraph(
     if (!graphValidation.accepted) return failure('composition-failed', graphValidation.issues);
     const qualityValidation = validateGraphQualityReport(qualityDraft);
     if (!qualityValidation.accepted) return failure('composition-failed', qualityValidation.issues);
+    const qualityDigest = await digest(
+      {
+        integrity: qualityDraft.integrity,
+        coverage: qualityDraft.coverage,
+        proofStates: qualityDraft.proofStates,
+        unknownZones: qualityDraft.unknownZones,
+        unsupportedZones: qualityDraft.unsupportedZones,
+        staleZones: qualityDraft.staleZones,
+        conflicts: qualityDraft.conflicts,
+        orphans: qualityDraft.orphans,
+        providerFailures: qualityDraft.providerFailures,
+      },
+      ports
+    );
+    const receipt = Object.freeze({
+      ...semanticReceiptFromBundle(request.policy.architectureEpoch, semanticBundle),
+      contentDigest: graphDraft.generation.reference.contentDigest,
+      qualityDigest,
+    });
     const published = deepFreeze({
       graph: graphDraft,
       quality: qualityDraft,
       decisions,
       semanticDigests,
+      receipt,
     } satisfies GraphCompositionOutput);
 
     return {

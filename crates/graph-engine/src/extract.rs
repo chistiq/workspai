@@ -3,6 +3,15 @@
 //! This primitive owns no Graph identity, proof or authority semantics. The
 //! TypeScript extractor remains the product authority; this implementation
 //! exists only as a parity-gated acceleration candidate.
+//!
+//! Experiment A (byte-oriented mask): the no-delimiter ASCII fast path is kept
+//! because it avoids `Vec<char>` when the source cannot contain quotes or
+//! comments. A full byte-state scanner that still returns a copied `String` did
+//! not beat end-to-end graph build cost while the current ABI requires that
+//! transformed source. Experiment B (batched ABI) and Experiment C (composition
+//! kernel) stay inactive until a compact admitted-fact contract shows a product
+//! win. Experiment D (CSR BFS) replaced `Vec<Vec<u32>>` with prefix-sum
+//! neighbor storage; keep it as the traversal primitive.
 
 #[cfg(test)]
 use std::borrow::Cow;
@@ -239,6 +248,14 @@ fn blank_span(out: &mut [char], from: usize, to: usize) {
 }
 
 fn mask_quoted(source: &str, mode: QuoteMode) -> String {
+    if !source.as_bytes().iter().any(|byte| match mode {
+        QuoteMode::Hash => matches!(*byte, b'#' | b'"' | b'\''),
+        QuoteMode::Go => matches!(*byte, b'/' | b'"' | b'\'' | b'`'),
+        QuoteMode::Js => matches!(*byte, b'/' | b'"' | b'\'' | b'`'),
+        QuoteMode::CLike => matches!(*byte, b'/' | b'"' | b'\''),
+    }) {
+        return source.to_string();
+    }
     let mut chars: Vec<char> = source.chars().collect();
     let n = chars.len();
     let mut i = 0;
@@ -474,6 +491,13 @@ fn mask_quoted(source: &str, mode: QuoteMode) -> String {
 }
 
 fn mask_python(source: &str) -> String {
+    if !source
+        .as_bytes()
+        .iter()
+        .any(|byte| matches!(*byte, b'#' | b'"' | b'\''))
+    {
+        return source.to_string();
+    }
     let mut chars: Vec<char> = source.chars().collect();
     let n = chars.len();
     let mut i = 0;

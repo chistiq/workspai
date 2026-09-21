@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:7e109472-08e9-88ed-a784-ff1293ef1021",
+  "serialNumber": "urn:uuid:f2d8c1c4-f761-83d9-bc84-dd6405747e1e",
   "version": 1,
   "metadata": {
     "component": {
@@ -62,7 +62,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "71effc1138b1b2e5870e32290987c6d201df60827f4d6914d9ef3d0199b907d4"
+          "content": "035e1e875bab6f8f1f57ca1ed0ecae7125173dd5bc4e457995b1554eee3bcd5f"
         }
       ],
       "properties": [

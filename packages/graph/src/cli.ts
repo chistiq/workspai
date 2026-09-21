@@ -285,8 +285,13 @@ function dualScopeCliStatus(
  */
 function portableBuildResult(
   build: GraphRepoBuildResult
-): Omit<GraphRepoBuildResult, 'compositionSources'> {
-  const { compositionSources: _internalCompositionSources, ...portable } = build;
+): Omit<GraphRepoBuildResult, 'compositionSources' | 'admittedInputs' | 'gitBaseline'> {
+  const {
+    compositionSources: _internalCompositionSources,
+    admittedInputs: _internalAdmittedInputs,
+    gitBaseline: _internalGitBaseline,
+    ...portable
+  } = build;
   return portable;
 }
 

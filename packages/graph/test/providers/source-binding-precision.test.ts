@@ -23,6 +23,11 @@ import {
   createOpenApiContractsProvider,
   createSourceDeclarationsProvider,
   createStandardRepositoryProviders,
+  consumeContentAddressedFactCacheStats,
+  contentAddressedFactCacheStats,
+  createContentAddressedFactSession,
+  disposeContentAddressedFactSession,
+  runWithContentAddressedFactSession,
 } from '../../src/providers/index.js';
 
 const scope = { kind: 'project' as const, projectIds: ['binding-precision'] as [string] };
@@ -162,6 +167,86 @@ describe('source binding precision', () => {
     expect(batch.unknownZones).not.toContainEqual(
       expect.objectContaining({ code: 'graph.source-call-ambiguous' })
     );
+  });
+
+  it('binds TypeScript ESM .js specifiers to .ts sources and prefers an authored .js file', async () => {
+    const rewritten = await collectDeclarations({
+      'src/lib.ts': 'export function fetchItems(): void {}\n',
+      'src/app.ts':
+        "import { fetchItems } from './lib.js';\nexport function go(): void { fetchItems(); }\n",
+    });
+    expect(objectId(rewritten, 'calls').some((id) => id.includes('fetchItems'))).toBe(true);
+
+    const authoredJs = await collectDeclarations({
+      'src/lib.js': 'export function fromJs(): void {}\n',
+      'src/lib.ts': 'export function fromTs(): void {}\n',
+      'src/app.ts':
+        "import { fromJs } from './lib.js';\nexport function go(): void { fromJs(); }\n",
+    });
+    expect(objectId(authoredJs, 'calls').some((id) => id.includes('fromJs'))).toBe(true);
+    expect(objectId(authoredJs, 'calls').some((id) => id.includes('fromTs'))).toBe(false);
+  });
+
+  it('does not count Map.get or headers.get as unresolved local calls', async () => {
+    const batch = await collectDeclarations({
+      'src/app.ts':
+        'export function go(): string | null {\n  const headers = new Headers();\n  return headers.get("x-id");\n}\n',
+    });
+    const unresolved = batch.coverage.find((item) => item.dimension === 'source-calls-unresolved');
+    const external = batch.coverage.find((item) => item.dimension === 'source-calls-external');
+    expect(unresolved?.observed).toBe(0);
+    expect((external?.observed ?? 0) > 0).toBe(true);
+    expect(objectId(batch, 'calls').some((id) => id.includes(':get'))).toBe(false);
+  });
+
+  it('does not bind member calls to unrelated free functions with colliding names', async () => {
+    const names = ['get', 'set', 'run', 'map', 'filter', 'send', 'use', 'handle'] as const;
+    const source = [
+      ...names.map((name) => `export function ${name}(): void {}`),
+      'export function go(): void {',
+      '  const headers = new Headers();',
+      '  headers.get("x-id");',
+      '  headers.set("x-id", "1");',
+      '  const values = new Map<string, string>();',
+      '  values.get("id");',
+      '  values.set("id", "1");',
+      '  [1].map((value) => value);',
+      '  [1].filter((value) => value > 0);',
+      '  const response = { send(_body: string): void {}, use(_mw: unknown): void {} };',
+      '  response.send("ok");',
+      '  response.use({});',
+      '  const runtime = { run(): void {}, handle(): void {} };',
+      '  runtime.run();',
+      '  runtime.handle();',
+      '  get();',
+      '}',
+      '',
+    ].join('\n');
+    const batch = await collectDeclarations({ 'src/collide.ts': source });
+    const unresolved = batch.coverage.find((item) => item.dimension === 'source-calls-unresolved');
+    const external = batch.coverage.find((item) => item.dimension === 'source-calls-external');
+    const excluded = batch.coverage.find((item) => item.dimension === 'source-calls-excluded');
+    const examined = batch.coverage.find((item) => item.dimension === 'source-calls-examined');
+    expect((unresolved?.observed ?? 1) === 0).toBe(true);
+    expect((external?.observed ?? 0) >= 8).toBe(true);
+    expect((excluded?.observed ?? 0) >= 1).toBe(true);
+    expect((examined?.observed ?? 0) >= 1).toBe(true);
+    const called = objectId(batch, 'calls');
+    expect(called.some((id) => id.includes(':function:get'))).toBe(true);
+    expect(called.filter((id) => id.includes(':function:get')).length).toBe(1);
+  });
+
+  it('still classifies keyword declarations and constructors after a long preamble', async () => {
+    const preamble = `${'/* padding comment */\n'.repeat(4000)}`;
+    const batch = await collectDeclarations({
+      'src/long-preamble.ts': `${preamble}export function actual(): void {\n  const headers = new Headers();\n  actual();\n}\n`,
+      'src/long-preamble.py': `${'# padding comment\n'.repeat(4000)}def actual():\n    actual()\n`,
+    });
+    expect(objectId(batch, 'defines').some((id) => id.includes(':function:actual'))).toBe(true);
+    expect(objectId(batch, 'calls').some((id) => id.includes(':function:actual'))).toBe(true);
+    expect(objectId(batch, 'calls').some((id) => id.toLowerCase().includes('headers'))).toBe(false);
+    const excluded = batch.coverage.find((item) => item.dimension === 'source-calls-excluded');
+    expect((excluded?.observed ?? 0) >= 1).toBe(true);
   });
 
   it('requires a handler declaration for OpenAPI implements and keeps authored do-not-edit strings', async () => {
@@ -394,6 +479,59 @@ describe('source binding precision', () => {
     );
     expect(batch.coverage).toContainEqual(
       expect.objectContaining({ dimension: 'source-calls-unresolved' })
+    );
+  });
+
+  it('follows barrel re-exports and does not bind private symbols through them', async () => {
+    const batch = await collectDeclarations({
+      'src/lib.ts': 'export function loadItem(): void {}\nfunction hidden(): void {}\n',
+      'src/barrel.ts': "export { loadItem } from './lib.ts';\n",
+      'src/app.ts':
+        "import { loadItem, hidden } from './barrel.ts';\nexport function run(): void { loadItem(); hidden(); }\n",
+      'src/private.ts': 'function secret(): void {}\nexport function run(): void { secret(); }\n',
+    });
+    const called = objectId(batch, 'calls');
+    expect(called.some((id) => id.includes(':function:loadItem'))).toBe(true);
+    expect(callsFrom(batch, 'src/app.ts').some((id) => id.includes(':function:hidden'))).toBe(
+      false
+    );
+    expect(objectId(batch, 'exports').some((id) => id.includes(':function:loadItem'))).toBe(true);
+    expect(
+      objectId(batch, 'exports').some(
+        (id) => id.includes('src/private.ts') && id.includes(':function:secret')
+      )
+    ).toBe(false);
+  });
+
+  it('reuses per-file syntax extracts for identical content digests', async () => {
+    const session = createContentAddressedFactSession();
+    const contents = {
+      'src/cache-reuse.ts': 'export function cacheReuseTarget(): void {}\n',
+    };
+    await runWithContentAddressedFactSession(session, async () => {
+      const first = await collectDeclarations(contents);
+      consumeContentAddressedFactCacheStats();
+      const second = await collectDeclarations(contents);
+      expect(second.facts.map((fact) => fact.factId)).toEqual(
+        first.facts.map((fact) => fact.factId)
+      );
+      expect(contentAddressedFactCacheStats().hits).toBeGreaterThan(0);
+    });
+    disposeContentAddressedFactSession(session);
+  });
+
+  it('keeps identical contents at different locators as distinct identities', async () => {
+    const source = 'export function shared(): void {}\n';
+    const batch = await collectDeclarations({
+      'src/a.ts': source,
+      'src/b.ts': source,
+    });
+    const symbols = objectId(batch, 'defines');
+    expect(symbols.some((id) => id.includes('src/a.ts') && id.includes(':function:shared'))).toBe(
+      true
+    );
+    expect(symbols.some((id) => id.includes('src/b.ts') && id.includes(':function:shared'))).toBe(
+      true
     );
   });
 });

@@ -206,6 +206,9 @@ describe('Graph shadow comparison projection', () => {
       isGraphShadowTruncatingCoverage({ dimension: 'source-calls-resolved', status: 'attention' })
     ).toBe(false);
     expect(
+      isGraphShadowTruncatingCoverage({ dimension: 'source-calls-external', status: 'attention' })
+    ).toBe(false);
+    expect(
       isGraphShadowTruncatingCoverage({ dimension: 'repository-files', status: 'attention' })
     ).toBe(true);
     expect(
@@ -224,6 +227,37 @@ describe('Graph shadow comparison projection', () => {
       isGraphShadowComparableDiagnostic('graph.provider.source-symbol-binding.empty_result')
     ).toBe(false);
     expect(isGraphShadowComparableDiagnostic('graph.provider.local_import.unresolved')).toBe(true);
+  });
+
+  it('maps ASP.NET root routes onto one comparable endpoint identity', () => {
+    expect(
+      comparableLegacyIdentity(
+        'source-endpoint:dotnet-api:src/Program.cs:GET:/',
+        'endpoint',
+        'dotnet-api'
+      )
+    ).toBe('endpoint:GET:/');
+    expect(
+      comparablePackageIdentity(
+        'entity:route:endpoint:encoded%2FGET%20%2F',
+        'endpoint',
+        'dotnet-api'
+      )
+    ).toBe('endpoint:GET:/');
+    expect(
+      comparablePackageIdentity(
+        'entity:route:endpoint:encoded%2FGET%2520%252F',
+        'endpoint',
+        'dotnet-api'
+      )
+    ).toBe('endpoint:GET:/');
+    expect(
+      comparableLegacyIdentity(
+        'source-endpoint:dotnet-api:src/Program.cs:GET:/health/live',
+        'endpoint',
+        'dotnet-api'
+      )
+    ).toBe('endpoint:GET:/health/live');
   });
 
   it('rejects URI-encoded traversal after decode and does not render it for equivalence', () => {

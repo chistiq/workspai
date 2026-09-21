@@ -17,7 +17,7 @@ const productionCallers = [
 
 const REQUIRED_REMAINING_RISKS = Object.freeze([
   'Production CLI commands still call buildWorkspaceKnowledgeGraph; package-primary is not the graph producer.',
-  'GRAPH_CONSUMER_PACKAGE_PRIMARY remains false and refuseUnadmittedPackagePrimaryExecution always throws. executePackagePrimaryWithCompare is not implemented.',
+  'GRAPH_CONSUMER_PACKAGE_PRIMARY remains false. executePackagePrimaryWithCompare is a fail-closed comparison entry that never publishes package graph truth; production consumers still call the released CLI composer.',
   'Checkpoint package-primary-replacement-decision remains planned.',
   'Trusted required cross-platform corpus is only committed-node-service; large, polyglot, generated-heavy and multi-project repositories are optional local observations.',
   'Production CLI does not persist a trusted change journal for incremental package rebuilds.',
@@ -82,7 +82,9 @@ if (
   !adapterSource.includes('export const GRAPH_CONSUMER_PACKAGE_PRIMARY = false as const') ||
   !adapterSource.includes('export async function refuseUnadmittedPackagePrimaryExecution') ||
   !adapterSource.includes('throw new GraphPackagePrimaryNotAdmittedError') ||
-  adapterSource.includes('export async function executePackagePrimaryWithCompare') ||
+  !adapterSource.includes('export async function executePackagePrimaryWithCompare') ||
+  !adapterSource.includes("overlay: 'independent-legacy-versus-package'") ||
+  !adapterSource.includes('admittedProducer: false') ||
   !adapterSource.includes('return buildWorkspaceKnowledgeGraph(options)')
 ) {
   failures.push('consumer adapter no longer fail-closes unadmitted package-primary execution');

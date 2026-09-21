@@ -16,6 +16,11 @@ import {
   excludedDirectoryOmissionCode,
   inventoryCodesPreventCompleteness,
 } from '../../application/classify-inventory-omissions.js';
+import {
+  MAX_INVENTORY_MEMBERSHIP_BYTES,
+  MAX_INVENTORY_MEMBERSHIP_LOCATORS,
+  inventoryMembershipLocatorBytes,
+} from '../../application/inventory-membership.js';
 import { normalizePortableLocator } from '../../domain/content-state-merkle.js';
 import { graphInputMediaType } from '../../domain/input-media-type.js';
 import {
@@ -37,6 +42,8 @@ import type {
   GraphFileInventoryResult,
   GraphFileSourcePort,
 } from '../../ports/index.js';
+import { recordGraphPhase } from '../../application/phase-metrics.js';
+import { createHashedContentCache, type HashedContentCache } from './hashed-content-cache.js';
 
 function portableLocator(root: string, target: string): string | null {
   const relative = path.relative(root, target);
@@ -191,6 +198,11 @@ function finishInventory(input: {
   readonly omittedSubtrees: readonly GraphOmittedSubtree[];
   readonly unknownZones: readonly GraphUnknownZone[];
   readonly unsupportedZones: readonly GraphUnsupportedZone[];
+  readonly membershipLocators?: readonly string[];
+  readonly membershipTruncated?: boolean;
+  readonly inventoryMs?: number;
+  readonly enumeratedFiles?: number;
+  readonly hashedFiles?: number;
 }): GraphFileInventoryResult {
   const omissionCodes = [
     ...input.unknownZones.map((zone) => zone.code),
@@ -201,6 +213,9 @@ function finishInventory(input: {
   const partial =
     inventoryCodesPreventCompleteness(omissionCodes) ||
     omittedSubtreesPreventCompleteness(input.omittedSubtrees);
+  const membershipLocators = Object.freeze(
+    [...(input.membershipLocators ?? [])].sort((left, right) => left.localeCompare(right))
+  );
   return {
     status: input.statusHint ?? (partial ? 'partial' : 'complete'),
     inputs: input.inputs,
@@ -218,6 +233,11 @@ function finishInventory(input: {
     ),
     unknownZones: structurizeInventoryZones(input.unknownZones),
     unsupportedZones: structurizeInventoryZones(input.unsupportedZones),
+    membershipLocators,
+    ...(input.membershipTruncated ? { membershipTruncated: true } : {}),
+    ...(input.inventoryMs !== undefined ? { inventoryMs: input.inventoryMs } : {}),
+    ...(input.enumeratedFiles !== undefined ? { enumeratedFiles: input.enumeratedFiles } : {}),
+    ...(input.hashedFiles !== undefined ? { hashedFiles: input.hashedFiles } : {}),
   };
 }
 
@@ -249,9 +269,25 @@ async function readStableFile(
   }
 }
 
-export function createNodeGraphFileSource(): GraphFileSourcePort {
+function hashAndRemember(cache: HashedContentCache, bytes: Uint8Array): string {
+  const startedAt = performance.now();
+  const value = createHash('sha256').update(bytes).digest('hex');
+  cache.remember(value, bytes);
+  recordGraphPhase('contentHash', {
+    wallMs: performance.now() - startedAt,
+    files: 1,
+    bytes: bytes.byteLength,
+  });
+  return value;
+}
+
+export function createNodeGraphFileSource(
+  options: { readonly hashedContent?: HashedContentCache } = {}
+): GraphFileSourcePort {
+  const hashedContent = options.hashedContent ?? createHashedContentCache();
   return {
     async inventory(request: GraphFileInventoryRequest): Promise<GraphFileInventoryResult> {
+      const inventoryStartedAt = performance.now();
       const diagnostics: GraphDiagnostic[] = [];
       const unknownZones: GraphUnknownZone[] = [];
       const unsupportedZones: GraphUnsupportedZone[] = [];
@@ -260,6 +296,13 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
       let omittedFiles = 0;
       let omittedBytes = 0;
       let totalBytes = 0;
+      const complete = (input: Parameters<typeof finishInventory>[0]): GraphFileInventoryResult =>
+        finishInventory({
+          ...input,
+          inventoryMs: Math.max(0, Math.round(performance.now() - inventoryStartedAt)),
+          enumeratedFiles: (input.membershipLocators ?? []).length,
+          hashedFiles: input.inputs.length,
+        });
       try {
         const rootStat = await fs.lstat(request.root);
         if (rootStat.isSymbolicLink()) {
@@ -277,8 +320,35 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
           request.onlyLocators === undefined
             ? undefined
             : new Set(request.onlyLocators.map((locator) => normalizePortableLocator(locator)));
-        const pending = [{ directory: root, depth: 0 }];
+        const knownLocators =
+          request.knownLocators === undefined
+            ? undefined
+            : new Set(request.knownLocators.map((locator) => normalizePortableLocator(locator)));
+        const membershipLocators: string[] = [];
+        let membershipBytes = 0;
+        let membershipTruncated = false;
         let budgetExhausted = false;
+        const recordMembership = (locator: string): boolean => {
+          if (membershipTruncated) return false;
+          const nextBytes = membershipBytes + inventoryMembershipLocatorBytes(locator);
+          if (
+            membershipLocators.length >= MAX_INVENTORY_MEMBERSHIP_LOCATORS ||
+            nextBytes > MAX_INVENTORY_MEMBERSHIP_BYTES
+          ) {
+            membershipTruncated = true;
+            budgetExhausted = true;
+            return false;
+          }
+          membershipLocators.push(locator);
+          membershipBytes = nextBytes;
+          return true;
+        };
+        const shouldHash = (locator: string): boolean => {
+          if (!onlyLocators) return true;
+          if (onlyLocators.has(locator)) return true;
+          return Boolean(knownLocators && !knownLocators.has(locator));
+        };
+        const pending = [{ directory: root, depth: 0 }];
         const omittedSubtreeKeys = new Set<string>();
         const pushSubtree = (subtree: GraphOmittedSubtree): void => {
           const key = omittedSubtreeComparisonToken(subtree);
@@ -309,7 +379,7 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
         };
         while (pending.length > 0 && !budgetExhausted) {
           if (request.signal?.aborted) {
-            return finishInventory({
+            return complete({
               statusHint: 'cancelled',
               inputs,
               diagnostics,
@@ -318,6 +388,8 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
               omittedSubtrees,
               unknownZones,
               unsupportedZones,
+              membershipLocators,
+              membershipTruncated,
             });
           }
           const current = pending.pop();
@@ -459,13 +531,8 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
               });
               continue;
             }
-            if (onlyLocators && !onlyLocators.has(locator)) {
-              continue;
-            }
-            const stat = await fs.stat(target);
             if (request.sensitiveFiles === 'omit-known' && knownSensitiveFile(entry.name)) {
               omittedFiles += 1;
-              omittedBytes += stat.size;
               unsupportedZones.push(
                 graphUnsupportedObservation({
                   code: 'graph.sensitive-input-omitted',
@@ -480,6 +547,13 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
               );
               continue;
             }
+            if (!recordMembership(locator)) {
+              continue;
+            }
+            if (!shouldHash(locator)) {
+              continue;
+            }
+            const stat = await fs.stat(target);
             if (stat.size > request.maxFileBytes) {
               omittedFiles += 1;
               omittedBytes += stat.size;
@@ -515,7 +589,12 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
               break;
             }
             const stable = await readStableFile(target, request.maxFileBytes, request.signal);
-            const value = createHash('sha256').update(stable.bytes).digest('hex');
+            recordGraphPhase('fileRead', {
+              files: 1,
+              bytes: stable.size,
+              cacheMisses: 1,
+            });
+            const value = hashAndRemember(hashedContent, stable.bytes);
             inputs.push({
               locator,
               mediaType: graphInputMediaType(locator),
@@ -561,67 +640,70 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
           if (budgetExhausted) drainUnvisited();
         }
         const gitDirectory = path.join(root, '.git');
-        if (!onlyLocators || onlyLocators.has('.git/HEAD')) {
-          try {
-            const gitDirectoryStat = await fs.lstat(gitDirectory);
-            if (gitDirectoryStat.isDirectory() && !gitDirectoryStat.isSymbolicLink()) {
-              const head = path.join(gitDirectory, 'HEAD');
-              const headStat = await fs.lstat(head);
-              if (headStat.isSymbolicLink() || !headStat.isFile()) {
-                unsupportedZones.push({
-                  code: 'graph.git-head-special-entry-unsupported',
-                  scope: 'repository',
-                  reason: 'Git HEAD must be a real repository-local regular file.',
+        try {
+          const gitDirectoryStat = await fs.lstat(gitDirectory);
+          if (gitDirectoryStat.isDirectory() && !gitDirectoryStat.isSymbolicLink()) {
+            const head = path.join(gitDirectory, 'HEAD');
+            const headStat = await fs.lstat(head);
+            if (headStat.isSymbolicLink() || !headStat.isFile()) {
+              unsupportedZones.push({
+                code: 'graph.git-head-special-entry-unsupported',
+                scope: 'repository',
+                reason: 'Git HEAD must be a real repository-local regular file.',
+              });
+            } else if (headStat.size > 4_096) {
+              omittedFiles += 1;
+              omittedBytes += headStat.size;
+              unsupportedZones.push({
+                code: 'graph.git-head-size-unsupported',
+                scope: 'repository',
+                reason: 'Git HEAD exceeds the fixed safe metadata size ceiling.',
+              });
+            } else if (recordMembership('.git/HEAD') && shouldHash('.git/HEAD')) {
+              if (
+                !budgetExhausted &&
+                inputs.length < request.maxFiles &&
+                totalBytes + headStat.size <= request.maxTotalBytes &&
+                headStat.size <= request.maxFileBytes
+              ) {
+                const stable = await readStableFile(head, 4_096, request.signal);
+                recordGraphPhase('fileRead', {
+                  files: 1,
+                  bytes: stable.size,
+                  cacheMisses: 1,
                 });
-              } else if (headStat.size > 4_096) {
+                inputs.push({
+                  locator: '.git/HEAD',
+                  mediaType: 'text/plain',
+                  byteLength: stable.size,
+                  digest: {
+                    algorithm: 'sha256',
+                    value: hashAndRemember(hashedContent, stable.bytes),
+                  },
+                });
+                totalBytes += stable.size;
+              } else {
                 omittedFiles += 1;
                 omittedBytes += headStat.size;
-                unsupportedZones.push({
-                  code: 'graph.git-head-size-unsupported',
+                unknownZones.push({
+                  code: 'graph.git-head-budget-omitted',
                   scope: 'repository',
-                  reason: 'Git HEAD exceeds the fixed safe metadata size ceiling.',
+                  reason: 'Git HEAD evidence exceeded the admitted repository inventory budget.',
                 });
-              } else {
-                if (
-                  !budgetExhausted &&
-                  inputs.length < request.maxFiles &&
-                  totalBytes + headStat.size <= request.maxTotalBytes &&
-                  headStat.size <= request.maxFileBytes
-                ) {
-                  const stable = await readStableFile(head, 4_096, request.signal);
-                  inputs.push({
-                    locator: '.git/HEAD',
-                    mediaType: 'text/plain',
-                    byteLength: stable.size,
-                    digest: {
-                      algorithm: 'sha256',
-                      value: createHash('sha256').update(stable.bytes).digest('hex'),
-                    },
-                  });
-                  totalBytes += stable.size;
-                } else {
-                  omittedFiles += 1;
-                  omittedBytes += headStat.size;
-                  unknownZones.push({
-                    code: 'graph.git-head-budget-omitted',
-                    scope: 'repository',
-                    reason: 'Git HEAD evidence exceeded the admitted repository inventory budget.',
-                  });
-                }
               }
             }
-          } catch (error) {
-            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
-              unsupportedZones.push({
-                code: 'graph.git-head-unavailable',
-                scope: 'repository',
-                reason: 'Git HEAD metadata could not be safely admitted from this repository.',
-              });
-            }
+          }
+        } catch (error) {
+          if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+            unsupportedZones.push({
+              code: 'graph.git-head-unavailable',
+              scope: 'repository',
+              reason: 'Git HEAD metadata could not be safely admitted from this repository.',
+            });
           }
         }
         inputs.sort((left, right) => left.locator.localeCompare(right.locator));
-        return finishInventory({
+        return complete({
           inputs,
           diagnostics,
           omittedFiles,
@@ -629,9 +711,11 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
           omittedSubtrees,
           unknownZones,
           unsupportedZones,
+          membershipLocators,
+          membershipTruncated,
         });
       } catch {
-        return finishInventory({
+        return complete({
           statusHint: request.signal?.aborted ? 'cancelled' : 'failed',
           inputs: [],
           diagnostics: [
@@ -651,6 +735,7 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
           omittedSubtrees,
           unknownZones,
           unsupportedZones,
+          membershipLocators: [],
         });
       }
     },
@@ -671,11 +756,31 @@ export function createNodeGraphFileSource(): GraphFileSourcePort {
         if (!target) throw new Error('Repository input locator is not portable.');
         const realTarget = await fs.realpath(target);
         if (!inside(root, realTarget)) throw new Error('Repository input escapes its root.');
+        const cached = hashedContent.lookup(input.digest.value, input.byteLength);
+        if (cached) {
+          if (cached.byteLength > options.maxBytes) {
+            throw new Error('Repository input exceeds its admitted read budget.');
+          }
+          recordGraphPhase('fileRead', {
+            files: 1,
+            bytes: cached.byteLength,
+            cacheHits: 1,
+          });
+          return cached;
+        }
+        const readStartedAt = performance.now();
         const stable = await readStableFile(realTarget, options.maxBytes, options.signal);
         const digest = createHash('sha256').update(stable.bytes).digest('hex');
+        recordGraphPhase('fileRead', {
+          wallMs: performance.now() - readStartedAt,
+          files: 1,
+          bytes: stable.size,
+          cacheMisses: 1,
+        });
         if (stable.size !== input.byteLength || digest !== input.digest.value) {
           throw new Error('Repository input no longer matches its admitted content digest.');
         }
+        hashedContent.remember(digest, stable.bytes);
         return stable.bytes;
       } catch {
         throw new Error('Repository input could not be read within the admitted boundary.');

@@ -1,17 +1,18 @@
 import type { WisContractReference, WisDigestReference } from '@workspai/shared/contracts';
 
-import type {
-  GraphCanonicalGraph,
-  GraphDerivationLineage,
-  GraphDiagnostic,
-  GraphEntityReference,
-  GraphFactBatch,
-  GraphOntologyRelationDefinition,
-  GraphOntologyProfile,
-  GraphProviderManifest,
-  GraphQualityReport,
-  GraphResolutionState,
-  GraphValidationIssue,
+import {
+  GRAPH_CANONICAL_GRAPH_CONTRACT,
+  type GraphCanonicalGraph,
+  type GraphDerivationLineage,
+  type GraphDiagnostic,
+  type GraphEntityReference,
+  type GraphFactBatch,
+  type GraphOntologyRelationDefinition,
+  type GraphOntologyProfile,
+  type GraphProviderManifest,
+  type GraphQualityReport,
+  type GraphResolutionState,
+  type GraphValidationIssue,
 } from '../contracts/index.js';
 
 export interface GraphCompositionPolicy {
@@ -91,6 +92,42 @@ export interface GraphCompositionTimings {
   readonly contentDigestMs: number;
 }
 
+export const GRAPH_COMPOSITION_RECEIPT_SCHEMA = 'workspai.graph.composition-receipt.v1' as const;
+
+export const GRAPH_COMPOSITION_ORDERING_RULES = Object.freeze({
+  id: 'workspai.graph.composition-ordering.v1',
+  nodeOrder: 'entity-id-locale',
+  edgeOrder: 'canonical-edge-key',
+  factDedup: 'canonical-fact-key',
+  unresolvedOrder: 'id-locale',
+  diagnosticOrder: 'code-path-locale',
+});
+
+export interface GraphCompositionSemanticReceipt {
+  readonly schema: typeof GRAPH_COMPOSITION_RECEIPT_SCHEMA;
+  readonly graphSchema: WisContractReference;
+  readonly architectureEpoch: string;
+  readonly ontologySetDigest: WisDigestReference;
+  readonly proofPolicySetDigest: WisDigestReference;
+  readonly inputsDigest: WisDigestReference;
+  readonly factSetDigest: WisDigestReference;
+  readonly providerSetDigest: WisDigestReference;
+  readonly extractorSetDigest: WisDigestReference;
+  readonly compositionPolicyDigest: WisDigestReference;
+  readonly redactionPolicyDigest: WisDigestReference;
+  readonly scopeDigest: WisDigestReference;
+  readonly coverageDigest: WisDigestReference;
+  readonly unknownZoneDigest: WisDigestReference;
+  readonly unsupportedZoneDigest: WisDigestReference;
+  readonly orderingRuleDigest: WisDigestReference;
+  readonly orderingRuleId: typeof GRAPH_COMPOSITION_ORDERING_RULES.id;
+}
+
+export interface GraphCompositionReceipt extends GraphCompositionSemanticReceipt {
+  readonly contentDigest: WisDigestReference;
+  readonly qualityDigest: WisDigestReference;
+}
+
 export interface GraphCompositionOutput {
   readonly graph: GraphCanonicalGraph;
   readonly quality: GraphQualityReport;
@@ -103,6 +140,73 @@ export interface GraphCompositionOutput {
     readonly providers: WisDigestReference;
     readonly compositionPolicy: WisDigestReference;
   };
+  readonly receipt: GraphCompositionReceipt;
+}
+
+function digestEquals(left: WisDigestReference, right: WisDigestReference): boolean {
+  return left.algorithm === right.algorithm && left.value === right.value;
+}
+
+export function compositionSemanticReceiptsEqual(
+  left: GraphCompositionSemanticReceipt,
+  right: GraphCompositionSemanticReceipt
+): boolean {
+  return (
+    left.schema === right.schema &&
+    left.graphSchema.id === right.graphSchema.id &&
+    left.graphSchema.version === right.graphSchema.version &&
+    left.architectureEpoch === right.architectureEpoch &&
+    left.orderingRuleId === right.orderingRuleId &&
+    digestEquals(left.ontologySetDigest, right.ontologySetDigest) &&
+    digestEquals(left.proofPolicySetDigest, right.proofPolicySetDigest) &&
+    digestEquals(left.inputsDigest, right.inputsDigest) &&
+    digestEquals(left.factSetDigest, right.factSetDigest) &&
+    digestEquals(left.providerSetDigest, right.providerSetDigest) &&
+    digestEquals(left.extractorSetDigest, right.extractorSetDigest) &&
+    digestEquals(left.compositionPolicyDigest, right.compositionPolicyDigest) &&
+    digestEquals(left.redactionPolicyDigest, right.redactionPolicyDigest) &&
+    digestEquals(left.scopeDigest, right.scopeDigest) &&
+    digestEquals(left.coverageDigest, right.coverageDigest) &&
+    digestEquals(left.unknownZoneDigest, right.unknownZoneDigest) &&
+    digestEquals(left.unsupportedZoneDigest, right.unsupportedZoneDigest) &&
+    digestEquals(left.orderingRuleDigest, right.orderingRuleDigest)
+  );
+}
+
+export function compositionReceiptMatchesPublishedGraph(
+  receipt: GraphCompositionReceipt,
+  graph: GraphCanonicalGraph,
+  quality: GraphQualityReport | undefined
+): boolean {
+  if (!quality) return false;
+  const generation = graph.generation;
+  return (
+    compositionSemanticReceiptsEqual(receipt, {
+      schema: GRAPH_COMPOSITION_RECEIPT_SCHEMA,
+      graphSchema: generation.graphSchema,
+      architectureEpoch: generation.architectureEpoch,
+      ontologySetDigest: generation.ontologySetDigest,
+      proofPolicySetDigest: generation.proofPolicySetDigest,
+      inputsDigest: generation.inputsDigest,
+      factSetDigest: generation.factSetDigest,
+      providerSetDigest: generation.providerSetDigest,
+      extractorSetDigest: receipt.extractorSetDigest,
+      compositionPolicyDigest: generation.compositionPolicyDigest,
+      redactionPolicyDigest: receipt.redactionPolicyDigest,
+      scopeDigest: receipt.scopeDigest,
+      coverageDigest: receipt.coverageDigest,
+      unknownZoneDigest: receipt.unknownZoneDigest,
+      unsupportedZoneDigest: receipt.unsupportedZoneDigest,
+      orderingRuleDigest: receipt.orderingRuleDigest,
+      orderingRuleId: GRAPH_COMPOSITION_ORDERING_RULES.id,
+    }) &&
+    receipt.orderingRuleId === GRAPH_COMPOSITION_ORDERING_RULES.id &&
+    receipt.graphSchema.id === GRAPH_CANONICAL_GRAPH_CONTRACT.id &&
+    receipt.graphSchema.version === GRAPH_CANONICAL_GRAPH_CONTRACT.version &&
+    digestEquals(receipt.contentDigest, generation.reference.contentDigest) &&
+    quality.generation.id === generation.reference.id &&
+    digestEquals(quality.generation.contentDigest, generation.reference.contentDigest)
+  );
 }
 
 export type GraphCompositionResult =

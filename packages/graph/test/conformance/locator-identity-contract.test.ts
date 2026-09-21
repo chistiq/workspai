@@ -14,6 +14,7 @@ import {
 import {
   GRAPH_LOCATOR_IDENTITY,
   classifyGraphRelativeLocator,
+  graphLocatorSurvivesIdentityRendering,
   normalizeGraphEntityIdentity,
   resolveGraphEntityIdentity,
 } from '../../src/conformance/index.js';
@@ -281,5 +282,41 @@ describe('Graph locator-identity public contract', () => {
     if (resolved.accepted) {
       expect(resolved.value.reference.id).toMatch(/^entity:workspai:file:sha256:[a-f0-9]{64}$/u);
     }
+  });
+
+  it('keeps identity renderings of admitted locators projection-stable', () => {
+    const portable = ['src/app.ts', 'packages/foo/bar.ts', 'encoded/GET%20%2Fhealth'];
+    for (const locator of portable) {
+      const classified = GRAPH_LOCATOR_IDENTITY.classify(
+        locator,
+        locator.startsWith('encoded/') ? 'endpoint' : 'file'
+      );
+      expect(classified.class, locator).not.toBe('unsafe');
+      expect(
+        graphLocatorSurvivesIdentityRendering(
+          classified.locator,
+          locator.startsWith('encoded/') ? 'endpoint' : 'file'
+        ),
+        locator
+      ).toBe(true);
+    }
+    expect(
+      normalizeGraphEntityIdentity({
+        namespace: 'workspai',
+        kind: 'file',
+        relativeLocator: 'src/%2e%2e/secret.ts',
+        caseSensitivity: 'sensitive',
+        scope,
+      }).accepted
+    ).toBe(false);
+    expect(
+      GRAPH_LOCATOR_IDENTITY.admitDeclared('../secret.ts', 'encoded').startsWith('encoded/')
+    ).toBe(true);
+    expect(
+      graphLocatorSurvivesIdentityRendering(
+        GRAPH_LOCATOR_IDENTITY.admitDeclared('../secret.ts', 'encoded'),
+        'module'
+      )
+    ).toBe(true);
   });
 });

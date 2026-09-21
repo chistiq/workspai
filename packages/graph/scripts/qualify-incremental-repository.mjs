@@ -202,6 +202,8 @@ async function main() {
         scanProfileDigest,
         referenceGenerationDigest: reference.graph.generation.reference.contentDigest,
         baseGraph: base.graph,
+        ...(base.quality.graph ? { baseQuality: base.quality.graph } : {}),
+        ...(base.compositionReceipt ? { baseCompositionReceipt: base.compositionReceipt } : {}),
       });
       const incrementalMs = Math.round(performance.now() - incrementalStarted);
       const parityDelta = incremental.graph

@@ -33,6 +33,17 @@ import { hashCanonicalJson } from '../src/workspace-model-hash.js';
 const PATH_LEAK = /(?:[A-Za-z]:[\\/]|\/home\/|\/Users\/|\\\\)/u;
 const FIXED_GENERATED_AT = '2026-09-12T00:00:00.000Z';
 
+export function portableGraphProjectId(id: string): string {
+  return (
+    id
+      .normalize('NFC')
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/gu, '-')
+      .replace(/^-+|-+$/gu, '')
+      .slice(0, 128) || 'project'
+  );
+}
+
 function parseArgs(args: readonly string[]): {
   readonly referenceRoot: string;
   readonly projects: readonly string[];
@@ -269,6 +280,7 @@ async function directionalDelta(project: string, root: string): Promise<unknown>
 
 async function evaluateOne(referenceRoot: string, project: string): Promise<unknown> {
   const repo = path.join(referenceRoot, project);
+  const projectId = portableGraphProjectId(project);
   const commit = git(repo, ['rev-parse', 'HEAD']);
   const porcelain = git(repo, ['status', '--porcelain']);
   const dirty = porcelain.length > 0;
@@ -278,30 +290,30 @@ async function evaluateOne(referenceRoot: string, project: string): Promise<unkn
     const memoryBefore = process.memoryUsage().heapUsed;
     const first = await buildNodeRepoGraph({
       root: checkout.root,
-      scope: { kind: 'project', projectIds: [project] },
+      scope: { kind: 'project', projectIds: [projectId] },
     });
     const coldMs = Math.round(performance.now() - started);
     const warmStarted = performance.now();
     const second = await buildNodeRepoGraph({
       root: checkout.root,
-      scope: { kind: 'project', projectIds: [project] },
+      scope: { kind: 'project', projectIds: [projectId] },
     });
     const warmMs = Math.round(performance.now() - warmStarted);
     const third = await buildNodeRepoGraph({
       root: checkout.root,
-      scope: { kind: 'project', projectIds: [project] },
+      scope: { kind: 'project', projectIds: [projectId] },
     });
     const cancelledController = new AbortController();
     cancelledController.abort();
     const cancelled = await buildNodeRepoGraph({
       root: checkout.root,
-      scope: { kind: 'project', projectIds: [project] },
+      scope: { kind: 'project', projectIds: [projectId] },
       signal: cancelledController.signal,
     });
     const timed = AbortSignal.timeout(1);
     const timedOut = await buildNodeRepoGraph({
       root: checkout.root,
-      scope: { kind: 'project', projectIds: [project] },
+      scope: { kind: 'project', projectIds: [projectId] },
       signal: timed,
     });
     const omitted = first.metrics.omittedFiles;
@@ -316,7 +328,7 @@ async function evaluateOne(referenceRoot: string, project: string): Promise<unkn
     );
     let directional: unknown = { status: 'not-assessed' };
     try {
-      directional = await directionalDelta(project, checkout.root);
+      directional = await directionalDelta(projectId, checkout.root);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'directional-delta-failed';
       directional = {
@@ -337,15 +349,17 @@ async function evaluateOne(referenceRoot: string, project: string): Promise<unkn
       try {
         const incremental = await buildNodeIncrementalRepoGraph({
           root: checkout.root,
-          scope: { kind: 'project', projectIds: [project] },
+          scope: { kind: 'project', projectIds: [projectId] },
           base: first,
+          currentTreeReferenceDigest: third.graph?.generation.reference.contentDigest,
         });
         incrementalSkipReread = {
           assessed: true,
           skipRereadTrusted: incremental.inventoryReread.trust === 'trusted',
           inventoryRereadTrust: incremental.inventoryReread.trust,
           status: incremental.status,
-          digestComparison: incrementalDigestComparison(first, incremental),
+          digestComparison: incrementalDigestComparison(third, incremental),
+          digestEqualToCurrentTree: incrementalDigestComparison(third, incremental) === 'equal',
           digestEqualToBase: incrementalDigestComparison(first, incremental) === 'equal',
           equivalence: incremental.equivalence,
         };
@@ -464,6 +478,7 @@ export interface GraphReferenceQualityObservation {
     readonly assessed?: boolean;
     readonly status?: string;
     readonly digestComparison?: GraphDigestComparison;
+    readonly digestEqualToCurrentTree?: boolean;
     readonly digestEqualToBase?: boolean;
     readonly equivalence?: string;
     readonly inventoryRereadTrust?: string;

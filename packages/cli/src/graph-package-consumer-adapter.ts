@@ -35,8 +35,12 @@ export const GRAPH_CONSUMER_RUNTIME_AUTHORITY = 'official-internal-graph-capabil
 export const GRAPH_CONSUMER_PACKAGE_PRIMARY = false as const;
 export const GRAPH_CONSUMER_SILENT_FALLBACK = 'prohibited' as const;
 export const GRAPH_PACKAGE_PRIMARY_NOT_ADMITTED = 'GRAPH_PACKAGE_PRIMARY_NOT_ADMITTED' as const;
+export const GRAPH_PACKAGE_PRIMARY_COMPARE_OVERLAY =
+  'GRAPH_PACKAGE_PRIMARY_COMPARE_OVERLAY' as const;
 export const GRAPH_CONSUMER_SHADOW_RECEIPT_SCHEMA_VERSION =
   'workspai.graph-consumer-shadow-receipt.v1-candidate' as const;
+export const GRAPH_PACKAGE_PRIMARY_COMPARE_RECEIPT_SCHEMA_VERSION =
+  'workspai.graph-consumer-package-primary-compare-receipt.v1-candidate' as const;
 
 export const GRAPH_CONSUMER_SURFACE_IDS = [
   'workspace-graph-generation',
@@ -139,17 +143,75 @@ export class GraphPackagePrimaryNotAdmittedError extends Error {
   }
 }
 
+export class GraphPackagePrimaryCompareOverlayError extends Error {
+  readonly code = GRAPH_PACKAGE_PRIMARY_COMPARE_OVERLAY;
+
+  constructor() {
+    super(
+      'Package-primary-with-compare cannot overlay a package candidate onto itself. Legacy authority must be an independently built released-CLI graph.'
+    );
+    this.name = 'GraphPackagePrimaryCompareOverlayError';
+  }
+}
+
 /**
  * Unadmitted package-primary entry. Always throws.
  *
- * This is not package-primary-with-compare. Shadow consumer parity must not be
- * invoked from here, and flipping GRAPH_CONSUMER_PACKAGE_PRIMARY must not
- * publish package graph truth. A later admitted implementation has to build
- * the released-CLI graph independently for comparison, must not overlay a
- * candidate onto itself, and must not reuse a packagePrimary:false receipt.
+ * Production consumers must not call executePackagePrimaryWithCompare. That
+ * function is a fail-closed comparison receipt only and never publishes package
+ * graph truth while GRAPH_CONSUMER_PACKAGE_PRIMARY remains false.
  */
 export async function refuseUnadmittedPackagePrimaryExecution(): Promise<never> {
   throw new GraphPackagePrimaryNotAdmittedError();
+}
+
+export interface PackagePrimaryCompareReceipt {
+  readonly schemaVersion: typeof GRAPH_PACKAGE_PRIMARY_COMPARE_RECEIPT_SCHEMA_VERSION;
+  readonly epoch: 'package-primary-with-compare';
+  readonly executionPath: 'compared';
+  readonly authority: 'released-cli';
+  readonly packagePrimary: false;
+  readonly admittedProducer: false;
+  readonly fallback: 'prohibited';
+  readonly packageWrites: 'prohibited';
+  readonly overlay: 'independent-legacy-versus-package';
+  readonly packageGeneration: PackageWorkspaceKnowledgeGraphCandidate['packageGeneration'];
+  readonly comparison: WorkspaceKnowledgeGraphChangeOverlay;
+  readonly consumers: readonly GraphConsumerParityStatus[];
+}
+
+/**
+ * Fail-closed comparison of an independently built released-CLI graph against a
+ * package candidate. This is not production Graph authority, does not write
+ * artifacts, and does not fall back to legacy when comparison fails.
+ */
+export async function executePackagePrimaryWithCompare(input: {
+  readonly legacyAuthority: WorkspaceKnowledgeGraph;
+  readonly packageCandidate: PackageWorkspaceKnowledgeGraphCandidate;
+}): Promise<PackagePrimaryCompareReceipt> {
+  if (input.packageCandidate.packagePrimary !== false) {
+    throw new GraphPackagePrimaryNotAdmittedError();
+  }
+  if (input.legacyAuthority === input.packageCandidate.graph) {
+    throw new GraphPackagePrimaryCompareOverlayError();
+  }
+  return {
+    schemaVersion: GRAPH_PACKAGE_PRIMARY_COMPARE_RECEIPT_SCHEMA_VERSION,
+    epoch: 'package-primary-with-compare',
+    executionPath: 'compared',
+    authority: 'released-cli',
+    packagePrimary: false,
+    admittedProducer: false,
+    fallback: 'prohibited',
+    packageWrites: 'prohibited',
+    overlay: 'independent-legacy-versus-package',
+    packageGeneration: input.packageCandidate.packageGeneration,
+    comparison: buildWorkspaceKnowledgeGraphChangeOverlay(
+      input.legacyAuthority,
+      input.packageCandidate.graph
+    ),
+    consumers: graphConsumerParityStatuses(),
+  };
 }
 
 /**

@@ -21,6 +21,7 @@ export function createObservedEdgeFact(input: {
   readonly authority: GraphWorkspaceFact['authority'];
   readonly confidence: number;
   readonly unknownZones?: readonly GraphUnknownZone[];
+  readonly extensions?: Readonly<Record<string, unknown>>;
 }): GraphWorkspaceFact {
   return {
     factId: input.factId,
@@ -46,6 +47,7 @@ export function createObservedEdgeFact(input: {
     observedAt: input.request.observedAt,
     inputDigest: input.source.digest,
     unknownZones: [...(input.unknownZones ?? [])],
+    ...(input.extensions ? { extensions: input.extensions } : {}),
   };
 }
 

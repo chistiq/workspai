@@ -70,6 +70,16 @@ function indexRecords(
   return indexed;
 }
 
+function directoryPrefix(locator: string): string {
+  return locator.endsWith('/') ? locator : `${locator}/`;
+}
+
+function journalRecordCoversLocator(record: GraphChangeJournalRecord, locator: string): boolean {
+  if (record.locator === locator || record.priorLocator === locator) return true;
+  if (locator.startsWith(directoryPrefix(record.locator))) return true;
+  return Boolean(record.priorLocator && locator.startsWith(directoryPrefix(record.priorLocator)));
+}
+
 /**
  * Decides which prior content-state leaves may skip a file-content reread.
  * Only a trusted Git/watcher/journal may skip; observations never enter Merkle
@@ -122,7 +132,16 @@ export function planInventoryReread(request: {
     }
 
     if (!record) {
-      decisions[locator] = 'reuse-prior-digest';
+      const covering = [...records.values()].find((candidate) =>
+        journalRecordCoversLocator(candidate, locator)
+      );
+      decisions[locator] = covering ? 'reread' : 'reuse-prior-digest';
+      if (covering?.gitStatus || covering?.priorLocator) {
+        observations[locator] = Object.freeze({
+          ...(covering.gitStatus ? { gitStatus: covering.gitStatus } : {}),
+          ...(covering.priorLocator ? { priorLocator: covering.priorLocator } : {}),
+        });
+      }
       continue;
     }
 

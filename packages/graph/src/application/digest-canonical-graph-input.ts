@@ -2,6 +2,7 @@ import type { WisDigestReference } from '@workspai/shared/contracts';
 
 import { streamCanonicalGraphValue } from '../conformance/canonical-value.js';
 import type { GraphCancellationPort, GraphDigestPort } from '../ports/index.js';
+import { recordGraphDataMovement } from './data-movement.js';
 
 const STREAMING_FALLBACK_BYTES = 16 * 1024 * 1024;
 
@@ -50,6 +51,7 @@ export async function digestCanonicalGraphInput(
     if (!streamed.accepted) {
       throw new Error(streamed.issues[0]?.message ?? 'Canonicalization failed.');
     }
+    recordGraphDataMovement('hashed');
     return finish(await streamer.digest());
   }
 
@@ -73,6 +75,7 @@ export async function digestCanonicalGraphInput(
   if (!streamed.accepted) {
     throw new Error(streamed.issues[0]?.message ?? 'Canonicalization failed.');
   }
+  recordGraphDataMovement('hashed');
   return finish(await digest.digest(concatUtf8Chunks(chunks, size)));
 }
 

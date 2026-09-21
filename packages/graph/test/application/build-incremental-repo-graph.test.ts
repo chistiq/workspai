@@ -85,10 +85,15 @@ function ports(
       inventory: async (request: GraphFileInventoryRequest) => {
         options.inventoryCalls?.push(request.onlyLocators);
         const all = Object.entries(files).map(([locator, content]) => inputFor(locator, content));
+        const known = new Set(request.knownLocators ?? []);
         const inputs =
           request.onlyLocators === undefined
             ? all
-            : all.filter((entry) => request.onlyLocators?.includes(entry.locator));
+            : all.filter(
+                (entry) =>
+                  request.onlyLocators?.includes(entry.locator) ||
+                  (request.knownLocators !== undefined && !known.has(entry.locator))
+              );
         return {
           status: 'complete',
           inputs,
@@ -97,6 +102,7 @@ function ports(
           omittedBytes: 0,
           unknownZones: [],
           unsupportedZones: [],
+          membershipLocators: all.map((entry) => entry.locator),
         };
       },
       read: async (_root, requested) => new TextEncoder().encode(files[requested.locator] ?? ''),
@@ -244,6 +250,8 @@ describe('buildIncrementalRepoGraph', () => {
       scanProfileDigest,
       referenceGenerationDigest: full.graph?.generation.reference.contentDigest,
       baseGraph: full.graph,
+      ...(full.quality.graph ? { baseQuality: full.quality.graph } : {}),
+      ...(full.compositionReceipt ? { baseCompositionReceipt: full.compositionReceipt } : {}),
     });
 
     expect(incremental.equivalence).toBe('pass');
@@ -284,6 +292,8 @@ describe('buildIncrementalRepoGraph', () => {
       scanProfileDigest,
       referenceGenerationDigest: { algorithm: 'sha256', value: 'f'.repeat(64) },
       baseGraph: full.graph,
+      ...(full.quality.graph ? { baseQuality: full.quality.graph } : {}),
+      ...(full.compositionReceipt ? { baseCompositionReceipt: full.compositionReceipt } : {}),
     });
     expect(mismatched.equivalence).toBe('blocked');
     expect(mismatched.status).toBe('failed');
@@ -346,7 +356,7 @@ describe('buildIncrementalRepoGraph', () => {
 
     expect(incremental.inventoryReread.trust).toBe('trusted');
     expect(incremental.inventoryReread.reusedLocators).toEqual(['src/index.ts']);
-    expect(inventoryCalls).toEqual([[]]);
+    expect(inventoryCalls).toEqual([[], []]);
     expect(incremental.plan.delta.execution).toMatchObject({
       detected: 0,
       scanned: 0,
@@ -356,7 +366,441 @@ describe('buildIncrementalRepoGraph', () => {
     });
     expect(incremental.plan.accounting.bytes).toEqual({ hashed: 0, reused: 20 });
     expect(incremental.equivalence).toBe('pass');
+    expect(incremental.executionPath).toBe('skip-reread');
     expect(collectCalls.filter((id) => id === 'workspai.graph.provider.fixture-a').length).toBe(0);
+  });
+
+  it('hashes a filesystem-only new file when Git porcelain is empty', async () => {
+    const baseFiles = { 'src/index.ts': 'export const ok = 1;' };
+    const currentFiles = {
+      'src/index.ts': 'export const ok = 1;',
+      'ignored-new.ts': 'export const ignored = 1;',
+    };
+    const providers = [fixtureProvider('workspai.graph.provider.fixture-a', 'src/index.ts', [])];
+    const full = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(baseFiles),
+    });
+    const current = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(currentFiles),
+    });
+    const baseManifest = buildContentStateManifest({
+      scope,
+      generatedAt: '2026-09-09T12:00:00.000Z',
+      scanProfileDigest,
+      leaves: contentStateLeavesFromProviderInputs(
+        [inputFor('src/index.ts', baseFiles['src/index.ts']!)],
+        scanProfileDigest
+      ),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
+    });
+    const incremental = await buildIncrementalRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(currentFiles, { porcelain: '' }),
+      baseManifest,
+      baseGeneration: 'generation:base',
+      targetGeneration: 'generation:target',
+      baseSources: full.compositionSources ?? [],
+      providersToRecompute: [],
+      scanProfileDigest,
+    });
+    expect(incremental.inventoryReread.trust).toBe('trusted');
+    expect(incremental.inventoryReread.rereadLocators).toContain('ignored-new.ts');
+    expect(incremental.admittedInputs?.some((input) => input.locator === 'ignored-new.ts')).toBe(
+      true
+    );
+    expect(incremental.executionPath).toBe('skip-reread');
+    expect(incremental.equivalence).toBe('not-assessed');
+    expect(incremental.graph?.generation.reference.contentDigest).toEqual(
+      current.graph?.generation.reference.contentDigest
+    );
+    expect(incremental.inventoryMembership?.locators).toEqual(
+      expect.arrayContaining(['ignored-new.ts', 'src/index.ts'])
+    );
+  });
+
+  it('drops a filesystem-only deleted file when Git porcelain is empty', async () => {
+    const baseFiles = {
+      'src/index.ts': 'export const ok = 1;',
+      'ignored.ts': 'export const ignored = 1;',
+    };
+    const currentFiles = { 'src/index.ts': 'export const ok = 1;' };
+    const providers = [fixtureProvider('workspai.graph.provider.fixture-a', 'src/index.ts', [])];
+    const full = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(baseFiles),
+    });
+    const current = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(currentFiles),
+    });
+    const baseManifest = buildContentStateManifest({
+      scope,
+      generatedAt: '2026-09-09T12:00:00.000Z',
+      scanProfileDigest,
+      leaves: contentStateLeavesFromProviderInputs(
+        [
+          inputFor('src/index.ts', baseFiles['src/index.ts']!),
+          inputFor('ignored.ts', baseFiles['ignored.ts']!),
+        ],
+        scanProfileDigest
+      ),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
+    });
+    const incremental = await buildIncrementalRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(currentFiles, { porcelain: '' }),
+      baseManifest,
+      baseGeneration: 'generation:base',
+      targetGeneration: 'generation:target',
+      baseSources: full.compositionSources ?? [],
+      providersToRecompute: [],
+      scanProfileDigest,
+    });
+    expect(incremental.inventoryReread.deletedLocators).toContain('ignored.ts');
+    expect(incremental.admittedInputs?.some((input) => input.locator === 'ignored.ts')).toBe(false);
+    expect(incremental.graph?.generation.reference.contentDigest).toEqual(
+      current.graph?.generation.reference.contentDigest
+    );
+  });
+
+  it('executes the full package path when inventory membership is truncated', async () => {
+    const files = { 'src/index.ts': 'export const ok = 1;' };
+    const providers = [fixtureProvider('workspai.graph.provider.fixture-a', 'src/index.ts', [])];
+    const full = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files),
+    });
+    const baseManifest = buildContentStateManifest({
+      scope,
+      generatedAt: '2026-09-09T12:00:00.000Z',
+      scanProfileDigest,
+      leaves: contentStateLeavesFromProviderInputs(
+        [inputFor('src/index.ts', files['src/index.ts']!)],
+        scanProfileDigest
+      ),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
+    });
+    const host = ports(files, { porcelain: '' });
+    const incremental = await buildIncrementalRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: {
+        ...host,
+        fileSource: {
+          inventory: async (request) => {
+            const result = await host.fileSource.inventory(request);
+            if (request.onlyLocators !== undefined && !request.membershipProbe) {
+              return { ...result, membershipTruncated: true };
+            }
+            return result;
+          },
+          read: host.fileSource.read,
+        },
+      },
+      baseManifest,
+      baseGeneration: 'generation:base',
+      targetGeneration: 'generation:target',
+      baseSources: full.compositionSources ?? [],
+      providersToRecompute: [],
+      scanProfileDigest,
+    });
+    expect(incremental.executionPath).toBe('full');
+    expect(incremental.inventoryMembership?.complete).toBe(true);
+    expect(incremental.inventoryMembership?.locators).toEqual(
+      expect.arrayContaining(['src/index.ts'])
+    );
+    expect(incremental.snapshotConsistency).toBe('matched');
+    expect(incremental.graph?.generation.reference.contentDigest).toEqual(
+      full.graph?.generation.reference.contentDigest
+    );
+    const chained = await buildIncrementalRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: host,
+      baseManifest: incremental.targetManifest,
+      baseGeneration: 'generation:target',
+      targetGeneration: 'generation:chained',
+      baseSources: incremental.compositionSources ?? [],
+      providersToRecompute: [],
+      scanProfileDigest,
+    });
+    expect(chained.executionPath).toBe('skip-reread');
+    expect(chained.snapshotConsistency).toBe('matched');
+  });
+
+  it('retries skip-reread when a tracked file mutates after Git inspection', async () => {
+    const files: Record<string, string> = { 'src/index.ts': 'export const ok = 1;' };
+    const journal = { porcelain: '' };
+    const providers = [fixtureProvider('workspai.graph.provider.fixture-a', 'src/index.ts', [])];
+    const full = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files),
+    });
+    const baseManifest = buildContentStateManifest({
+      scope,
+      generatedAt: '2026-09-09T12:00:00.000Z',
+      scanProfileDigest,
+      leaves: contentStateLeavesFromProviderInputs(
+        [inputFor('src/index.ts', files['src/index.ts']!)],
+        scanProfileDigest
+      ),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
+    });
+    let mutated = false;
+    const host = ports(files, journal);
+    const incremental = await buildIncrementalRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: {
+        ...host,
+        snapshotProbe: {
+          afterPreObserve: () => {
+            if (mutated) return;
+            mutated = true;
+            files['src/index.ts'] = 'export const ok = 2;';
+            journal.porcelain = ' M src/index.ts\n';
+          },
+        },
+      },
+      baseManifest,
+      baseGeneration: 'generation:base',
+      targetGeneration: 'generation:target',
+      baseSources: full.compositionSources ?? [],
+      providersToRecompute: [],
+      scanProfileDigest,
+    });
+    const current = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files),
+    });
+    expect(incremental.snapshotConsistency).toBe('matched');
+    expect(incremental.inventoryReread.rereadLocators).toContain('src/index.ts');
+    expect(incremental.graph?.generation.reference.contentDigest).toEqual(
+      current.graph?.generation.reference.contentDigest
+    );
+  });
+
+  it('retries when membership changes after the inventory walk', async () => {
+    const files: Record<string, string> = { 'src/index.ts': 'export const ok = 1;' };
+    const providers = [fixtureProvider('workspai.graph.provider.fixture-a', 'src/index.ts', [])];
+    const full = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files),
+    });
+    const baseManifest = buildContentStateManifest({
+      scope,
+      generatedAt: '2026-09-09T12:00:00.000Z',
+      scanProfileDigest,
+      leaves: contentStateLeavesFromProviderInputs(
+        [inputFor('src/index.ts', files['src/index.ts']!)],
+        scanProfileDigest
+      ),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
+    });
+    let added = false;
+    const host = ports(files, { porcelain: '' });
+    const incremental = await buildIncrementalRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: {
+        ...host,
+        snapshotProbe: {
+          afterInventory: () => {
+            if (added) return;
+            added = true;
+            files['extra.ts'] = 'export const extra = 1;';
+          },
+        },
+      },
+      baseManifest,
+      baseGeneration: 'generation:base',
+      targetGeneration: 'generation:target',
+      baseSources: full.compositionSources ?? [],
+      providersToRecompute: [],
+      scanProfileDigest,
+    });
+    expect(incremental.snapshotConsistency).toBe('matched');
+    expect(incremental.admittedInputs?.some((input) => input.locator === 'extra.ts')).toBe(true);
+  });
+
+  it('omits skip-reread authority when mutation exceeds the retry bound', async () => {
+    const files: Record<string, string> = { 'src/index.ts': 'export const ok = 1;' };
+    const providers = [fixtureProvider('workspai.graph.provider.fixture-a', 'src/index.ts', [])];
+    const full = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files),
+    });
+    const baseManifest = buildContentStateManifest({
+      scope,
+      generatedAt: '2026-09-09T12:00:00.000Z',
+      scanProfileDigest,
+      leaves: contentStateLeavesFromProviderInputs(
+        [inputFor('src/index.ts', files['src/index.ts']!)],
+        scanProfileDigest
+      ),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
+    });
+    let extra = 0;
+    const host = ports(files, { porcelain: '' });
+    const incremental = await buildIncrementalRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: {
+        ...host,
+        snapshotProbe: {
+          afterInventory: () => {
+            extra += 1;
+            files[`extra-${extra}.ts`] = `export const extra = ${extra};`;
+          },
+        },
+      },
+      baseManifest,
+      baseGeneration: 'generation:base',
+      targetGeneration: 'generation:target',
+      baseSources: full.compositionSources ?? [],
+      providersToRecompute: [],
+      scanProfileDigest,
+      snapshotAttempts: 2,
+    });
+    expect(incremental.snapshotConsistency).toBe('unstable');
+    expect(incremental.gitBaseline).toBeUndefined();
+    expect(incremental.inventoryMembership).toBeUndefined();
+    expect(incremental.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'GRAPH_INCREMENTAL_SNAPSHOT_UNSTABLE' }),
+      ])
+    );
+  });
+
+  it('executes the full package path when no prior file digest can be reused', async () => {
+    const files = { 'src/index.ts': 'export const ok = 1;' };
+    const providers = [fixtureProvider('workspai.graph.provider.fixture-a', 'src/index.ts', [])];
+    const full = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files),
+    });
+    const baseManifest = buildContentStateManifest({
+      scope,
+      generatedAt: '2026-09-09T12:00:00.000Z',
+      scanProfileDigest,
+      leaves: contentStateLeavesFromProviderInputs(
+        [inputFor('src/index.ts', files['src/index.ts']!)],
+        scanProfileDigest
+      ),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
+    });
+    const incremental = await buildIncrementalRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files),
+      baseManifest,
+      baseGeneration: 'generation:base',
+      targetGeneration: 'generation:target',
+      baseSources: full.compositionSources ?? [],
+      providersToRecompute: [],
+      scanProfileDigest,
+      referenceGenerationDigest: full.graph?.generation.reference.contentDigest,
+    });
+    expect(incremental.inventoryReread.reusedLocators).toEqual([]);
+    expect(incremental.executionPath).toBe('full');
+    expect(incremental.equivalence).toBe('pass');
+    expect(incremental.plan.diagnostics).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'GRAPH_INCREMENTAL_EXECUTED_AS_FULL' }),
+      ])
+    );
+    expect(incremental.graph?.generation.reference.contentDigest).toEqual(
+      full.graph?.generation.reference.contentDigest
+    );
   });
 
   it('matches full-rebuild digest across trusted Git, absent journal, untrusted journal and another checkout root', async () => {
@@ -501,7 +945,7 @@ describe('buildIncrementalRepoGraph', () => {
       ports: ports(files),
     });
 
-    expect(inventoryCalls).toEqual([['src/a.ts']]);
+    expect(inventoryCalls).toEqual([['src/a.ts'], []]);
     expect(incrementalCollects).toEqual([providerA]);
     expect(incremental.plan.delta.execution).toMatchObject({
       detected: 1,
@@ -878,6 +1322,112 @@ describe('buildIncrementalRepoGraph', () => {
       scanProfileDigest,
     });
     expect(incremental.status).toBe('failed');
+  });
+
+  it('fails closed when skip-reread inventory throws', async () => {
+    const files = { 'src/index.ts': 'export const ok = 1;' };
+    const providers = [fixtureProvider('workspai.graph.provider.fixture-a', 'src/index.ts', [])];
+    const full = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files),
+    });
+    const baseManifest = buildContentStateManifest({
+      scope,
+      generatedAt: '2026-09-09T12:00:00.000Z',
+      scanProfileDigest,
+      leaves: contentStateLeavesFromProviderInputs(
+        [inputFor('src/index.ts', files['src/index.ts']!)],
+        scanProfileDigest
+      ),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
+    });
+    const host = ports(files, { porcelain: '' });
+    const incremental = await buildIncrementalRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: {
+        ...host,
+        fileSource: {
+          inventory: async () => {
+            throw new Error('inventory exploded');
+          },
+          read: host.fileSource.read,
+        },
+      },
+      baseManifest,
+      baseGeneration: 'generation:base',
+      targetGeneration: 'generation:target',
+      baseSources: full.compositionSources ?? [],
+      providersToRecompute: [],
+      scanProfileDigest,
+    });
+    expect(incremental.executionPath).toBe('skip-reread');
+    expect(incremental.status).toBe('failed');
+    expect(incremental.diagnostics).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: 'GRAPH_FILE_INVENTORY_FAILED' })])
+    );
+  });
+
+  it('cancels skip-reread inventory after host cancellation', async () => {
+    const files = { 'src/index.ts': 'export const ok = 1;' };
+    const providers = [fixtureProvider('workspai.graph.provider.fixture-a', 'src/index.ts', [])];
+    const full = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files),
+    });
+    const baseManifest = buildContentStateManifest({
+      scope,
+      generatedAt: '2026-09-09T12:00:00.000Z',
+      scanProfileDigest,
+      leaves: contentStateLeavesFromProviderInputs(
+        [inputFor('src/index.ts', files['src/index.ts']!)],
+        scanProfileDigest
+      ),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
+    });
+    const host = ports(files, { porcelain: '' });
+    const incremental = await buildIncrementalRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: {
+        ...host,
+        cancellation: { aborted: true, throwIfAborted: () => undefined },
+        fileSource: {
+          inventory: async () => {
+            throw new Error('inventory exploded');
+          },
+          read: host.fileSource.read,
+        },
+      },
+      baseManifest,
+      baseGeneration: 'generation:base',
+      targetGeneration: 'generation:target',
+      baseSources: full.compositionSources ?? [],
+      providersToRecompute: [],
+      scanProfileDigest,
+    });
+    expect(incremental.executionPath).toBe('skip-reread');
+    expect(incremental.status).toBe('cancelled');
   });
 
   it('cancels incremental inventory after host cancellation', async () => {

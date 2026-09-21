@@ -60,6 +60,54 @@ export const GRAPH_SHADOW_UNSAFE_DIFFERENCE_CODES = Object.freeze([
 ]);
 
 const ENTITY_RENDERING = /^entity:([^:]+):([^:]+):(.+)$/u;
+const HTTP_ROUTE_METHOD = /^(GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD|HTTP|ALL)$/u;
+const SOURCE_ENDPOINT_KEY =
+  /^source-endpoint:[^:]+:(?:.*):((?:GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD|HTTP|ALL)):(\/.*)?$/u;
+const OPENAPI_ENDPOINT_KEY =
+  /^endpoint:[^:]+:(?:.*):((?:GET|POST|PUT|PATCH|DELETE|OPTIONS|HEAD|HTTP|ALL)):(\/.*)?$/u;
+
+function decodeOpaqueDeclaredLocator(locator: string): string | undefined {
+  const classified = GRAPH_LOCATOR_IDENTITY.classify(locator, 'endpoint');
+  if (classified.class === 'opaque') {
+    const encoded = classified.locator.slice(classified.locator.indexOf('/') + 1);
+    try {
+      return decodeURIComponent(encoded.replaceAll('%2E', '.'));
+    } catch {
+      return undefined;
+    }
+  }
+  if (locator.startsWith('encoded/')) {
+    return locator.slice('encoded/'.length);
+  }
+  return undefined;
+}
+
+function comparableHttpRouteIdentity(locator: string): GraphShadowProjectedIdentity | undefined {
+  const opaque = decodeOpaqueDeclaredLocator(locator);
+  const declared = opaque ?? locator;
+  const spaced = /^([A-Za-z]+)\s+(\/.*)$/u.exec(declared);
+  if (spaced?.[1] && spaced[2] !== undefined) {
+    const method = spaced[1].toUpperCase();
+    if (HTTP_ROUTE_METHOD.test(method)) {
+      return { status: 'comparable', identity: `endpoint:${method}:${spaced[2] || '/'}` };
+    }
+  }
+  const sourceEndpoint = SOURCE_ENDPOINT_KEY.exec(locator);
+  if (sourceEndpoint?.[1]) {
+    return {
+      status: 'comparable',
+      identity: `endpoint:${sourceEndpoint[1]}:${sourceEndpoint[2] || '/'}`,
+    };
+  }
+  const openApiEndpoint = OPENAPI_ENDPOINT_KEY.exec(locator);
+  if (openApiEndpoint?.[1]) {
+    return {
+      status: 'comparable',
+      identity: `endpoint:${openApiEndpoint[1]}:${openApiEndpoint[2] || '/'}`,
+    };
+  }
+  return undefined;
+}
 export const MAX_URI_DECODE_ROUNDS = GRAPH_LOCATOR_IDENTITY.maxUriDecodeRounds;
 
 function isContentPathKind(kind: string): boolean {
@@ -121,6 +169,7 @@ export const GRAPH_SHADOW_BINDING_PRECISION_COVERAGE_DIMENSIONS = Object.freeze(
   'source-calls-resolved',
   'source-calls-ambiguous',
   'source-calls-unresolved',
+  'source-calls-external',
 ] as const);
 
 export function isGraphShadowTruncatingCoverage(observation: {
@@ -299,6 +348,10 @@ function comparablePackageLocator(
     }
     return { status: 'comparable', identity: `module:${classified.locator}` };
   }
+  if (kind === 'endpoint') {
+    const endpoint = comparableHttpRouteIdentity(locator);
+    if (endpoint) return endpoint;
+  }
   const path = preparedPath(locator, projectId, isContentPathKind(kind) ? kind : 'file');
   if (path.status === 'unsafe') return path;
   const safeLocator = path.locator;
@@ -345,6 +398,10 @@ function comparablePackageLocator(
   }
   if (kind === 'module') {
     return { status: 'comparable', identity: `module:${locator}` };
+  }
+  if (kind === 'endpoint') {
+    const endpoint = comparableHttpRouteIdentity(locator);
+    if (endpoint) return endpoint;
   }
   return { status: 'comparable', identity: `${mapShadowKind(kind)}:${locator}` };
 }
@@ -404,6 +461,10 @@ export function projectLegacyIdentity(
   }
   if (mappedKind === 'test' && mapped.startsWith('tests:')) {
     return { status: 'comparable', identity: mapped.replace(/^tests:/u, 'test:') };
+  }
+  if (mappedKind === 'endpoint') {
+    const endpoint = comparableHttpRouteIdentity(mapped);
+    if (endpoint) return endpoint;
   }
   if (isUnsafeComparableLocator(mapped, mappedKind === 'module' ? 'module' : 'file')) {
     return { status: 'unsafe', locator: normalizeComparablePath(mapped, mappedKind) || mapped };

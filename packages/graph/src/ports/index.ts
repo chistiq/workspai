@@ -186,9 +186,22 @@ export interface GraphFileInventoryRequest {
   readonly signal?: AbortSignal;
   /**
    * When set, only these locators are content-hashed. `undefined` inventories
-   * the whole tree; `[]` hashes no files. Used for trusted skip-reread.
+   * the whole tree; `[]` hashes no known files. Used for trusted skip-reread.
+   * New files still hash when `knownLocators` is also set.
    */
   readonly onlyLocators?: readonly string[];
+  /**
+   * File locators already admitted in the base inventory. When `onlyLocators`
+   * is set, files outside this set are treated as new membership and hashed
+   * without trusting Git porcelain.
+   */
+  readonly knownLocators?: readonly string[];
+  /**
+   * Membership confirmation walk used by incremental snapshot comparison.
+   * Hashing still follows `onlyLocators` / `knownLocators`; the flag exists so
+   * hosts can distinguish confirmation from skip-reread hashing.
+   */
+  readonly membershipProbe?: boolean;
 }
 
 export interface GraphFileInventoryResult {
@@ -202,6 +215,22 @@ export interface GraphFileInventoryResult {
   readonly omittedSubtrees?: readonly GraphOmittedSubtree[];
   readonly unknownZones: readonly GraphUnknownZone[];
   readonly unsupportedZones: readonly GraphUnsupportedZone[];
+  /**
+   * Portable file locators observed during the walk, including files whose
+   * contents were not hashed. Required for incremental membership comparison.
+   */
+  readonly membershipLocators?: readonly string[];
+  /**
+   * True when membership recording stopped at the locator-count or encoded-byte
+   * bound. Incomplete membership cannot authorize skip-reread reuse.
+   */
+  readonly membershipTruncated?: boolean;
+  /** Wall time of the host inventory walk, including hashing. */
+  readonly inventoryMs?: number;
+  /** Files whose names were recorded during the walk, hashed or not. */
+  readonly enumeratedFiles?: number;
+  /** Files whose contents were hashed. */
+  readonly hashedFiles?: number;
 }
 
 /** Host adapter for bounded repository reads. The engine never imports a filesystem API. */
@@ -219,6 +248,32 @@ export type GraphChangeJournalSource = 'git' | 'watcher' | 'change-journal' | 'n
 export type GraphChangeJournalRecordKind =
   'unchanged' | 'changed' | 'added' | 'deleted' | 'renamed' | 'untracked' | 'unknown';
 
+export const GRAPH_GIT_WORKTREE_BASELINE_SCHEMA =
+  'workspai.graph.git-worktree-baseline.v1' as const;
+
+/**
+ * Versioned receipt of the worktree identity a Graph generation was built from.
+ * Keys are digests; host paths are never persisted.
+ */
+export interface GraphGitWorktreeBaseline {
+  readonly schema: typeof GRAPH_GIT_WORKTREE_BASELINE_SCHEMA;
+  readonly worktreeKey: string;
+  readonly head: string;
+  readonly indexKey: string;
+  readonly prefix: string;
+  readonly clean: boolean;
+  readonly detached: boolean;
+  readonly branch: string;
+  readonly scanProfileDigest?: string;
+  readonly inventoryDigest?: string;
+  /**
+   * Portable locators that were dirty versus HEAD when this generation was
+   * built. Required when `clean` is false so a later incremental can reread
+   * restored files that Git no longer lists.
+   */
+  readonly dirtyLocators?: readonly string[];
+}
+
 /** Host-observed locator change. Git/mtime/path semantics never become reuse authority. */
 export interface GraphChangeJournalRecord {
   readonly locator: string;
@@ -232,22 +287,46 @@ export interface GraphChangeJournalInspection {
   readonly source: GraphChangeJournalSource;
   readonly records: readonly GraphChangeJournalRecord[];
   readonly diagnostics: readonly GraphDiagnostic[];
+  readonly baseline?: GraphGitWorktreeBaseline;
 }
 
 /**
- * Optional Git/watcher/change-journal adapter. Untrusted or absent inspections
- * force a conservative full reread; portable content digests remain correctness.
+ * Optional Git/watcher/change-journal adapter. Trusted skip-reread requires an
+ * admitted base-generation receipt for this worktree and proof that Git can
+ * observe every inventoried locator. Dirty bases may skip Git-unchanged files
+ * only when they record dirty locators so restores reread. Untrusted or absent
+ * inspections force a conservative full reread.
  */
 export interface GraphChangeJournalPort {
   inspect(request: {
     readonly root: string;
     readonly signal?: AbortSignal;
+    readonly base?: GraphGitWorktreeBaseline;
+    /**
+     * File locators from the base inventory. Required before trusted
+     * skip-reread: porcelain omits gitignored files, assume-unchanged /
+     * skip-worktree bits, and nested gitlink/submodule contents. Every locator
+     * must be an exact tracked file, an exact untracked porcelain file, or
+     * independently observed metadata such as `.git/HEAD`.
+     */
+    readonly inventoryLocators?: readonly string[];
   }): Promise<GraphChangeJournalInspection>;
 }
 
 export interface GraphProductHostPorts extends GraphExecutionPorts {
   readonly fileSource: GraphFileSourcePort;
   readonly changeJournal?: GraphChangeJournalPort;
+  /**
+   * Test-only deterministic mutation points for snapshot consistency. Production
+   * hosts omit this port.
+   */
+  readonly snapshotProbe?: GraphIncrementalSnapshotProbePort;
+}
+
+export interface GraphIncrementalSnapshotProbePort {
+  afterPreObserve?(): void | Promise<void>;
+  afterInventory?(): void | Promise<void>;
+  afterBuild?(): void | Promise<void>;
 }
 
 export type GraphProjectArtifactName =

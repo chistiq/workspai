@@ -5,6 +5,7 @@ import {
   type GraphValidationResult,
 } from '../contracts/index.js';
 import { GRAPH_LOCATOR_IDENTITY } from './locator-identity-api.js';
+import { graphLocatorSurvivesIdentityRendering } from '../domain/locator-identity.js';
 import type { GraphDigestPort } from '../ports/index.js';
 
 const TOKEN = /^[a-z0-9][a-z0-9._-]{0,127}$/u;
@@ -42,7 +43,8 @@ export function normalizeGraphEntityIdentity(
     (classified.class === 'portable' &&
       (locator.startsWith('/') ||
         WINDOWS_DRIVE.test(locator) ||
-        locator.split('/').some((segment) => segment === '..' || segment.length === 0)))
+        locator.split('/').some((segment) => segment === '..' || segment.length === 0))) ||
+    !graphLocatorSurvivesIdentityRendering(locator, kind)
   ) {
     return {
       accepted: false,
@@ -77,6 +79,10 @@ export function normalizeGraphEntityIdentity(
  * paths in the identifier. This is the producer boundary for real repository
  * inputs; evidence retains the normalized locator separately.
  */
+function identityCacheKey(input: GraphEntityIdentityInput): string {
+  return `${input.namespace}\u0000${input.kind}\u0000${input.relativeLocator}\u0000${input.caseSensitivity}\u0000${JSON.stringify(input.scope)}`;
+}
+
 export function createMemoizedIdentityResolver(
   digestPort: GraphDigestPort
 ): (
@@ -84,7 +90,7 @@ export function createMemoizedIdentityResolver(
 ) => Promise<GraphValidationResult<GraphEntityIdentityNormalization>> {
   const cache = new Map<string, Promise<GraphValidationResult<GraphEntityIdentityNormalization>>>();
   return (input) => {
-    const key = `${input.namespace}\u0000${input.kind}\u0000${input.relativeLocator}\u0000${input.caseSensitivity}\u0000${JSON.stringify(input.scope)}`;
+    const key = identityCacheKey(input);
     const cached = cache.get(key);
     if (cached) return cached;
     const pending = resolveGraphEntityIdentity(input, digestPort);

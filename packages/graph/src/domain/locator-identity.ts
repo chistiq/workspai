@@ -135,6 +135,19 @@ export function classifyGraphRelativeLocator(
   return { class: 'portable', locator };
 }
 
+/**
+ * Identity renderings URI-encode locators for shadow comparison. A locator that
+ * is portable or opaque must still decode to the same value after that encoding
+ * or the producer would emit GRAPH_SHADOW_UNSAFE_IDENTITY.
+ */
+export function graphLocatorSurvivesIdentityRendering(locator: string, kind: string): boolean {
+  const encoded = encodeURIComponent(locator);
+  const contentPath = CONTENT_PATH_KINDS.has(kind.normalize('NFC').toLowerCase());
+  const decoded = decodeGraphLocatorState(encoded, { freezeOpaqueDeclared: !contentPath });
+  if (decoded.status !== 'stable') return false;
+  return classifyGraphRelativeLocator(decoded.value, kind).class !== 'unsafe';
+}
+
 export function admitDeclaredGraphLocator(
   raw: string,
   prefix: GraphOpaqueDeclaredLocatorPrefix

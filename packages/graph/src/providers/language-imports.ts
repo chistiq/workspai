@@ -10,6 +10,7 @@ import {
   type GraphWorkspaceFact,
 } from '../contracts/index.js';
 import { admitDeclaredGraphLocator } from '../domain/locator-identity.js';
+import { appendReusedLocatorFacts } from '../application/locator-fact-shards.js';
 import {
   decodeMatrixSource,
   matrixSourceExtractionBudget,
@@ -279,6 +280,22 @@ export function createLanguageImportsProvider(): GraphProviderRuntime {
       }
 
       for (const [inputIndex, input] of inputs.entries()) {
+        if (
+          appendReusedLocatorFacts(
+            {
+              providerId: LANGUAGE_IMPORTS_PROVIDER_ID,
+              locator: input.locator,
+              inputDigest: input.digest.value,
+              inputIndex,
+            },
+            '',
+            facts,
+            processing,
+            unknownZones
+          )
+        ) {
+          continue;
+        }
         const language = languageFor(input.locator);
         if (!language) continue;
         let outcome: GraphFactBatch['processing'][number]['outcome'] = 'processed';
@@ -353,6 +370,7 @@ export function createLanguageImportsProvider(): GraphProviderRuntime {
               observedAt: request.observedAt,
               inputDigest: input.digest,
               unknownZones: [],
+              extensions: Object.freeze({ moduleSpecifier: imported }),
             });
           }
           if (unsupportedDynamicSyntax(source, language)) {

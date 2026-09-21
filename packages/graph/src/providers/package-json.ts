@@ -166,6 +166,7 @@ export function createPackageJsonProvider(): GraphProviderRuntime {
                     reason: 'The package manifest does not declare a package name.',
                   },
                 ],
+            ...(declaredName ? { extensions: Object.freeze({ packageName: declaredName }) } : {}),
           });
 
           const dependencies = [

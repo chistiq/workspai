@@ -107,7 +107,7 @@ describe('Node repository file source', () => {
     expect(JSON.stringify(second)).not.toContain(right);
   });
 
-  it('revalidates content identity before every provider read', async () => {
+  it('reuses inventoried bytes when the live file mutates after hashing', async () => {
     const root = await fixture();
     const source = createNodeGraphFileSource();
     const inventory = await source.inventory({
@@ -128,8 +128,27 @@ describe('Node repository file source', () => {
       new TextEncoder().encode('export const value = 1;\n')
     );
     await fs.writeFile(path.join(root, 'src', 'index.ts'), 'export const value = 2;\n');
-    await expect(source.read(root, input, { maxBytes: 1_000 })).rejects.toThrow(
-      'admitted boundary'
+    const cached = await source.read(root, input, { maxBytes: 1_000 });
+    expect(cached).toEqual(new TextEncoder().encode('export const value = 1;\n'));
+    cached[0] = 9;
+    await expect(source.read(root, input, { maxBytes: 1_000 })).resolves.toEqual(
+      new TextEncoder().encode('export const value = 1;\n')
+    );
+    const reinventoried = await source.inventory({
+      root,
+      maxFiles: 10,
+      maxTotalBytes: 10_000,
+      maxFileBytes: 1_000,
+      maxDepth: 10,
+      maxDirectoryEntries: 100,
+      excludedDirectories: ['node_modules'],
+      sensitiveFiles: 'omit-known',
+    });
+    const updated = reinventoried.inputs.find((candidate) => candidate.locator === 'src/index.ts');
+    expect(updated).toBeDefined();
+    if (!updated) return;
+    await expect(source.read(root, updated, { maxBytes: 1_000 })).resolves.toEqual(
+      new TextEncoder().encode('export const value = 2;\n')
     );
     await expect(
       source.read(root, { ...input, locator: '../outside' }, { maxBytes: 1_000 })
@@ -339,6 +358,9 @@ describe('Node repository file source', () => {
     });
 
     expect(result.inputs.map((input) => input.locator)).toEqual(['src/index.ts']);
+    expect(result.membershipLocators).toEqual(
+      expect.arrayContaining(['package.json', 'src/index.ts'])
+    );
     const skipped = await source.inventory({
       root,
       maxFiles: 10,
@@ -351,6 +373,26 @@ describe('Node repository file source', () => {
       onlyLocators: [],
     });
     expect(skipped.inputs).toEqual([]);
+    expect(skipped.membershipLocators).toEqual(
+      expect.arrayContaining(['package.json', 'src/index.ts'])
+    );
+    const known = await source.inventory({
+      root,
+      maxFiles: 10,
+      maxTotalBytes: 10_000,
+      maxFileBytes: 1_000,
+      maxDepth: 10,
+      maxDirectoryEntries: 100,
+      excludedDirectories: ['node_modules'],
+      sensitiveFiles: 'omit-known',
+      onlyLocators: [],
+      knownLocators: ['src/index.ts'],
+    });
+    expect(known.membershipLocators).toEqual(
+      expect.arrayContaining(['package.json', 'src/index.ts'])
+    );
+    expect(known.inputs.map((input) => input.locator)).toContain('package.json');
+    expect(known.inputs.map((input) => input.locator)).not.toContain('src/index.ts');
   });
 
   it('emits NFC locators for NFD filenames and still reads the admitted bytes', async () => {
@@ -448,5 +490,46 @@ describe('Node repository file source', () => {
     });
     expect(result.status).toBe('complete');
     expect(result.inputs.map((input) => input.locator)).toEqual(['package.json', 'src/index.ts']);
+  });
+
+  it('enumerates membership without hashing known locators', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-graph-membership-'));
+    temporary.push(root);
+    const known: string[] = [];
+    for (let directory = 0; directory < 8; directory += 1) {
+      const folder = path.join(root, `d${String(directory)}`);
+      await fs.mkdir(folder);
+      for (let file = 0; file < 40; file += 1) {
+        const locator = `d${String(directory)}/f${String(file)}.txt`;
+        await fs.writeFile(path.join(root, locator), 'x\n');
+        known.push(locator);
+      }
+    }
+    const source = createNodeGraphFileSource();
+    const request = {
+      root,
+      maxFiles: 1_000,
+      maxTotalBytes: 1_000_000,
+      maxFileBytes: 1_000,
+      maxDepth: 8,
+      maxDirectoryEntries: 200,
+      excludedDirectories: [] as string[],
+      sensitiveFiles: 'omit-known' as const,
+    };
+    const hashed = await source.inventory(request);
+    const membership = await source.inventory({
+      ...request,
+      onlyLocators: [],
+      knownLocators: known,
+    });
+    expect(hashed.hashedFiles).toBe(320);
+    expect(hashed.enumeratedFiles).toBe(320);
+    expect(membership.hashedFiles).toBe(0);
+    expect(membership.enumeratedFiles).toBe(320);
+    expect(membership.membershipLocators).toEqual(
+      [...known].sort((left, right) => left.localeCompare(right))
+    );
+    expect(membership.inventoryMs).toBeGreaterThanOrEqual(0);
+    expect(hashed.inventoryMs).toBeGreaterThanOrEqual(0);
   });
 });

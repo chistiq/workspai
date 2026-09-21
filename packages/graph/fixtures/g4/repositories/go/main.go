@@ -1,11 +1,15 @@
 package main
 
-import "net/http"
+import (
+	"fmt"
+	"net/http"
+)
 
 func routes() {
-    router.GET("/health", health)
+	http.HandleFunc("/health", health)
 }
 
 func health(writer http.ResponseWriter, _ *http.Request) {
-    writer.WriteHeader(http.StatusOK)
+	writer.WriteHeader(http.StatusOK)
+	fmt.Fprint(writer, "ok")
 }

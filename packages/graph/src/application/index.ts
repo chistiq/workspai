@@ -11,11 +11,17 @@ export { GRAPH_PACKAGE_STATUS_CONTRACT, getGraphPackageStatus } from './package-
 export {
   GRAPH_STANDARD_COMPOSITION_POLICY,
   GRAPH_STANDARD_PROOF_POLICY,
+  GRAPH_COMPOSITION_RECEIPT_SCHEMA,
+  GRAPH_COMPOSITION_ORDERING_RULES,
+  compositionReceiptMatchesPublishedGraph,
+  compositionSemanticReceiptsEqual,
   type GraphCompositionDecision,
   type GraphCompositionOutput,
   type GraphCompositionPolicy,
+  type GraphCompositionReceipt,
   type GraphCompositionRequest,
   type GraphCompositionResult,
+  type GraphCompositionSemanticReceipt,
   type GraphCompositionSource,
   type GraphCompositionTimings,
   type GraphReferenceCompositionTaskOutput,
@@ -23,6 +29,7 @@ export {
 export {
   GRAPH_REFERENCE_COMPOSITION_TASK,
   composeGraph,
+  computeGraphCompositionSemanticReceipt,
   executeGraphReferenceCompositionTask,
 } from './compose-graph.js';
 export { normalizeGraphQuery, queryGraph, type GraphQueryOptions } from './query-graph.js';
@@ -44,6 +51,7 @@ export {
   type GraphNativeTraversalRoute,
 } from './route-native-traversal.js';
 export type {
+  GraphIncrementalExecutionPath,
   GraphIncrementalRepoBuildRequest,
   GraphIncrementalRepoBuildResult,
   GraphIncrementalQueryCacheRequest,
@@ -56,6 +64,58 @@ export type {
   GraphRepoBuildRequest,
   GraphRepoBuildResult,
 } from './repo-build-types.js';
+export {
+  GRAPH_REPO_PHASE_NAMES,
+  beginGraphPhaseSession,
+  createGraphPhaseAccumulator,
+  graphPhaseTimings,
+  recordGraphPhase,
+  runWithGraphPhaseSession,
+  type GraphRepoPhaseName,
+  type GraphRepoPhaseTiming,
+} from './phase-metrics.js';
+export {
+  GRAPH_LOCATOR_FACT_SHARD_SCHEMA,
+  GRAPH_LOCATOR_FACT_SHARD_LIMIT_BYTES,
+  GRAPH_LOCATOR_FACT_SHARD_LIMIT_ENTRIES,
+  GRAPH_LOCATOR_FACT_SHARD_LIMIT_FACTS,
+  appendReusedLocatorFacts,
+  compositionSourcesAreIdenticalFacts,
+  createLocatorFactShardStore,
+  lookupLocatorFactShard,
+  rememberLocatorFactShard,
+  runWithLocatorFactShardStore,
+  setLocatorFactShardExtractionEnvironment,
+  locatorCallEnvironmentDigest,
+  expandCallEnvironmentLocators,
+  type GraphLocatorFactShard,
+  type GraphLocatorFactShardKey,
+  type GraphLocatorFactShardStats,
+  type LocatorFactShardStore,
+} from './locator-fact-shards.js';
+export {
+  GRAPH_CALL_RESOLUTION_ENVIRONMENT_VERSION,
+  GRAPH_EXTRACTION_ENVIRONMENT_DEPENDENCIES,
+  GRAPH_EXTRACTION_ENVIRONMENT_SCHEMA,
+  GRAPH_LANGUAGE_RUNTIME_DETECTION_VERSION,
+  GRAPH_PRODUCT_SCAN_PROFILE_ID,
+  GRAPH_ECMASCRIPT_SYNTAX_VERSION,
+  GRAPH_MATRIX_SOURCE_MASK_VERSION,
+  digestGraphExtractionEnvironment,
+  graphProviderPermissionBlocks,
+  reusedProviderSourcesSatisfyCurrentBoundary,
+} from './extraction-environment.js';
+export {
+  graphDataMovementSnapshot,
+  recordGraphDataMovement,
+  runWithGraphDataMovementSession,
+  type GraphDataMovementSnapshot,
+} from './data-movement.js';
+export {
+  snapshotGraphBuildMemory,
+  processLifetimePeakRssBytes,
+  type GraphBuildMemorySnapshot,
+} from './build-memory.js';
 export {
   GRAPH_PROJECT_ARTIFACT_FILES,
   writeGraphGeneration,
@@ -82,10 +142,45 @@ export type {
   GraphInventoryRereadPlan,
 } from './plan-inventory-reread.js';
 export {
+  GRAPH_INVENTORY_MEMBERSHIP_SCHEMA,
+  MAX_INVENTORY_MEMBERSHIP_BYTES,
+  MAX_INVENTORY_MEMBERSHIP_LOCATORS,
+  admittedInventoryMembershipSnapshot,
+  applyInventoryMembership,
+  compareInventoryMembership,
+  freezeInventoryMembership,
+  inventoryMembershipIsBounded,
+  inventoryMembershipIsComplete,
+  type GraphInventoryMembershipComparison,
+  type GraphInventoryMembershipSnapshot,
+} from './inventory-membership.js';
+export {
+  GRAPH_INCREMENTAL_SNAPSHOT_SCHEMA,
+  MAX_INCREMENTAL_SNAPSHOT_ATTEMPTS,
+  clampIncrementalSnapshotAttempts,
+  compareIncrementalSnapshots,
+  freezeIncrementalSnapshot,
+  gitSnapshotFromJournal,
+  membershipSnapshotFromLocators,
+  type GraphIncrementalSnapshotComparison,
+  type GraphIncrementalSnapshotReceipt,
+} from './incremental-snapshot.js';
+export {
   absentChangeJournal,
+  isGitlinkMode,
+  parseGitLsFilesStageZ,
+  parseGitLsFilesVerboseZ,
   parseGitStatusPorcelain,
+  parseGitStatusPorcelainV2Z,
+  scopeChangeJournalToGraphRoot,
   untrustedChangeJournal,
 } from './parse-git-status-porcelain.js';
+export {
+  admitGitSkipReread,
+  freezeGitWorktreeBaseline,
+  isAdmittedGitWorktreeBaseline,
+  journalDirtyLocators,
+} from './git-worktree-baseline.js';
 export { diffGraphGenerations, summarizeCanonicalGraphDelta } from './diff-graph-generations.js';
 export type { GraphGenerationDiff } from './diff-graph-generations.js';
 export {

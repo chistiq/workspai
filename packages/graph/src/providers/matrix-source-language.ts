@@ -9,6 +9,10 @@ import {
   matchAllInMatrixCodeChannel,
   matchAllInMatrixCodeView,
 } from './matrix-source-mask.js';
+import {
+  joinPortableLocatorPath,
+  resolveEcmaScriptModuleLocator,
+} from '../domain/module-resolution.js';
 
 export interface MatrixDeclaration {
   readonly name: string;
@@ -210,6 +214,35 @@ export function extractMatrixImportBindings(
           exportedName: name.exportedName,
         });
       }
+    }
+  }
+  return bindings;
+}
+
+export interface MatrixReexportBinding {
+  readonly locator: string;
+  readonly exportedName: string;
+  readonly sourceExportedName: string;
+}
+
+export function extractMatrixReexportBindings(
+  locator: string,
+  source: string,
+  language: GraphStructuralLanguage | null,
+  available: ReadonlySet<string>,
+  codeView = maskMatrixSourceLiterals(source, language)
+): MatrixReexportBinding[] {
+  if (language !== 'node' && language !== null) return [];
+  const bindings: MatrixReexportBinding[] = [];
+  for (const clause of parseEcmascriptReexportClauses(source, codeView)) {
+    const resolved = resolveLocalSpecifier(locator, clause.specifier, language, available);
+    if (!resolved) continue;
+    for (const name of clause.names) {
+      bindings.push({
+        locator: resolved,
+        exportedName: name.exportedName,
+        sourceExportedName: name.sourceExportedName,
+      });
     }
   }
   return bindings;
@@ -496,6 +529,50 @@ function parseEcmascriptImportClauses(
   return clauses;
 }
 
+function parseEcmascriptReexportClauses(
+  source: string,
+  codeView: string
+): {
+  specifier: string;
+  names: { exportedName: string; sourceExportedName: string }[];
+}[] {
+  const clauses: {
+    specifier: string;
+    names: { exportedName: string; sourceExportedName: string }[];
+  }[] = [];
+  for (const match of matchAllInMatrixCodeView(
+    source,
+    codeView,
+    /^[^\S\r\n]*export\s+\*\s+from\s+['"]([^'"\r\n]+)['"]/gmu
+  )) {
+    const specifier = match[1];
+    if (!specifier?.startsWith('.')) continue;
+    clauses.push({ specifier, names: [{ exportedName: '*', sourceExportedName: '*' }] });
+  }
+  for (const match of matchAllInMatrixCodeView(
+    source,
+    codeView,
+    /^[^\S\r\n]*export\s+\{([^}]*)\}\s+from\s+['"]([^'"\r\n]+)['"]/gmu
+  )) {
+    const specifier = match[2];
+    if (!specifier?.startsWith('.')) continue;
+    const names: { exportedName: string; sourceExportedName: string }[] = [];
+    for (const part of (match[1] ?? '').split(',')) {
+      const item = part.trim();
+      if (!item || item.startsWith('type ')) continue;
+      const aliased = /^([A-Za-z_$][\w$]*)\s+as\s+([A-Za-z_$][\w$]*)$/u.exec(item);
+      if (aliased?.[1] && aliased[2]) {
+        names.push({ sourceExportedName: aliased[1], exportedName: aliased[2] });
+        continue;
+      }
+      const name = /^([A-Za-z_$][\w$]*)$/u.exec(item)?.[1];
+      if (name) names.push({ sourceExportedName: name, exportedName: name });
+    }
+    if (names.length > 0) clauses.push({ specifier, names });
+  }
+  return clauses;
+}
+
 function parsePythonImportClauses(source: string): {
   specifier: string;
   star: boolean;
@@ -666,6 +743,13 @@ function resolveLocalSpecifier(
     language === 'ruby' ||
     language === 'c-cpp' ||
     language === 'objective-c-matlab';
+  if (language === 'node' || language === null) {
+    return resolveEcmaScriptModuleLocator({
+      fromLocator: sourceLocator,
+      specifier,
+      available,
+    });
+  }
   const relative = specifier.startsWith('.') || specifier.includes('/') || specifier.includes('\\');
   if (!relative && !sameDirectoryLiteral) return null;
   const candidate = resolveRelative(base, specifier);
@@ -691,13 +775,5 @@ function joinLocator(base: string, relative: string): string {
 }
 
 function resolveRelative(base: string, relative: string): string | null {
-  const normalized: string[] = [];
-  for (const segment of [...(base ? base.split('/') : []), ...relative.split(/[/\\]/u)]) {
-    if (!segment || segment === '.') continue;
-    if (segment === '..') {
-      if (normalized.length === 0) return null;
-      normalized.pop();
-    } else normalized.push(segment);
-  }
-  return normalized.join('/');
+  return joinPortableLocatorPath(base, relative);
 }

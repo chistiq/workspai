@@ -20,16 +20,35 @@ import {
   decodeMatrixSource,
   extractMatrixImportBindings,
   extractMatrixLocalImportLocators,
+  extractMatrixReexportBindings,
   matrixLanguageFor,
   matrixSameDirectoryPeers,
   matrixSourceExtractionBudget,
   matrixUsesNamedImports,
   scanMatrixCallSites,
   selectBalancedMatrixSources,
+  type MatrixCallSite,
   type MatrixImportBinding,
+  type MatrixReexportBinding,
 } from './matrix-source-language.js';
 import { extractPublishedMatrixDeclarations } from './route-native-declarations.js';
-import { maskMatrixSourceLiterals, matchAllInMatrixCodeView } from './matrix-source-mask.js';
+import { maskMatrixSourceLiteralsCached, matchAllInMatrixCodeView } from './matrix-source-mask.js';
+import {
+  contentAddressedCompute,
+  contentAddressedFactCacheStats,
+  contentAddressedFactKey,
+  contentAddressedGet,
+} from './content-addressed-facts.js';
+import { recordGraphDataMovement } from '../application/data-movement.js';
+import { recordGraphPhase } from '../application/phase-metrics.js';
+import {
+  GRAPH_LOCATOR_FACT_SHARD_SCHEMA,
+  appendReusedLocatorFacts,
+  locatorCallEnvironmentDigest,
+  lookupLocatorFactShard,
+  rememberLocatorFactShard,
+  type GraphLocatorFactShard,
+} from '../application/locator-fact-shards.js';
 
 export const SOURCE_DECLARATIONS_PROVIDER_ID = 'workspai.graph.provider.source-declarations';
 
@@ -54,6 +73,73 @@ interface DeclaredSymbol {
 }
 
 type CallBinding = DeclaredSymbol | 'ambiguous' | undefined;
+
+interface CachedSourceSyntax {
+  readonly encodingFallback: boolean;
+  readonly generated: boolean;
+  readonly codeView: string;
+  readonly findings: readonly {
+    readonly name: string;
+    readonly detail: DeclaredSymbol['detail'];
+    readonly line: number;
+  }[];
+  readonly discovered: number;
+  readonly truncated: boolean;
+  readonly exportPairs: readonly (readonly [string, string])[];
+  readonly pythonAllNames: readonly string[] | undefined;
+  readonly callSites: readonly MatrixCallSite[];
+}
+
+interface SourceDeclarationShardExtras {
+  readonly exportSignature: string;
+  readonly dependencyLocators: readonly string[];
+  readonly declared: readonly DeclaredSymbol[];
+  readonly visible: readonly DeclaredSymbol[];
+  readonly defaults: readonly DeclaredSymbol[];
+  readonly exportPairs: readonly (readonly [string, string])[];
+  readonly pythonAllNames: readonly string[] | undefined;
+  readonly reexports: readonly MatrixReexportBinding[];
+}
+
+function isSourceDeclarationExtras(value: unknown): value is SourceDeclarationShardExtras {
+  return (
+    typeof value === 'object' && value !== null && 'exportSignature' in value && 'declared' in value
+  );
+}
+
+function exportSignatureOf(
+  visible: readonly DeclaredSymbol[],
+  exportPairs: readonly (readonly [string, string])[]
+): string {
+  return [
+    ...visible.map((symbol) => `${symbol.name}:${symbol.detail}`),
+    ...exportPairs.map(([exported, local]) => `${exported}=${local}`),
+  ]
+    .sort((left, right) => left.localeCompare(right))
+    .join('\0');
+}
+
+function indexFromExtras(extras: SourceDeclarationShardExtras): FileSymbolIndex {
+  const visibleByName = new Map<string, DeclaredSymbol[]>();
+  const allByName = new Map<string, DeclaredSymbol[]>();
+  for (const symbol of extras.declared) {
+    const all = allByName.get(symbol.name);
+    if (all) all.push(symbol);
+    else allByName.set(symbol.name, [symbol]);
+  }
+  for (const symbol of extras.visible) {
+    const named = visibleByName.get(symbol.name);
+    if (named) named.push(symbol);
+    else visibleByName.set(symbol.name, [symbol]);
+  }
+  return {
+    visible: extras.visible,
+    visibleByName,
+    allByName,
+    visibleNames: new Set(visibleByName.keys()),
+    defaults: extras.defaults,
+  };
+}
 
 function sourceInputs(inputs: readonly GraphProviderInput[]): GraphProviderInput[] {
   return inputs
@@ -156,7 +242,11 @@ function isVisibleOutsideFile(
   if (language === 'node' || language === null) {
     const line = lines?.[symbol.line - 1] ?? '';
     if (/^\s*export\b/u.test(line)) return true;
-    return exportMap ? [...exportMap.values()].includes(symbol.name) : false;
+    if (!exportMap) return false;
+    for (const exported of exportMap.values()) {
+      if (exported === symbol.name) return true;
+    }
+    return false;
   }
   if (language === 'rust') {
     const line = lines?.[symbol.line - 1] ?? '';
@@ -195,55 +285,163 @@ function defaultExportSymbols(
 function importedCallCandidates(
   name: string,
   bindings: readonly MatrixImportBinding[],
-  symbolsByFile: ReadonlyMap<string, readonly DeclaredSymbol[]>,
+  indexes: ReadonlyMap<string, FileSymbolIndex>,
+  exportMaps: ReadonlyMap<string, ReadonlyMap<string, string>>,
+  reexportsByFile: ReadonlyMap<string, readonly MatrixReexportBinding[]>
+): DeclaredSymbol[] {
+  const matches: DeclaredSymbol[] = [];
+  const seen = new Set<string>();
+  for (const binding of bindings) {
+    matches.push(
+      ...symbolsForExportedName({
+        locator: binding.locator,
+        exportedName: binding.exportedName,
+        localName: binding.localName,
+        callName: name,
+        indexes,
+        exportMaps,
+        reexportsByFile,
+        seen,
+        depth: 0,
+      })
+    );
+  }
+  return uniqueDeclaredSymbols(matches);
+}
+
+function uniqueDeclaredSymbols(symbols: readonly DeclaredSymbol[]): DeclaredSymbol[] {
+  const seen = new Set<string>();
+  const unique: DeclaredSymbol[] = [];
+  for (const symbol of symbols) {
+    const key = `${symbol.locator}:${symbol.detail}:${symbol.name}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    unique.push(symbol);
+  }
+  return unique;
+}
+
+interface FileSymbolIndex {
+  readonly visible: readonly DeclaredSymbol[];
+  readonly visibleByName: ReadonlyMap<string, readonly DeclaredSymbol[]>;
+  readonly allByName: ReadonlyMap<string, readonly DeclaredSymbol[]>;
+  readonly visibleNames: ReadonlySet<string>;
+  readonly defaults: readonly DeclaredSymbol[];
+}
+
+function buildFileSymbolIndex(
+  locator: string,
+  symbols: readonly DeclaredSymbol[],
   sources: ReadonlyMap<string, string>,
   codeViews: ReadonlyMap<string, string>,
   linesByFile: ReadonlyMap<string, readonly string[]>,
   exportMaps: ReadonlyMap<string, ReadonlyMap<string, string>>,
   pythonAllByFile: ReadonlyMap<string, ReadonlySet<string> | undefined>
-): DeclaredSymbol[] {
+): FileSymbolIndex {
+  const language = matrixLanguageFor(locator);
+  const source = sources.get(locator);
+  const lines = linesByFile.get(locator);
+  const exportMap = exportMaps.get(locator);
+  const pythonAll = pythonAllByFile.get(locator);
+  const visible: DeclaredSymbol[] = [];
+  const visibleByName = new Map<string, DeclaredSymbol[]>();
+  const allByName = new Map<string, DeclaredSymbol[]>();
+  for (const symbol of symbols) {
+    const all = allByName.get(symbol.name);
+    if (all) all.push(symbol);
+    else allByName.set(symbol.name, [symbol]);
+    if (!isVisibleOutsideFile(symbol, language, source, lines, exportMap, pythonAll)) continue;
+    visible.push(symbol);
+    const named = visibleByName.get(symbol.name);
+    if (named) named.push(symbol);
+    else visibleByName.set(symbol.name, [symbol]);
+  }
+  return {
+    visible,
+    visibleByName,
+    allByName,
+    visibleNames: new Set(visibleByName.keys()),
+    defaults: defaultExportSymbols(symbols, source, lines, codeViews.get(locator)),
+  };
+}
+
+function symbolsForExportedName(input: {
+  readonly locator: string;
+  readonly exportedName: string;
+  readonly localName: string;
+  readonly callName: string;
+  readonly indexes: ReadonlyMap<string, FileSymbolIndex>;
+  readonly exportMaps: ReadonlyMap<string, ReadonlyMap<string, string>>;
+  readonly reexportsByFile: ReadonlyMap<string, readonly MatrixReexportBinding[]>;
+  readonly seen: Set<string>;
+  readonly depth: number;
+}): DeclaredSymbol[] {
+  if (input.depth > 8) return [];
+  const token = `${input.locator}\0${input.exportedName}\0${input.callName}`;
+  if (input.seen.has(token)) return [];
+  input.seen.add(token);
+  const index = input.indexes.get(input.locator);
   const matches: DeclaredSymbol[] = [];
-  for (const binding of bindings) {
-    const symbols = symbolsByFile.get(binding.locator) ?? [];
-    const source = sources.get(binding.locator);
-    const codeView = codeViews.get(binding.locator);
-    const lines = linesByFile.get(binding.locator);
-    const exportMap = exportMaps.get(binding.locator);
-    const pythonAll = pythonAllByFile.get(binding.locator);
-    const language = matrixLanguageFor(binding.locator);
-    if (binding.exportedName === '*') {
-      for (const symbol of symbols) {
-        if (symbol.name !== name) continue;
-        if (isVisibleOutsideFile(symbol, language, source, lines, exportMap, pythonAll)) {
-          matches.push(symbol);
-        }
+  if (index) {
+    if (input.exportedName === '*') {
+      if (input.localName !== '*' && input.localName !== input.callName) {
+        // namespace import: calls are member-shaped and not resolved here
+      } else {
+        matches.push(...(index.visibleByName.get(input.callName) ?? []));
       }
-      continue;
-    }
-    if (binding.localName !== name) continue;
-    if (binding.exportedName === 'default') {
-      matches.push(...defaultExportSymbols(symbols, source, lines, codeView));
-      continue;
-    }
-    const localName = exportMap?.get(binding.exportedName) ?? binding.exportedName;
-    for (const symbol of symbols) {
-      if (symbol.name !== localName) continue;
-      if (
-        language === 'python' ||
-        isVisibleOutsideFile(symbol, language, source, lines, exportMap, pythonAll)
-      ) {
-        matches.push(symbol);
+    } else if (input.localName === input.callName || input.exportedName === input.callName) {
+      if (input.exportedName === 'default') {
+        matches.push(...index.defaults);
+      } else {
+        const localName =
+          input.exportMaps.get(input.locator)?.get(input.exportedName) ?? input.exportedName;
+        const pool =
+          matrixLanguageFor(input.locator) === 'python' ? index.allByName : index.visibleByName;
+        matches.push(...(pool.get(localName) ?? []));
       }
     }
+  }
+  const wanted = input.exportedName === '*' ? input.callName : input.exportedName;
+  for (const reexport of input.reexportsByFile.get(input.locator) ?? []) {
+    const followsStar = reexport.exportedName === '*';
+    const followsNamed = reexport.exportedName === wanted;
+    if (!followsStar && !followsNamed) continue;
+    matches.push(
+      ...symbolsForExportedName({
+        ...input,
+        locator: reexport.locator,
+        exportedName: followsStar
+          ? wanted
+          : reexport.sourceExportedName === '*'
+            ? wanted
+            : reexport.sourceExportedName,
+        localName: followsStar ? '*' : reexport.sourceExportedName,
+        depth: input.depth + 1,
+      })
+    );
   }
   return matches;
 }
 
-function isKeywordDeclarationName(source: string, index: number): boolean {
-  const before = source.slice(0, index);
+export const DECLARATION_KEYWORD_LOOKBEHIND = 96;
+export const CONSTRUCTOR_LOOKBEHIND = 16;
+
+export function isKeywordDeclarationName(source: string, index: number): boolean {
+  const start = Math.max(0, index - DECLARATION_KEYWORD_LOOKBEHIND);
   return /(?:^|[^A-Za-z0-9_$])(?:export\s+(?:default\s+)?)?(?:async\s+)?(?:function|def|func|fn|fun)\s+$/u.test(
-    before
+    source.slice(start, index)
   );
+}
+
+export function isConstructorCall(source: string, index: number): boolean {
+  const start = Math.max(0, index - CONSTRUCTOR_LOOKBEHIND);
+  return /(?:^|[^A-Za-z0-9_$])new\s+$/u.test(source.slice(start, index));
+}
+
+function isMemberCall(source: string, index: number): boolean {
+  let cursor = index - 1;
+  while (cursor >= 0 && /[ \t]/u.test(source[cursor] ?? '')) cursor -= 1;
+  return source[cursor] === '.';
 }
 
 function memberReceiver(source: string, index: number): string | undefined {
@@ -251,11 +449,66 @@ function memberReceiver(source: string, index: number): string | undefined {
   while (cursor >= 0 && /[ \t]/u.test(source[cursor] ?? '')) cursor -= 1;
   if (source[cursor] !== '.') return undefined;
   cursor -= 1;
+  if (source[cursor] === '?') cursor -= 1;
   while (cursor >= 0 && /[ \t]/u.test(source[cursor] ?? '')) cursor -= 1;
   const end = cursor + 1;
   while (cursor >= 0 && /[A-Za-z0-9_$]/u.test(source[cursor] ?? '')) cursor -= 1;
   const name = source.slice(cursor + 1, end);
   return name || undefined;
+}
+
+function isLocalMemberReceiver(receiver: string): boolean {
+  return receiver === 'this' || receiver === 'self' || receiver === 'super';
+}
+
+const EXTERNAL_FREE_CALL_NAMES = new Set([
+  'Array',
+  'BigInt',
+  'Boolean',
+  'Buffer',
+  'Date',
+  'Error',
+  'Intl',
+  'JSON',
+  'Map',
+  'Math',
+  'Number',
+  'Object',
+  'Promise',
+  'Proxy',
+  'Reflect',
+  'Set',
+  'String',
+  'Symbol',
+  'console',
+  'decodeURIComponent',
+  'encodeURIComponent',
+  'fetch',
+  'isFinite',
+  'isNaN',
+  'parseFloat',
+  'parseInt',
+  'process',
+  'require',
+  'structuredClone',
+  'dict',
+  'getattr',
+  'hasattr',
+  'int',
+  'isinstance',
+  'len',
+  'list',
+  'print',
+  'range',
+  'setattr',
+  'str',
+  'super',
+  'tuple',
+  'type',
+]);
+
+function isExternalFreeCall(siteName: string, knownNames: ReadonlySet<string>): boolean {
+  return !knownNames.has(siteName) && EXTERNAL_FREE_CALL_NAMES.has(siteName);
 }
 
 async function materializeDeclaredSymbol(
@@ -331,9 +584,9 @@ export function createSourceDeclarationsProvider(
     determinism: 'deterministic' as const,
     capabilities: {
       entityKinds: ['file', 'symbol'],
-      relationKinds: ['defines', 'calls'],
+      relationKinds: ['defines', 'calls', 'exports'],
       relationSemantics: ['structural', 'behavioral'] as const,
-      factFamilies: ['source.declaration', 'source.call'],
+      factFamilies: ['source.declaration', 'source.call', 'source.export'],
       allowedClaims: ['observed'],
     },
     permissions: {
@@ -382,6 +635,11 @@ export function createSourceDeclarationsProvider(
       const codeViews = new Map<string, string>();
       const files = new Map<string, GraphEntityReference>();
       const generated = new Set<string>();
+      const linesByFile = new Map<string, string[]>();
+      const exportMaps = new Map<string, Map<string, string>>();
+      const pythonAllByFile = new Map<string, ReadonlySet<string> | undefined>();
+      const reexportsByFile = new Map<string, MatrixReexportBinding[]>();
+      const callSitesByFile = new Map<string, readonly MatrixCallSite[]>();
       let discoveredAuthoredSymbols = 0;
       let discoveredGeneratedSymbols = 0;
       let indexedGeneratedSymbols = 0;
@@ -393,6 +651,9 @@ export function createSourceDeclarationsProvider(
       let resolvedCalls = 0;
       let ambiguousCalls = 0;
       let unresolvedCalls = 0;
+      let externalCalls = 0;
+      let excludedCalls = 0;
+      let truncatedCalls = 0;
       let truncated = false;
       if (inputs.length < eligible.length) {
         truncated = true;
@@ -414,11 +675,87 @@ export function createSourceDeclarationsProvider(
         native = await options.loadNative();
       }
 
+      const preparedFiles: {
+        readonly inputIndex: number;
+        readonly input: GraphProviderInput;
+        readonly extracted: {
+          readonly findings: CachedSourceSyntax['findings'];
+          readonly discovered: number;
+          readonly truncated: boolean;
+        };
+        readonly generatedFile: boolean;
+        readonly inputDiagnostics: GraphDiagnostic[];
+        readonly restored?: boolean;
+        outcome: GraphFactBatch['processing'][number]['outcome'];
+      }[] = [];
+      const restoredShards = new Map<string, GraphLocatorFactShard>();
+      const exportSignatures = new Map<string, string>();
+      const dependencyLocatorsByFile = new Map<string, readonly string[]>();
+      const fileIdentityJobs: Promise<
+        Awaited<ReturnType<GraphProviderCollectionRequest['resolveIdentity']>>
+      >[] = [];
+
       for (const [inputIndex, input] of inputs.entries()) {
         if (request.signal?.aborted)
           throw new Error('Source declaration collection was cancelled.');
-        let outcome: GraphFactBatch['processing'][number]['outcome'] = 'processed';
         const inputDiagnostics: GraphDiagnostic[] = [];
+        const shard = lookupLocatorFactShard({
+          providerId: SOURCE_DECLARATIONS_PROVIDER_ID,
+          locator: input.locator,
+          inputDigest: input.digest.value,
+          inputIndex,
+        });
+        if (shard && isSourceDeclarationExtras(shard.extras)) {
+          restoredShards.set(input.locator, shard);
+          exportSignatures.set(input.locator, shard.extras.exportSignature);
+          dependencyLocatorsByFile.set(input.locator, shard.extras.dependencyLocators);
+          symbolsByFile.set(input.locator, [...shard.extras.declared]);
+          exportMaps.set(input.locator, new Map(shard.extras.exportPairs));
+          pythonAllByFile.set(
+            input.locator,
+            shard.extras.pythonAllNames ? new Set(shard.extras.pythonAllNames) : undefined
+          );
+          reexportsByFile.set(input.locator, [...shard.extras.reexports]);
+          const fileRef = shard.facts.find(
+            (fact) => fact.predicate === 'defines' || fact.predicate === 'exports'
+          )?.subject;
+          if (fileRef) files.set(input.locator, fileRef);
+          preparedFiles.push({
+            inputIndex,
+            input,
+            extracted: {
+              findings: shard.extras.declared.map((symbol) => ({
+                name: symbol.name,
+                detail: symbol.detail,
+                line: symbol.line,
+              })),
+              discovered: shard.extras.declared.length,
+              truncated: false,
+            },
+            generatedFile:
+              shard.extras.declared.length > 0 &&
+              shard.extras.declared.every((symbol) => symbol.generated),
+            inputDiagnostics,
+            outcome: 'processed',
+            restored: true,
+          });
+          fileIdentityJobs.push(
+            fileRef
+              ? Promise.resolve({
+                  accepted: true as const,
+                  value: { reference: fileRef, normalizedLocator: input.locator },
+                  issues: [],
+                })
+              : request.resolveIdentity({
+                  namespace: 'workspai',
+                  kind: 'file',
+                  relativeLocator: input.locator,
+                  caseSensitivity: 'sensitive',
+                  scope: request.scope,
+                })
+          );
+          continue;
+        }
         try {
           const bytes = await request.readInput(input, {
             maxBytes: MAX_SOURCE_BYTES,
@@ -427,10 +764,80 @@ export function createSourceDeclarationsProvider(
           const decoded = decodeMatrixSource(bytes);
           const source = decoded.text;
           const language = matrixLanguageFor(input.locator);
-          const codeView = maskMatrixSourceLiterals(source, language);
+          recordGraphPhase('languageClassification', { files: 1, invocations: 1 });
+          const syntaxKey = contentAddressedFactKey({
+            extractorId: SOURCE_DECLARATIONS_PROVIDER_ID,
+            extractorVersion: `${manifest.version}:syntax:code-view`,
+            contentDigest: input.digest.value,
+            configuration: `${language ?? 'unknown'}:${native?.extractDeclarations ? 'native' : 'typescript'}`,
+          });
+          const beforeCache = contentAddressedFactCacheStats();
+          let syntax = contentAddressedGet<CachedSourceSyntax>(syntaxKey);
+          if (!syntax) {
+            syntax = contentAddressedCompute(syntaxKey, (): CachedSourceSyntax => {
+              const parseStartedAt = performance.now();
+              const codeView = maskMatrixSourceLiteralsCached(source, language, input.digest.value);
+              recordGraphPhase('parse', {
+                wallMs: performance.now() - parseStartedAt,
+                files: 1,
+                bytes: bytes.byteLength,
+                cacheMisses: 1,
+              });
+              const extractStartedAt = performance.now();
+              const nativeStartedAt = performance.now();
+              const extractedSymbols = extractSymbols(source, input.locator, native, codeView);
+              if (native?.extractDeclarations) {
+                recordGraphPhase('nodeNativeBoundary', {
+                  wallMs: performance.now() - nativeStartedAt,
+                  files: 1,
+                });
+                recordGraphDataMovement('nativeBoundary');
+              }
+              const pythonAll =
+                language === 'python' ? parsePythonAll(source, codeView) : undefined;
+              recordGraphPhase('extract', {
+                wallMs: performance.now() - extractStartedAt,
+                files: 1,
+                facts: extractedSymbols.findings.length,
+                cacheMisses: 1,
+              });
+              return {
+                encodingFallback: decoded.encodingFallback,
+                generated: isGeneratedSource(input.locator, source),
+                codeView,
+                findings: extractedSymbols.findings,
+                discovered: extractedSymbols.discovered,
+                truncated: extractedSymbols.truncated,
+                exportPairs: Object.freeze([...parseExportNameMap(source, codeView)]),
+                pythonAllNames: pythonAll ? Object.freeze([...pythonAll]) : undefined,
+                callSites: Object.freeze(scanMatrixCallSites(source, language, codeView)),
+              };
+            });
+          }
+          if (!syntax) {
+            throw new Error('Source syntax extraction did not produce a snapshot.');
+          }
+          if (contentAddressedFactCacheStats().hits > beforeCache.hits) {
+            recordGraphPhase('parse', { files: 1, cacheHits: 1, bytes: bytes.byteLength });
+            recordGraphPhase('extract', { files: 1, cacheHits: 1, facts: syntax.findings.length });
+          }
+          const codeView = syntax.codeView;
+          const extracted = {
+            findings: syntax.findings,
+            discovered: syntax.discovered,
+            truncated: syntax.truncated,
+          };
           sources.set(input.locator, source);
           codeViews.set(input.locator, codeView);
-          if (isGeneratedSource(input.locator, source)) generated.add(input.locator);
+          linesByFile.set(input.locator, source.split(/\r?\n/u));
+          exportMaps.set(input.locator, new Map(syntax.exportPairs));
+          pythonAllByFile.set(
+            input.locator,
+            syntax.pythonAllNames ? new Set(syntax.pythonAllNames) : undefined
+          );
+          callSitesByFile.set(input.locator, syntax.callSites);
+          if (syntax.generated || isGeneratedSource(input.locator, source))
+            generated.add(input.locator);
           if (decoded.encodingFallback) {
             const encoding = warning(
               'graph.source-declaration-encoding-fallback',
@@ -440,16 +847,6 @@ export function createSourceDeclarationsProvider(
             diagnostics.push(encoding);
             inputDiagnostics.push(encoding);
           }
-          const file = await request.resolveIdentity({
-            namespace: 'workspai',
-            kind: 'file',
-            relativeLocator: input.locator,
-            caseSensitivity: 'sensitive',
-            scope: request.scope,
-          });
-          if (!file.accepted) throw new Error('Source file identity could not be resolved.');
-          files.set(input.locator, file.value.reference);
-          const extracted = extractSymbols(source, input.locator, native, codeView);
           const generatedFile = generated.has(input.locator);
           if (generatedFile) {
             discoveredGeneratedSymbols += extracted.discovered;
@@ -470,72 +867,23 @@ export function createSourceDeclarationsProvider(
               reason: `File exceeded ${String(MAX_SYMBOLS_PER_FILE)} extracted declarations; omitted declarations remain unknown.`,
             });
           }
-          const declared: DeclaredSymbol[] = [];
-          if (!generatedFile) {
-            const identities = await Promise.all(
-              extracted.findings.map((symbol) =>
-                request.resolveIdentity({
-                  namespace: 'workspai',
-                  kind: 'symbol',
-                  relativeLocator: `${input.locator}:${symbol.detail}:${symbol.name}`,
-                  caseSensitivity: 'sensitive',
-                  scope: request.scope,
-                })
-              )
-            );
-            for (const [symbolIndex, symbol] of extracted.findings.entries()) {
-              if (facts.length >= manifest.limits.maxFacts) {
-                outcome = 'omitted';
-                truncated = true;
-                unknownZones.push({
-                  code: 'graph.source-declarations-truncated',
-                  scope: input.locator,
-                  reason: 'Declaration facts exceeded the provider output budget.',
-                });
-                break;
-              }
-              const identity = identities[symbolIndex];
-              if (!identity?.accepted) throw new Error('Symbol identity could not be resolved.');
-              declared.push({
-                name: symbol.name,
-                detail: symbol.detail,
-                line: symbol.line,
-                locator: input.locator,
-                reference: identity.value.reference,
-                generated: false,
-              });
-              emittedAuthoredSymbols += 1;
-              facts.push(
-                createObservedEdgeFact({
-                  factId: `fact:source-declaration:${String(inputIndex).padStart(8, '0')}:${String(symbolIndex).padStart(8, '0')}:${input.digest.value}`,
-                  factType: 'source.declaration',
-                  subject: file.value.reference,
-                  predicate: 'defines',
-                  object: identity.value.reference,
-                  request,
-                  source: input,
-                  provider: manifest,
-                  evidenceId: `evidence:source-declaration:${String(inputIndex).padStart(8, '0')}`,
-                  sourceKind: 'source-file',
-                  derivation: 'extracted',
-                  authority: 'observed',
-                  confidence: 0.7,
-                })
-              );
-            }
-          } else {
-            for (const symbol of extracted.findings) {
-              declared.push({
-                name: symbol.name,
-                detail: symbol.detail,
-                line: symbol.line,
-                locator: input.locator,
-                reference: undefined,
-                generated: true,
-              });
-            }
-          }
-          symbolsByFile.set(input.locator, declared);
+          preparedFiles.push({
+            inputIndex,
+            input,
+            extracted,
+            generatedFile,
+            inputDiagnostics,
+            outcome: 'processed',
+          });
+          fileIdentityJobs.push(
+            request.resolveIdentity({
+              namespace: 'workspai',
+              kind: 'file',
+              relativeLocator: input.locator,
+              caseSensitivity: 'sensitive',
+              scope: request.scope,
+            })
+          );
         } catch {
           const failure = warning(
             'graph.source-declaration-invalid',
@@ -549,45 +897,298 @@ export function createSourceDeclarationsProvider(
             scope: input.locator,
             reason: 'Declarations are unknown because the source input could not be admitted.',
           });
-          outcome = 'failed';
+          processing.push({
+            input: { locator: input.locator, digest: input.digest },
+            provider: { id: manifest.id, version: manifest.version },
+            stage: { id: 'source-declarations', version: manifest.version },
+            outcome: 'failed',
+            diagnostics: inputDiagnostics,
+          });
         }
+      }
+
+      const identityStartedAt = performance.now();
+      const fileIdentities = await Promise.all(fileIdentityJobs);
+      const symbolIdentityJobs: Promise<
+        Awaited<ReturnType<GraphProviderCollectionRequest['resolveIdentity']>>
+      >[] = [];
+      const symbolOwners: { readonly preparedIndex: number; readonly symbolIndex: number }[] = [];
+      for (const [preparedIndex, prepared] of preparedFiles.entries()) {
+        if (prepared.restored) {
+          const file = fileIdentities[preparedIndex];
+          if (file?.accepted) files.set(prepared.input.locator, file.value.reference);
+          continue;
+        }
+        const file = fileIdentities[preparedIndex];
+        if (!file?.accepted) {
+          const failure = warning(
+            'graph.source-declaration-invalid',
+            prepared.input.locator,
+            'Source input could not be decoded or analyzed within the admitted boundary.'
+          );
+          diagnostics.push(failure);
+          prepared.inputDiagnostics.push(failure);
+          unknownZones.push({
+            code: 'graph.source-declaration-unreadable',
+            scope: prepared.input.locator,
+            reason: 'Declarations are unknown because the source input could not be admitted.',
+          });
+          processing.push({
+            input: { locator: prepared.input.locator, digest: prepared.input.digest },
+            provider: { id: manifest.id, version: manifest.version },
+            stage: { id: 'source-declarations', version: manifest.version },
+            outcome: 'failed',
+            diagnostics: prepared.inputDiagnostics,
+          });
+          continue;
+        }
+        files.set(prepared.input.locator, file.value.reference);
+        if (prepared.generatedFile) continue;
+        for (const [symbolIndex, symbol] of prepared.extracted.findings.entries()) {
+          symbolOwners.push({ preparedIndex, symbolIndex });
+          symbolIdentityJobs.push(
+            request.resolveIdentity({
+              namespace: 'workspai',
+              kind: 'symbol',
+              relativeLocator: `${prepared.input.locator}:${symbol.detail}:${symbol.name}`,
+              caseSensitivity: 'sensitive',
+              scope: request.scope,
+            })
+          );
+        }
+      }
+      const symbolIdentities = await Promise.all(symbolIdentityJobs);
+      recordGraphPhase('factDeduplication', {
+        wallMs: performance.now() - identityStartedAt,
+        facts: symbolIdentityJobs.length,
+        files: preparedFiles.length,
+      });
+      recordGraphDataMovement('deduplicated', Math.max(1, symbolIdentityJobs.length));
+      const identitiesByPrepared = new Map<
+        number,
+        Map<number, (typeof symbolIdentities)[number]>
+      >();
+      for (const [jobIndex, owner] of symbolOwners.entries()) {
+        const bySymbol = identitiesByPrepared.get(owner.preparedIndex) ?? new Map();
+        bySymbol.set(owner.symbolIndex, symbolIdentities[jobIndex]!);
+        identitiesByPrepared.set(owner.preparedIndex, bySymbol);
+      }
+
+      for (const [preparedIndex, prepared] of preparedFiles.entries()) {
+        if (prepared.restored) continue;
+        const file = files.get(prepared.input.locator);
+        if (!file) continue;
+        const declared: DeclaredSymbol[] = [];
+        if (!prepared.generatedFile) {
+          const identities = identitiesByPrepared.get(preparedIndex) ?? new Map();
+          for (const [symbolIndex, symbol] of prepared.extracted.findings.entries()) {
+            if (facts.length >= manifest.limits.maxFacts) {
+              prepared.outcome = 'omitted';
+              truncated = true;
+              unknownZones.push({
+                code: 'graph.source-declarations-truncated',
+                scope: prepared.input.locator,
+                reason: 'Declaration facts exceeded the provider output budget.',
+              });
+              break;
+            }
+            const identity = identities.get(symbolIndex);
+            if (!identity?.accepted) throw new Error('Symbol identity could not be resolved.');
+            declared.push({
+              name: symbol.name,
+              detail: symbol.detail,
+              line: symbol.line,
+              locator: prepared.input.locator,
+              reference: identity.value.reference,
+              generated: false,
+            });
+            emittedAuthoredSymbols += 1;
+            facts.push(
+              createObservedEdgeFact({
+                factId: `fact:source-declaration:${String(prepared.inputIndex).padStart(8, '0')}:${String(symbolIndex).padStart(8, '0')}:${prepared.input.digest.value}`,
+                factType: 'source.declaration',
+                subject: file,
+                predicate: 'defines',
+                object: identity.value.reference,
+                request,
+                source: prepared.input,
+                provider: manifest,
+                evidenceId: `evidence:source-declaration:${String(prepared.inputIndex).padStart(8, '0')}`,
+                sourceKind: 'source-file',
+                derivation: 'extracted',
+                authority: 'observed',
+                confidence: 0.7,
+                extensions: Object.freeze({ symbolName: symbol.name }),
+              })
+            );
+          }
+        } else {
+          for (const symbol of prepared.extracted.findings) {
+            declared.push({
+              name: symbol.name,
+              detail: symbol.detail,
+              line: symbol.line,
+              locator: prepared.input.locator,
+              reference: undefined,
+              generated: true,
+            });
+          }
+        }
+        symbolsByFile.set(prepared.input.locator, declared);
         processing.push({
-          input: { locator: input.locator, digest: input.digest },
+          input: { locator: prepared.input.locator, digest: prepared.input.digest },
           provider: { id: manifest.id, version: manifest.version },
           stage: { id: 'source-declarations', version: manifest.version },
-          outcome,
-          ...(outcome === 'processed' ? { outputDigest: input.digest } : {}),
-          diagnostics: inputDiagnostics,
+          outcome: prepared.outcome,
+          ...(prepared.outcome === 'processed' ? { outputDigest: prepared.input.digest } : {}),
+          diagnostics: prepared.inputDiagnostics,
         });
       }
 
-      const linesByFile = new Map<string, string[]>();
-      const exportMaps = new Map<string, Map<string, string>>();
-      const pythonAllByFile = new Map<string, ReadonlySet<string> | undefined>();
+      const symbolIndexes = new Map<string, FileSymbolIndex>();
+      for (const [locator, declared] of symbolsByFile) {
+        const restored = restoredShards.get(locator);
+        if (restored && isSourceDeclarationExtras(restored.extras)) {
+          symbolIndexes.set(locator, indexFromExtras(restored.extras));
+          continue;
+        }
+        symbolIndexes.set(
+          locator,
+          buildFileSymbolIndex(
+            locator,
+            declared,
+            sources,
+            codeViews,
+            linesByFile,
+            exportMaps,
+            pythonAllByFile
+          )
+        );
+        exportSignatures.set(
+          locator,
+          exportSignatureOf(symbolIndexes.get(locator)?.visible ?? [], [
+            ...(exportMaps.get(locator) ?? []),
+          ])
+        );
+      }
+
       for (const [locator, sourceText] of sources) {
         const codeView = codeViews.get(locator);
         if (!codeView) continue;
-        linesByFile.set(locator, sourceText.split(/\r?\n/u));
-        exportMaps.set(locator, parseExportNameMap(sourceText, codeView));
-        pythonAllByFile.set(
+        recordGraphPhase('moduleResolution', { files: 1, invocations: 1 });
+        reexportsByFile.set(
           locator,
-          matrixLanguageFor(locator) === 'python' ? parsePythonAll(sourceText, codeView) : undefined
+          extractMatrixReexportBindings(
+            locator,
+            sourceText,
+            matrixLanguageFor(locator),
+            available,
+            codeView
+          )
         );
       }
 
       for (const [inputIndex, input] of inputs.entries()) {
-        const source = sources.get(input.locator);
-        const codeView = codeViews.get(input.locator);
+        if (generated.has(input.locator)) continue;
         const file = files.get(input.locator);
-        if (!source || !codeView || !file || generated.has(input.locator)) continue;
+        const sourceText = sources.get(input.locator);
+        const codeView = codeViews.get(input.locator);
+        if (!file || !sourceText || !codeView) continue;
+        const declared = symbolIndexes.get(input.locator)?.visible ?? [];
+        for (const [symbolIndex, symbol] of declared.entries()) {
+          if (!symbol.reference) continue;
+          if (facts.length >= manifest.limits.maxFacts) {
+            truncated = true;
+            unknownZones.push({
+              code: 'graph.source-exports-truncated',
+              scope: input.locator,
+              reason: 'Export facts exceeded the provider output budget.',
+            });
+            break;
+          }
+          facts.push(
+            createObservedEdgeFact({
+              factId: `fact:source-export:${String(inputIndex).padStart(8, '0')}:${String(symbolIndex).padStart(8, '0')}:${input.digest.value}`,
+              factType: 'source.export',
+              subject: file,
+              predicate: 'exports',
+              object: symbol.reference,
+              request,
+              source: input,
+              provider: manifest,
+              evidenceId: `evidence:source-export:${String(inputIndex).padStart(8, '0')}`,
+              sourceKind: 'source-file',
+              derivation: 'extracted',
+              authority: 'observed',
+              confidence: 0.7,
+              extensions: Object.freeze({ symbolName: symbol.name }),
+            })
+          );
+        }
+      }
+
+      const callBindStartedAt = performance.now();
+      for (const [inputIndex, input] of inputs.entries()) {
+        const restored = restoredShards.get(input.locator);
         const language = matrixLanguageFor(input.locator);
-        const importedLocators = extractMatrixLocalImportLocators(
-          input.locator,
-          source,
-          language,
-          available,
-          codeView
+        let source = sources.get(input.locator);
+        let codeView = codeViews.get(input.locator);
+        const file = files.get(input.locator);
+        if (!file || generated.has(input.locator)) {
+          if (restored && !processing.some((record) => record.input.locator === input.locator)) {
+            processing.push(restored.processing);
+          }
+          continue;
+        }
+        const importedLocators =
+          dependencyLocatorsByFile.get(input.locator) ??
+          (source && codeView
+            ? extractMatrixLocalImportLocators(input.locator, source, language, available, codeView)
+            : []);
+        const peerLocators = matrixSameDirectoryPeers(input.locator, available);
+        const dependencyLocators = [...new Set([...importedLocators, ...peerLocators])].sort(
+          (left, right) => left.localeCompare(right)
         );
+        dependencyLocatorsByFile.set(input.locator, dependencyLocators);
+        const callEnvironmentDigest = locatorCallEnvironmentDigest(
+          dependencyLocators,
+          exportSignatures,
+          reexportsByFile
+        );
+        if (
+          appendReusedLocatorFacts(
+            {
+              providerId: SOURCE_DECLARATIONS_PROVIDER_ID,
+              locator: input.locator,
+              inputDigest: input.digest.value,
+              inputIndex,
+            },
+            callEnvironmentDigest,
+            facts,
+            processing,
+            unknownZones
+          )
+        ) {
+          continue;
+        }
+        if (restored) {
+          processing.push(restored.processing);
+          if (isSourceDeclarationExtras(restored.extras)) {
+            facts.push(...restored.facts.filter((fact) => fact.factType !== 'source.call'));
+          }
+        }
+        if (!source || !codeView) {
+          const bytes = await request.readInput(input, {
+            maxBytes: MAX_SOURCE_BYTES,
+            signal: request.signal,
+          });
+          const decoded = decodeMatrixSource(bytes);
+          source = decoded.text;
+          codeView = maskMatrixSourceLiteralsCached(source, language, input.digest.value);
+          sources.set(input.locator, source);
+          codeViews.set(input.locator, codeView);
+        }
+        if (!source || !codeView) continue;
         const importBindings = extractMatrixImportBindings(
           input.locator,
           source,
@@ -595,33 +1196,12 @@ export function createSourceDeclarationsProvider(
           available,
           codeView
         );
-        const peerLocators = matrixSameDirectoryPeers(input.locator, available);
         const localSymbols = symbolsByFile.get(input.locator) ?? [];
         const importedSymbols = matrixUsesNamedImports(language)
           ? []
-          : importedLocators.flatMap((locator) =>
-              (symbolsByFile.get(locator) ?? []).filter((symbol) =>
-                isVisibleOutsideFile(
-                  symbol,
-                  matrixLanguageFor(locator),
-                  sources.get(locator),
-                  linesByFile.get(locator),
-                  exportMaps.get(locator),
-                  pythonAllByFile.get(locator)
-                )
-              )
-            );
-        const peerSymbols = peerLocators.flatMap((locator) =>
-          (symbolsByFile.get(locator) ?? []).filter((symbol) =>
-            isVisibleOutsideFile(
-              symbol,
-              language,
-              sources.get(locator),
-              linesByFile.get(locator),
-              exportMaps.get(locator),
-              pythonAllByFile.get(locator)
-            )
-          )
+          : importedLocators.flatMap((locator) => symbolIndexes.get(locator)?.visible ?? []);
+        const peerSymbols = peerLocators.flatMap(
+          (locator) => symbolIndexes.get(locator)?.visible ?? []
         );
         const knownNames = new Set([
           ...localSymbols.map((symbol) => symbol.name),
@@ -629,18 +1209,7 @@ export function createSourceDeclarationsProvider(
           ...peerSymbols.map((symbol) => symbol.name),
           ...importBindings.flatMap((binding) =>
             binding.exportedName === '*'
-              ? (symbolsByFile.get(binding.locator) ?? [])
-                  .filter((symbol) =>
-                    isVisibleOutsideFile(
-                      symbol,
-                      matrixLanguageFor(binding.locator),
-                      sources.get(binding.locator),
-                      linesByFile.get(binding.locator),
-                      exportMaps.get(binding.locator),
-                      pythonAllByFile.get(binding.locator)
-                    )
-                  )
-                  .map((symbol) => symbol.name)
+              ? [...(symbolIndexes.get(binding.locator)?.visibleNames ?? [])]
               : [binding.localName]
           ),
         ]);
@@ -648,42 +1217,58 @@ export function createSourceDeclarationsProvider(
         const emittedForName = new Map<string, number>();
         const ambiguousNames = new Set<string>();
         const truncatedNames = new Set<string>();
-        for (const site of scanMatrixCallSites(source, language, codeView)) {
-          if (isKeywordDeclarationName(source, site.index)) continue;
-          examinedCalls += 1;
-          if (!knownNames.has(site.name)) {
-            unresolvedCalls += 1;
+        for (const site of callSitesByFile.get(input.locator) ??
+          scanMatrixCallSites(source, language, codeView)) {
+          if (
+            isKeywordDeclarationName(source, site.index) ||
+            isConstructorCall(source, site.index)
+          ) {
+            excludedCalls += 1;
             continue;
           }
           const receiver = memberReceiver(source, site.index);
+          const member = isMemberCall(source, site.index);
           const namedImportLanguage = matrixUsesNamedImports(language);
           const memberNamespace =
-            namedImportLanguage && receiver
+            member && receiver && !isLocalMemberReceiver(receiver)
               ? importBindings.filter(
                   (binding) => binding.localName === receiver && binding.exportedName === '*'
                 )
               : [];
+          if (
+            member &&
+            !(receiver && isLocalMemberReceiver(receiver)) &&
+            memberNamespace.length === 0
+          ) {
+            externalCalls += 1;
+            continue;
+          }
+          if (!receiver && isExternalFreeCall(site.name, knownNames)) {
+            externalCalls += 1;
+            continue;
+          }
+          examinedCalls += 1;
+          if (!receiver && !knownNames.has(site.name)) {
+            unresolvedCalls += 1;
+            continue;
+          }
           const freeBindings = importBindings.filter(
             (binding) => binding.exportedName !== '*' || binding.localName === '*'
           );
           const importedHits = importedCallCandidates(
             site.name,
-            namedImportLanguage && receiver ? memberNamespace : freeBindings,
-            symbolsByFile,
-            sources,
-            codeViews,
-            linesByFile,
+            member ? memberNamespace : freeBindings,
+            symbolIndexes,
             exportMaps,
-            pythonAllByFile
+            reexportsByFile
           );
           const target = resolveCallTarget(
             site.name,
-            namedImportLanguage && receiver ? [] : localSymbols,
-            [
-              ...importedHits,
-              ...(namedImportLanguage && receiver ? [] : named(importedSymbols, site.name)),
-            ],
-            namedImportLanguage && receiver ? [] : peerSymbols
+            receiver && member && namedImportLanguage && !isLocalMemberReceiver(receiver)
+              ? []
+              : localSymbols,
+            [...importedHits, ...(member ? [] : named(importedSymbols, site.name))],
+            member ? [] : peerSymbols
           );
           if (target === 'ambiguous') {
             discoveredCalls += 1;
@@ -707,6 +1292,7 @@ export function createSourceDeclarationsProvider(
           const emittedCount = emittedForName.get(site.name) ?? 0;
           if (emittedCount >= MAX_CALLS_PER_SYMBOL) {
             truncated = true;
+            truncatedCalls += 1;
             if (!truncatedNames.has(site.name)) {
               truncatedNames.add(site.name);
               unknownZones.push({
@@ -719,6 +1305,7 @@ export function createSourceDeclarationsProvider(
           }
           if (facts.length >= manifest.limits.maxFacts) {
             truncated = true;
+            truncatedCalls += 1;
             unknownZones.push({
               code: 'graph.source-calls-truncated',
               scope: input.locator,
@@ -742,6 +1329,7 @@ export function createSourceDeclarationsProvider(
               derivation: 'extracted',
               authority: 'observed',
               confidence: 0.7,
+              extensions: Object.freeze({ calleeName: site.name }),
             })
           );
           callIndex += 1;
@@ -782,9 +1370,53 @@ export function createSourceDeclarationsProvider(
               derivation: 'extracted',
               authority: 'observed',
               confidence: 0.7,
+              extensions: Object.freeze({ symbolName: symbol.name }),
             })
           );
         }
+      }
+      recordGraphPhase('moduleResolution', {
+        wallMs: performance.now() - callBindStartedAt,
+        files: inputs.length,
+        facts: emittedCalls,
+      });
+
+      for (const [inputIndex, input] of inputs.entries()) {
+        const index = symbolIndexes.get(input.locator);
+        const processingRecord = processing.find(
+          (record) => record.input.locator === input.locator
+        );
+        if (!index || !processingRecord) continue;
+        rememberLocatorFactShard({
+          schema: GRAPH_LOCATOR_FACT_SHARD_SCHEMA,
+          providerId: SOURCE_DECLARATIONS_PROVIDER_ID,
+          providerVersion: manifest.version,
+          locator: input.locator,
+          inputDigest: input.digest.value,
+          inputIndex,
+          facts: Object.freeze(
+            facts.filter((fact) => fact.evidence[0]?.relativeLocator === input.locator)
+          ),
+          unknownZones: Object.freeze(unknownZones.filter((zone) => zone.scope === input.locator)),
+          processing: processingRecord,
+          callEnvironmentDigest: locatorCallEnvironmentDigest(
+            dependencyLocatorsByFile.get(input.locator) ?? [],
+            exportSignatures,
+            reexportsByFile
+          ),
+          extras: Object.freeze({
+            exportSignature: exportSignatures.get(input.locator) ?? '',
+            dependencyLocators: dependencyLocatorsByFile.get(input.locator) ?? [],
+            declared: symbolsByFile.get(input.locator) ?? [],
+            visible: index.visible,
+            defaults: index.defaults,
+            exportPairs: Object.freeze([...(exportMaps.get(input.locator) ?? [])]),
+            pythonAllNames: pythonAllByFile.get(input.locator)
+              ? Object.freeze([...(pythonAllByFile.get(input.locator) ?? [])])
+              : undefined,
+            reexports: Object.freeze([...(reexportsByFile.get(input.locator) ?? [])]),
+          } satisfies SourceDeclarationShardExtras),
+        });
       }
 
       return {
@@ -839,6 +1471,18 @@ export function createSourceDeclarationsProvider(
             dimension: 'source-calls-unresolved',
             observed: unresolvedCalls,
             expected: examinedCalls,
+          },
+          {
+            dimension: 'source-calls-external',
+            observed: externalCalls,
+          },
+          {
+            dimension: 'source-calls-excluded',
+            observed: excludedCalls,
+          },
+          {
+            dimension: 'source-calls-truncated',
+            observed: truncatedCalls,
           },
         ],
         unknownZones,

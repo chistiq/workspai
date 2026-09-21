@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   evaluationExitCode,
+  portableGraphProjectId,
   type GraphReferenceQualityObservation,
 } from '../../scripts/graph-reference-quality-evaluation.js';
 
@@ -23,6 +24,7 @@ function passingObservation(
       assessed: true,
       status: 'complete',
       digestComparison: 'equal',
+      digestEqualToCurrentTree: true,
       digestEqualToBase: true,
       equivalence: 'pass',
       inventoryRereadTrust: 'untrusted',
@@ -87,5 +89,14 @@ describe('graph reference quality evaluation exit code', () => {
     ['directional delta failed', { directionalDelta: { status: 'failed' } }],
   ] as const)('returns 3 when %s', (_label, overrides) => {
     expect(evaluationExitCode([passingObservation(overrides)])).toBe(3);
+  });
+});
+
+describe('portableGraphProjectId', () => {
+  it('maps mixed-case corpus folder names onto admitted Graph project identifiers', () => {
+    expect(portableGraphProjectId('OpenBot')).toBe('openbot');
+    expect(portableGraphProjectId('CopilotKit')).toBe('copilotkit');
+    expect(portableGraphProjectId('opentelemetry-demo')).toBe('opentelemetry-demo');
+    expect(portableGraphProjectId('OpenBot')).toMatch(/^[a-z0-9][a-z0-9._-]{0,127}$/u);
   });
 });

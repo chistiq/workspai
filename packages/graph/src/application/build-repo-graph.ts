@@ -10,17 +10,54 @@ import type {
   GraphProviderInput,
   GraphProviderRunSummary,
   GraphValidationIssue,
+  GraphWorkspaceFact,
 } from '../contracts/index.js';
 import {
   inventoryOmissionAccounting,
   inventorySurfaceExcludedDirectoryNames,
 } from '../domain/inventory-surface.js';
+import { isGraphFactAdmitted } from '../domain/admitted-graph-facts.js';
 import { structurizeUnknownZone } from '../domain/unknown-cause.js';
 import type { GraphFileInventoryResult } from '../ports/index.js';
 
-import { composeGraph } from './compose-graph.js';
+import {
+  composeGraph,
+  compositionQualityDigestMatches,
+  computeGraphCompositionSemanticReceipt,
+  sessionOwnedCompositionReceiptStillBinds,
+  adoptFrozenGraphCompositionSource,
+  retainOrIsolateGraphCompositionSource,
+  snapshotAdmittedGraphCompositionSource,
+} from './compose-graph.js';
 import { GRAPH_STANDARD_COMPOSITION_POLICY } from './composition-types.js';
 import type { GraphCompositionSource } from './composition-types.js';
+import {
+  compositionReceiptMatchesPublishedGraph,
+  compositionSemanticReceiptsEqual,
+} from './composition-types.js';
+import {
+  GRAPH_LOCATOR_FACT_SHARD_SCHEMA,
+  compositionSourcesAreIdenticalFacts,
+  lastSessionCompositionAnchor,
+  lookupLocatorFactShard,
+  rebindLocatorFactShards,
+  rememberLocatorFactShard,
+  rememberSessionCompositionAnchor,
+  setLocatorFactShardExtractionEnvironment,
+  setLocatorFactShardMembership,
+} from './locator-fact-shards.js';
+import {
+  digestGraphExtractionEnvironment,
+  graphProviderPermissionBlocks,
+  reusedProviderSourcesSatisfyCurrentBoundary,
+} from './extraction-environment.js';
+import {
+  freezeInventoryMembership,
+  inventoryMembershipIsComplete,
+} from './inventory-membership.js';
+import { graphPhaseTimings, recordGraphPhase, runWithGraphPhaseSession } from './phase-metrics.js';
+import { graphDataMovementSnapshot, runWithGraphDataMovementSession } from './data-movement.js';
+import { processLifetimePeakRssBytes, snapshotGraphBuildMemory } from './build-memory.js';
 import type { GraphRepoBuildCompositionReuse } from './repo-build-types.js';
 import type {
   GraphRepoBuildPolicy,
@@ -163,6 +200,60 @@ function deepFreeze<T>(value: T): Readonly<T> {
   if (typeof value !== 'object' || value === null || Object.isFrozen(value)) return value;
   for (const child of Object.values(value)) deepFreeze(child);
   return Object.freeze(value);
+}
+
+function snapshotCompositionSource(source: GraphCompositionSource): GraphCompositionSource {
+  return retainOrIsolateGraphCompositionSource(source);
+}
+
+function snapshotAdmittedSource(source: GraphCompositionSource): GraphCompositionSource {
+  if (
+    source.batch.facts.length > 0 &&
+    source.batch.facts.every((fact) => isGraphFactAdmitted(fact))
+  ) {
+    return adoptFrozenGraphCompositionSource(source);
+  }
+  return snapshotAdmittedGraphCompositionSource(source);
+}
+
+function rememberDefaultLocatorShards(
+  providerId: string,
+  providerVersion: string,
+  source: GraphCompositionSource
+): void {
+  const processingByLocator = new Map(
+    source.batch.processing.map((record) => [record.input.locator, record])
+  );
+  const factsByLocator = new Map<string, GraphWorkspaceFact[]>();
+  for (const fact of source.batch.facts) {
+    const locator = fact.evidence[0]?.relativeLocator;
+    if (!locator) continue;
+    const group = factsByLocator.get(locator) ?? [];
+    group.push(fact);
+    factsByLocator.set(locator, group);
+  }
+  for (const [inputIndex, input] of source.batch.inputs.entries()) {
+    const key = {
+      providerId,
+      locator: input.locator,
+      inputDigest: input.digest.value,
+      inputIndex,
+    };
+    if (lookupLocatorFactShard(key)) continue;
+    const processing = processingByLocator.get(input.locator);
+    if (!processing) continue;
+    rememberLocatorFactShard({
+      schema: GRAPH_LOCATOR_FACT_SHARD_SCHEMA,
+      ...key,
+      providerVersion,
+      facts: Object.freeze(factsByLocator.get(input.locator) ?? []),
+      unknownZones: Object.freeze(
+        source.batch.unknownZones.filter((zone) => zone.scope === input.locator)
+      ),
+      processing,
+      callEnvironmentDigest: '',
+    });
+  }
 }
 
 function immutableInput(input: GraphProviderInput): Readonly<GraphProviderInput> {
@@ -404,7 +495,19 @@ function metricsFromInventory(
 export async function buildRepoGraph(
   request: GraphRepoBuildRequest
 ): Promise<GraphRepoBuildResult> {
+  return runWithGraphPhaseSession(() =>
+    runWithGraphDataMovementSession(() => executeRepoGraphBuild(request))
+  );
+}
+
+async function executeRepoGraphBuild(
+  request: GraphRepoBuildRequest
+): Promise<GraphRepoBuildResult> {
   const startedAt = performance.now();
+  const memoryStages = [snapshotGraphBuildMemory('start')];
+  const captureMemory = (at: string): void => {
+    memoryStages.push(snapshotGraphBuildMemory(at));
+  };
   const diagnostics: GraphDiagnostic[] = [];
   const summaries: GraphProviderRunSummary[] = [];
   const sources: GraphCompositionSource[] = [];
@@ -453,8 +556,12 @@ export async function buildRepoGraph(
         omittedSubtrees: Object.freeze([]),
         unknownZones: [],
         unsupportedZones: [],
+        hashedFiles: request.admittedInputs.length,
+        enumeratedFiles: request.admittedInputs.length,
+        inventoryMs: 0,
       };
     } else {
+      const inventoryStartedAt = performance.now();
       inventory = await request.ports.fileSource.inventory({
         root: request.root,
         maxFiles: request.policy.limits.maxFiles,
@@ -466,6 +573,16 @@ export async function buildRepoGraph(
         sensitiveFiles: request.policy.sensitiveFiles,
         signal: request.ports.signal,
       });
+      inventory = {
+        ...inventory,
+        inventoryMs:
+          inventory.inventoryMs ?? Math.max(0, Math.round(performance.now() - inventoryStartedAt)),
+        hashedFiles: inventory.hashedFiles ?? inventory.inputs.length,
+        enumeratedFiles:
+          inventory.enumeratedFiles ??
+          inventory.membershipLocators?.length ??
+          inventory.inputs.length,
+      };
     }
   } catch {
     const cancelled = request.ports.cancellation.aborted || request.ports.signal?.aborted === true;
@@ -510,6 +627,12 @@ export async function buildRepoGraph(
     );
   }
   const inputBytes = inventory.inputs.reduce((sum, input) => sum + input.byteLength, 0);
+  recordGraphPhase('inventory', {
+    wallMs: inventory.inventoryMs ?? 0,
+    files: inventory.inputs.length,
+    bytes: inputBytes,
+  });
+  captureMemory('afterInventory');
   if (inventory.status === 'cancelled') {
     return emptyResult(
       'cancelled',
@@ -586,247 +709,48 @@ export async function buildRepoGraph(
     : null;
   const availableInputLocators = Object.freeze(admittedInputs.map((input) => input.locator));
   const providersStartedAt = performance.now();
-
-  for (const provider of providers) {
+  let extractionEnvironmentDigest: string | undefined;
+  try {
+    const environment = await digestGraphExtractionEnvironment({
+      root: request.root,
+      scope,
+      ontology: request.ontology,
+      providers,
+      policy: request.policy,
+      inputs: admittedInputs,
+      digest: request.ports.digest,
+    });
+    extractionEnvironmentDigest = environment.digest.value;
+    setLocatorFactShardExtractionEnvironment(environment.stableBoundaryDigest.value);
+  } catch {
+    extractionEnvironmentDigest = undefined;
+  }
+  setLocatorFactShardMembership(admittedInputs.map((input) => input.locator));
+  const sessionExtracted =
+    !compositionReuse && extractionEnvironmentDigest ? lastSessionCompositionAnchor() : undefined;
+  let reuseSessionExtractedSources = Boolean(
+    sessionExtracted &&
+    extractionEnvironmentDigest &&
+    sessionExtracted.extractionEnvironmentDigest === extractionEnvironmentDigest &&
+    sessionExtracted.sources.length > 0
+  );
+  if (reuseSessionExtractedSources && sessionExtracted) {
     try {
       request.ports.cancellation.throwIfAborted();
+      const boundary = reusedProviderSourcesSatisfyCurrentBoundary({
+        sources: sessionExtracted.sources,
+        request,
+        inputs: admittedInputs,
+      });
+      if (!boundary.ok) reuseSessionExtractedSources = false;
     } catch {
-      diagnostics.push(
-        diagnostic(
-          'GRAPH_REPO_BUILD_CANCELLED',
-          'info',
-          '/providers',
-          'Repository graph build was cancelled.'
-        )
-      );
-      return emptyResult(
-        'cancelled',
-        diagnostics,
-        summaries,
-        metricsFromInventory(inventory, inputBytes),
-        inventoryZones
-      );
-    }
-    const identity = providerIdentity(provider.manifest.id, provider.manifest.version);
-    if (providersToRecompute && !providersToRecompute.has(identity.id)) {
-      const reused = reusedByProvider?.get(identity.id);
-      if (!reused) {
-        diagnostics.push(
-          diagnostic(
-            'GRAPH_REPO_INCREMENTAL_REUSED_SOURCE_MISSING',
-            'error',
-            `/providers/${encodeURIComponent(identity.id)}`,
-            'Incremental builds require reused provider output for skipped providers.'
-          )
-        );
-        continue;
-      }
-      sources.push(reused);
-      summaries.push({
-        provider: identity,
-        detection: 'not-applicable',
-        collection: 'not-run',
-        factCount: reused.batch.facts.length,
-        diagnostics: [
-          diagnostic(
-            'GRAPH_PROVIDER_REUSED_FROM_PRIOR_GENERATION',
-            'info',
-            `/providers/${encodeURIComponent(identity.id)}`,
-            'Provider output was reused without re-execution.'
-          ),
-        ],
-      });
-      continue;
-    }
-    let manifestSnapshot: unknown;
-    try {
-      manifestSnapshot = deepFreeze(structuredClone(provider.manifest));
-    } catch {
-      manifestSnapshot = null;
-    }
-    const manifest = validateGraphProviderManifest(manifestSnapshot);
-    if (!manifest.accepted) {
-      const providerDiagnostics = issueDiagnostics(identity.id, manifest.issues);
-      diagnostics.push(...providerDiagnostics);
-      summaries.push({
-        provider: identity,
-        detection: 'invalid',
-        collection: 'not-run',
-        factCount: 0,
-        diagnostics: providerDiagnostics,
-      });
-      continue;
-    }
-
-    if (request.policy.network === 'deny' && manifest.value.permissions.network === 'allow') {
-      const providerDiagnostics = [
-        diagnostic(
-          'GRAPH_PROVIDER_NETWORK_DENIED',
-          'warning',
-          `/providers/${encodeURIComponent(identity.id)}`,
-          'Provider requires network access but the repository build policy denies it.'
-        ),
-      ];
-      diagnostics.push(...providerDiagnostics);
-      summaries.push({
-        provider: identity,
-        detection: 'blocked',
-        collection: 'not-run',
-        factCount: 0,
-        diagnostics: providerDiagnostics,
-      });
-      continue;
-    }
-    if (manifest.value.permissions.process === 'allow') {
-      const providerDiagnostics = [
-        diagnostic(
-          'GRAPH_PROVIDER_PROCESS_DENIED',
-          'warning',
-          `/providers/${encodeURIComponent(identity.id)}`,
-          'Standalone repository builds do not grant process execution to providers.'
-        ),
-      ];
-      diagnostics.push(...providerDiagnostics);
-      summaries.push({
-        provider: identity,
-        detection: 'blocked',
-        collection: 'not-run',
-        factCount: 0,
-        diagnostics: providerDiagnostics,
-      });
-      continue;
-    }
-
-    const detectionRequest = {
-      availableInputs: availableInputLocators,
-      scopeKind: 'project',
-      networkAllowed: request.policy.network === 'allow',
-    } as const;
-    const validDetectionRequest = validateGraphProviderDetectionRequest(detectionRequest);
-    if (!validDetectionRequest.accepted) {
-      const providerDiagnostics = issueDiagnostics(identity.id, validDetectionRequest.issues);
-      diagnostics.push(...providerDiagnostics);
-      summaries.push({
-        provider: identity,
-        detection: 'invalid',
-        collection: 'not-run',
-        factCount: 0,
-        diagnostics: providerDiagnostics,
-      });
-      continue;
-    }
-
-    let detected: unknown;
-    const detectionStartedAt = performance.now();
-    try {
-      detected = await runProviderPhase(
-        manifest.value.limits.maxDurationMs,
-        request.ports.signal,
-        () => provider.detect(validDetectionRequest.value)
-      );
-    } catch (error) {
-      const timedOut = error instanceof GraphProviderDeadlineError;
-      const providerDiagnostics = [
-        diagnostic(
-          timedOut ? 'GRAPH_PROVIDER_DETECTION_TIMEOUT' : 'GRAPH_PROVIDER_DETECTION_FAILED',
-          'error',
-          `/providers/${encodeURIComponent(identity.id)}/detection`,
-          timedOut
-            ? 'Provider detection exceeded its admitted execution deadline.'
-            : 'Provider detection failed within its admitted boundary.'
-        ),
-      ];
-      diagnostics.push(...providerDiagnostics);
-      summaries.push({
-        provider: identity,
-        detection: 'failed',
-        collection: 'not-run',
-        factCount: 0,
-        diagnostics: providerDiagnostics,
-        detectionMs: Math.max(0, Math.round(performance.now() - detectionStartedAt)),
-      });
-      continue;
-    }
-    const detectionMs = Math.max(0, Math.round(performance.now() - detectionStartedAt));
-    const detection = validateGraphProviderDetectionResult(detected, manifest.value);
-    if (!detection.accepted) {
-      const providerDiagnostics = issueDiagnostics(identity.id, detection.issues);
-      diagnostics.push(...providerDiagnostics);
-      summaries.push({
-        provider: identity,
-        detection: 'invalid',
-        collection: 'not-run',
-        factCount: 0,
-        diagnostics: providerDiagnostics,
-        detectionMs,
-      });
-      continue;
-    }
-    if (detection.value.status !== 'applicable') {
-      summaries.push({
-        provider: identity,
-        detection: detection.value.status,
-        collection: 'not-run',
-        factCount: 0,
-        diagnostics: [],
-        detectionMs,
-      });
-      continue;
-    }
-
-    let collected: unknown;
-    const collectionStartedAt = performance.now();
-    try {
-      let providerReadBytes = 0;
-      collected = await runProviderPhase(
-        manifest.value.limits.maxDurationMs,
-        request.ports.signal,
-        (providerSignal) =>
-          provider.collect({
-            scope,
-            inputs: admittedInputs,
-            observedAt,
-            signal: providerSignal,
-            resolveIdentity,
-            readInput: async (input: GraphProviderInput, options) => {
-              const admitted = inputByLocator.get(input.locator);
-              if (!admitted || admitted.digest.value !== input.digest.value) {
-                throw new Error('Provider requested an input outside the admitted inventory.');
-              }
-              const totalBudget = Math.min(
-                request.policy.limits.maxProviderReadBytes,
-                manifest.value.limits.maxInputBytes ?? Number.MAX_SAFE_INTEGER
-              );
-              const maxBytes = Math.min(options.maxBytes, totalBudget);
-              if (!Number.isInteger(maxBytes) || maxBytes <= 0 || admitted.byteLength > maxBytes) {
-                throw new Error('Provider input read exceeds the admitted byte budget.');
-              }
-              providerReadBytes += admitted.byteLength;
-              if (providerReadBytes > totalBudget) {
-                throw new Error('Provider cumulative reads exceed the admitted byte budget.');
-              }
-              const cacheKey = `${admitted.locator}\u0000${admitted.digest.value}`;
-              const cached = fileBytes.get(cacheKey);
-              if (cached) return cached;
-              const pending = request.ports.fileSource.read(request.root, admitted, {
-                maxBytes,
-                signal: options.signal ?? providerSignal,
-              });
-              fileBytes.set(cacheKey, pending);
-              return pending;
-            },
-          })
-      );
-    } catch (error) {
-      const cancelled =
-        request.ports.cancellation.aborted || request.ports.signal?.aborted === true;
-      if (cancelled) {
+      if (request.ports.cancellation.aborted || request.ports.signal?.aborted === true) {
         diagnostics.push(
           diagnostic(
             'GRAPH_REPO_BUILD_CANCELLED',
             'info',
-            `/providers/${encodeURIComponent(identity.id)}/collection`,
-            'Repository graph build was cancelled during provider collection.'
+            '/providers',
+            'Repository graph build was cancelled.'
           )
         );
         return emptyResult(
@@ -837,82 +761,392 @@ export async function buildRepoGraph(
           inventoryZones
         );
       }
-      const timedOut = error instanceof GraphProviderDeadlineError;
-      const providerDiagnostics = [
-        diagnostic(
-          timedOut ? 'GRAPH_PROVIDER_COLLECTION_TIMEOUT' : 'GRAPH_PROVIDER_COLLECTION_FAILED',
-          'error',
-          `/providers/${encodeURIComponent(identity.id)}/collection`,
-          timedOut
-            ? 'Provider collection exceeded its admitted execution deadline.'
-            : 'Provider collection failed within its admitted boundary.'
-        ),
-      ];
-      diagnostics.push(...providerDiagnostics);
-      summaries.push({
-        provider: identity,
-        detection: detection.value.status,
-        collection: 'invalid',
-        factCount: 0,
-        diagnostics: providerDiagnostics,
-        detectionMs,
-        collectionMs: Math.max(0, Math.round(performance.now() - collectionStartedAt)),
-      });
-      continue;
-    }
-    const collectionMs = Math.max(0, Math.round(performance.now() - collectionStartedAt));
-
-    const admission = admitGraphProviderOutput(manifest.value, collected);
-    if (!admission.accepted) {
-      const providerDiagnostics = issueDiagnostics(identity.id, admission.issues);
-      diagnostics.push(...providerDiagnostics);
-      summaries.push({
-        provider: identity,
-        detection: detection.value.status,
-        collection: 'invalid',
-        factCount: 0,
-        diagnostics: providerDiagnostics,
-        detectionMs,
-        collectionMs,
-      });
-      continue;
-    }
-    if (admission.batch.redaction.policy !== request.policy.redactionProfile) {
-      const providerDiagnostics = [
-        diagnostic(
-          'GRAPH_PROVIDER_REDACTION_POLICY_MISMATCH',
-          'error',
-          `/providers/${encodeURIComponent(identity.id)}/redaction`,
-          'Provider output does not attest the repository build redaction profile.'
-        ),
-      ];
-      diagnostics.push(...providerDiagnostics);
-      summaries.push({
-        provider: identity,
-        detection: detection.value.status,
-        collection: 'invalid',
-        factCount: 0,
-        diagnostics: providerDiagnostics,
-        detectionMs,
-        collectionMs,
-      });
-      continue;
-    }
-    diagnostics.push(...admission.batch.diagnostics);
-    summaries.push({
-      provider: identity,
-      detection: detection.value.status,
-      collection: admission.batch.status,
-      factCount: admission.batch.facts.length,
-      diagnostics: admission.batch.diagnostics,
-      detectionMs,
-      collectionMs,
-    });
-    if (['complete', 'partial'].includes(admission.batch.status)) {
-      sources.push({ manifest: admission.manifest, batch: admission.batch });
+      reuseSessionExtractedSources = false;
     }
   }
+  if (reuseSessionExtractedSources && sessionExtracted) {
+    for (const source of sessionExtracted.sources) {
+      sources.push(source);
+      summaries.push({
+        provider: { id: source.manifest.id, version: source.manifest.version },
+        detection: 'not-applicable',
+        collection: 'not-run',
+        factCount: source.batch.facts.length,
+        diagnostics: [
+          diagnostic(
+            'GRAPH_PROVIDER_REUSED_FROM_PRIOR_GENERATION',
+            'info',
+            `/providers/${encodeURIComponent(source.manifest.id)}`,
+            'Provider output was reused without re-execution.'
+          ),
+        ],
+      });
+    }
+  }
+
+  if (!reuseSessionExtractedSources)
+    for (const provider of providers) {
+      try {
+        request.ports.cancellation.throwIfAborted();
+      } catch {
+        diagnostics.push(
+          diagnostic(
+            'GRAPH_REPO_BUILD_CANCELLED',
+            'info',
+            '/providers',
+            'Repository graph build was cancelled.'
+          )
+        );
+        return emptyResult(
+          'cancelled',
+          diagnostics,
+          summaries,
+          metricsFromInventory(inventory, inputBytes),
+          inventoryZones
+        );
+      }
+      const identity = providerIdentity(provider.manifest.id, provider.manifest.version);
+      if (providersToRecompute && !providersToRecompute.has(identity.id)) {
+        const reused = reusedByProvider?.get(identity.id);
+        if (!reused) {
+          diagnostics.push(
+            diagnostic(
+              'GRAPH_REPO_INCREMENTAL_REUSED_SOURCE_MISSING',
+              'error',
+              `/providers/${encodeURIComponent(identity.id)}`,
+              'Incremental builds require reused provider output for skipped providers.'
+            )
+          );
+          continue;
+        }
+        const reusedBoundary = reusedProviderSourcesSatisfyCurrentBoundary({
+          sources: [reused],
+          request,
+          inputs: admittedInputs,
+        });
+        if (!reusedBoundary.ok) {
+          diagnostics.push(
+            diagnostic(
+              'GRAPH_REPO_INCREMENTAL_REUSED_SOURCE_POLICY_DENIED',
+              'error',
+              `/providers/${encodeURIComponent(identity.id)}`,
+              'Reused provider output does not satisfy the current provider policy boundary.'
+            )
+          );
+          continue;
+        }
+        try {
+          sources.push(snapshotCompositionSource(reused));
+        } catch {
+          diagnostics.push(
+            diagnostic(
+              'GRAPH_REPO_INCREMENTAL_REUSED_SOURCE_NOT_SNAPSHOTTABLE',
+              'error',
+              `/providers/${encodeURIComponent(identity.id)}`,
+              'Reused provider output could not be detached into an immutable snapshot.'
+            )
+          );
+          continue;
+        }
+        summaries.push({
+          provider: identity,
+          detection: 'not-applicable',
+          collection: 'not-run',
+          factCount: reused.batch.facts.length,
+          diagnostics: [
+            diagnostic(
+              'GRAPH_PROVIDER_REUSED_FROM_PRIOR_GENERATION',
+              'info',
+              `/providers/${encodeURIComponent(identity.id)}`,
+              'Provider output was reused without re-execution.'
+            ),
+          ],
+        });
+        continue;
+      }
+      let manifestSnapshot: unknown;
+      try {
+        manifestSnapshot = deepFreeze(structuredClone(provider.manifest));
+      } catch {
+        manifestSnapshot = null;
+      }
+      const manifest = validateGraphProviderManifest(manifestSnapshot);
+      if (!manifest.accepted) {
+        const providerDiagnostics = issueDiagnostics(identity.id, manifest.issues);
+        diagnostics.push(...providerDiagnostics);
+        summaries.push({
+          provider: identity,
+          detection: 'invalid',
+          collection: 'not-run',
+          factCount: 0,
+          diagnostics: providerDiagnostics,
+        });
+        continue;
+      }
+
+      const permissionBlocks = graphProviderPermissionBlocks(manifest.value, request.policy);
+      if (permissionBlocks.length > 0) {
+        diagnostics.push(...permissionBlocks);
+        summaries.push({
+          provider: identity,
+          detection: 'blocked',
+          collection: 'not-run',
+          factCount: 0,
+          diagnostics: permissionBlocks,
+        });
+        continue;
+      }
+
+      const detectionRequest = {
+        availableInputs: availableInputLocators,
+        scopeKind: 'project',
+        networkAllowed: request.policy.network === 'allow',
+      } as const;
+      const validDetectionRequest = validateGraphProviderDetectionRequest(detectionRequest);
+      if (!validDetectionRequest.accepted) {
+        const providerDiagnostics = issueDiagnostics(identity.id, validDetectionRequest.issues);
+        diagnostics.push(...providerDiagnostics);
+        summaries.push({
+          provider: identity,
+          detection: 'invalid',
+          collection: 'not-run',
+          factCount: 0,
+          diagnostics: providerDiagnostics,
+        });
+        continue;
+      }
+
+      let detected: unknown;
+      const detectionStartedAt = performance.now();
+      try {
+        detected = await runProviderPhase(
+          manifest.value.limits.maxDurationMs,
+          request.ports.signal,
+          () => provider.detect(validDetectionRequest.value)
+        );
+      } catch (error) {
+        const timedOut = error instanceof GraphProviderDeadlineError;
+        const providerDiagnostics = [
+          diagnostic(
+            timedOut ? 'GRAPH_PROVIDER_DETECTION_TIMEOUT' : 'GRAPH_PROVIDER_DETECTION_FAILED',
+            'error',
+            `/providers/${encodeURIComponent(identity.id)}/detection`,
+            timedOut
+              ? 'Provider detection exceeded its admitted execution deadline.'
+              : 'Provider detection failed within its admitted boundary.'
+          ),
+        ];
+        diagnostics.push(...providerDiagnostics);
+        summaries.push({
+          provider: identity,
+          detection: 'failed',
+          collection: 'not-run',
+          factCount: 0,
+          diagnostics: providerDiagnostics,
+          detectionMs: Math.max(0, Math.round(performance.now() - detectionStartedAt)),
+        });
+        continue;
+      }
+      const detectionMs = Math.max(0, Math.round(performance.now() - detectionStartedAt));
+      const detection = validateGraphProviderDetectionResult(detected, manifest.value);
+      if (!detection.accepted) {
+        const providerDiagnostics = issueDiagnostics(identity.id, detection.issues);
+        diagnostics.push(...providerDiagnostics);
+        summaries.push({
+          provider: identity,
+          detection: 'invalid',
+          collection: 'not-run',
+          factCount: 0,
+          diagnostics: providerDiagnostics,
+          detectionMs,
+        });
+        continue;
+      }
+      if (detection.value.status !== 'applicable') {
+        summaries.push({
+          provider: identity,
+          detection: detection.value.status,
+          collection: 'not-run',
+          factCount: 0,
+          diagnostics: [],
+          detectionMs,
+        });
+        continue;
+      }
+
+      let collected: unknown;
+      const collectionStartedAt = performance.now();
+      try {
+        let providerReadBytes = 0;
+        collected = await runProviderPhase(
+          manifest.value.limits.maxDurationMs,
+          request.ports.signal,
+          (providerSignal) =>
+            provider.collect({
+              scope,
+              inputs: admittedInputs,
+              observedAt,
+              signal: providerSignal,
+              resolveIdentity,
+              readInput: async (input: GraphProviderInput, options) => {
+                const admitted = inputByLocator.get(input.locator);
+                if (!admitted || admitted.digest.value !== input.digest.value) {
+                  throw new Error('Provider requested an input outside the admitted inventory.');
+                }
+                const totalBudget = Math.min(
+                  request.policy.limits.maxProviderReadBytes,
+                  manifest.value.limits.maxInputBytes ?? Number.MAX_SAFE_INTEGER
+                );
+                const maxBytes = Math.min(options.maxBytes, totalBudget);
+                if (
+                  !Number.isInteger(maxBytes) ||
+                  maxBytes <= 0 ||
+                  admitted.byteLength > maxBytes
+                ) {
+                  throw new Error('Provider input read exceeds the admitted byte budget.');
+                }
+                providerReadBytes += admitted.byteLength;
+                if (providerReadBytes > totalBudget) {
+                  throw new Error('Provider cumulative reads exceed the admitted byte budget.');
+                }
+                const cacheKey = `${admitted.locator}\u0000${admitted.digest.value}`;
+                const cached = fileBytes.get(cacheKey);
+                if (cached) return cached;
+                const pending = request.ports.fileSource.read(request.root, admitted, {
+                  maxBytes,
+                  signal: options.signal ?? providerSignal,
+                });
+                fileBytes.set(cacheKey, pending);
+                return pending;
+              },
+            })
+        );
+      } catch (error) {
+        const cancelled =
+          request.ports.cancellation.aborted || request.ports.signal?.aborted === true;
+        if (cancelled) {
+          diagnostics.push(
+            diagnostic(
+              'GRAPH_REPO_BUILD_CANCELLED',
+              'info',
+              `/providers/${encodeURIComponent(identity.id)}/collection`,
+              'Repository graph build was cancelled during provider collection.'
+            )
+          );
+          return emptyResult(
+            'cancelled',
+            diagnostics,
+            summaries,
+            metricsFromInventory(inventory, inputBytes),
+            inventoryZones
+          );
+        }
+        const timedOut = error instanceof GraphProviderDeadlineError;
+        const providerDiagnostics = [
+          diagnostic(
+            timedOut ? 'GRAPH_PROVIDER_COLLECTION_TIMEOUT' : 'GRAPH_PROVIDER_COLLECTION_FAILED',
+            'error',
+            `/providers/${encodeURIComponent(identity.id)}/collection`,
+            timedOut
+              ? 'Provider collection exceeded its admitted execution deadline.'
+              : 'Provider collection failed within its admitted boundary.'
+          ),
+        ];
+        diagnostics.push(...providerDiagnostics);
+        summaries.push({
+          provider: identity,
+          detection: detection.value.status,
+          collection: 'invalid',
+          factCount: 0,
+          diagnostics: providerDiagnostics,
+          detectionMs,
+          collectionMs: Math.max(0, Math.round(performance.now() - collectionStartedAt)),
+        });
+        continue;
+      }
+      const collectionMs = Math.max(0, Math.round(performance.now() - collectionStartedAt));
+
+      const admissionStartedAt = performance.now();
+      const admission = admitGraphProviderOutput(manifest.value, collected);
+      recordGraphPhase('providerAdmission', {
+        wallMs: performance.now() - admissionStartedAt,
+        facts: admission.accepted ? admission.batch.facts.length : 0,
+      });
+      if (!admission.accepted) {
+        const providerDiagnostics = issueDiagnostics(identity.id, admission.issues);
+        diagnostics.push(...providerDiagnostics);
+        summaries.push({
+          provider: identity,
+          detection: detection.value.status,
+          collection: 'invalid',
+          factCount: 0,
+          diagnostics: providerDiagnostics,
+          detectionMs,
+          collectionMs,
+        });
+        continue;
+      }
+      if (admission.batch.redaction.policy !== request.policy.redactionProfile) {
+        const providerDiagnostics = [
+          diagnostic(
+            'GRAPH_PROVIDER_REDACTION_POLICY_MISMATCH',
+            'error',
+            `/providers/${encodeURIComponent(identity.id)}/redaction`,
+            'Provider output does not attest the repository build redaction profile.'
+          ),
+        ];
+        diagnostics.push(...providerDiagnostics);
+        summaries.push({
+          provider: identity,
+          detection: detection.value.status,
+          collection: 'invalid',
+          factCount: 0,
+          diagnostics: providerDiagnostics,
+          detectionMs,
+          collectionMs,
+        });
+        continue;
+      }
+      diagnostics.push(...admission.batch.diagnostics);
+      summaries.push({
+        provider: identity,
+        detection: detection.value.status,
+        collection: admission.batch.status,
+        factCount: admission.batch.facts.length,
+        diagnostics: admission.batch.diagnostics,
+        detectionMs,
+        collectionMs,
+      });
+      if (['complete', 'partial'].includes(admission.batch.status)) {
+        try {
+          const snapshot = snapshotAdmittedSource({
+            manifest: admission.manifest,
+            batch: admission.batch,
+          });
+          sources.push(snapshot);
+          rebindLocatorFactShards(identity.id, snapshot.batch.facts);
+          rememberDefaultLocatorShards(identity.id, identity.version, snapshot);
+        } catch {
+          const providerDiagnostics = [
+            diagnostic(
+              'GRAPH_PROVIDER_OUTPUT_NOT_SNAPSHOTTABLE',
+              'error',
+              `/providers/${encodeURIComponent(identity.id)}/batch`,
+              'Admitted provider output could not be detached into an immutable snapshot.'
+            ),
+          ];
+          diagnostics.push(...providerDiagnostics);
+          summaries[summaries.length - 1] = {
+            ...summaries[summaries.length - 1]!,
+            collection: 'invalid',
+            factCount: 0,
+            diagnostics: [...summaries[summaries.length - 1]!.diagnostics, ...providerDiagnostics],
+          };
+        }
+      }
+    }
   const providerMs = Math.max(0, Math.round(performance.now() - providersStartedAt));
+  captureMemory('afterProviders');
 
   if (
     diagnostics.some(
@@ -947,19 +1181,133 @@ export async function buildRepoGraph(
   }
 
   const compositionStartedAt = performance.now();
-  const composed = await composeGraph(
-    {
-      ontology: request.ontology,
-      sources,
-      policy: request.policy.composition,
-    },
-    request.ports
+  const sessionAnchor = lastSessionCompositionAnchor();
+  const identicalSessionFacts = Boolean(
+    sessionAnchor && compositionSourcesAreIdenticalFacts(sources, sessionAnchor.sources)
   );
+  const reuseCandidate =
+    request.reuseCanonicalBuild?.receipt && request.reuseCanonicalBuild.quality
+      ? request.reuseCanonicalBuild
+      : identicalSessionFacts
+        ? sessionAnchor
+        : undefined;
+  let reusedCanonical = false;
+  if (
+    reuseCandidate?.receipt &&
+    reuseCandidate.quality &&
+    ((compositionReuse !== undefined && compositionReuse.reusedSources.length === sources.length) ||
+      identicalSessionFacts)
+  ) {
+    try {
+      request.ports.cancellation.throwIfAborted();
+      const previousSources = identicalSessionFacts ? sessionAnchor?.sources : undefined;
+      const liveReceipt =
+        identicalSessionFacts && previousSources
+          ? (await sessionOwnedCompositionReceiptStillBinds(
+              {
+                ontology: request.ontology,
+                sources,
+                policy: request.policy.composition,
+              },
+              previousSources,
+              reuseCandidate.receipt,
+              request.ports
+            ))
+            ? { accepted: true as const, value: reuseCandidate.receipt }
+            : { accepted: false as const }
+          : await computeGraphCompositionSemanticReceipt(
+              {
+                ontology: request.ontology,
+                sources,
+                policy: request.policy.composition,
+              },
+              request.ports
+            );
+      reusedCanonical = false;
+      if (liveReceipt.accepted) {
+        reusedCanonical =
+          compositionSemanticReceiptsEqual(liveReceipt.value, reuseCandidate.receipt) &&
+          compositionReceiptMatchesPublishedGraph(
+            reuseCandidate.receipt,
+            reuseCandidate.graph,
+            reuseCandidate.quality
+          ) &&
+          liveReceipt.value.architectureEpoch === request.policy.composition.architectureEpoch &&
+          (reuseCandidate.quality === sessionAnchor?.quality ||
+            (await compositionQualityDigestMatches(
+              reuseCandidate.quality,
+              reuseCandidate.receipt.qualityDigest,
+              request.ports
+            )));
+      }
+    } catch {
+      if (request.ports.cancellation.aborted || request.ports.signal?.aborted === true) {
+        return emptyResult(
+          'cancelled',
+          [
+            diagnostic(
+              'GRAPH_REPO_BUILD_CANCELLED',
+              'info',
+              '/composition',
+              'Repository graph build was cancelled during composition receipt verification.'
+            ),
+          ],
+          summaries,
+          metricsFromInventory(inventory, inputBytes),
+          inventoryZones
+        );
+      }
+      reusedCanonical = false;
+    }
+  }
+  const composed = reusedCanonical
+    ? undefined
+    : await composeGraph(
+        {
+          ontology: request.ontology,
+          sources,
+          policy: request.policy.composition,
+        },
+        request.ports
+      );
   const compositionMs = Math.max(0, Math.round(performance.now() - compositionStartedAt));
-  if (!composed.accepted) {
+  recordGraphPhase('composition', {
+    wallMs: compositionMs,
+    facts: summaries.reduce((sum, summary) => sum + summary.factCount, 0),
+  });
+  if (composed && composed.accepted && composed.timings) {
+    recordGraphPhase('factCanonicalization', { wallMs: composed.timings.semanticDigestMs });
+    recordGraphPhase('contentDigest', { wallMs: composed.timings.contentDigestMs });
+    recordGraphPhase('graphIndexConstruction', { wallMs: composed.timings.edgeProofMs });
+  }
+  if (composed && !composed.accepted) {
     diagnostics.push(...issueDiagnostics('composition', composed.issues));
     return emptyResult(
       composed.code === 'cancelled' ? 'cancelled' : 'failed',
+      diagnostics,
+      summaries,
+      metricsFromInventory(inventory, inputBytes),
+      inventoryZones
+    );
+  }
+  const graph = reusedCanonical
+    ? reuseCandidate!.graph
+    : composed && composed.accepted
+      ? composed.value.graph
+      : undefined;
+  const qualityGraph = reusedCanonical
+    ? reuseCandidate?.quality
+    : composed && composed.accepted
+      ? composed.value.quality
+      : undefined;
+  const compositionReceipt = reusedCanonical
+    ? reuseCandidate?.receipt
+    : composed && composed.accepted
+      ? composed.value.receipt
+      : undefined;
+  if (!graph) {
+    return emptyResult(
+      'failed',
       diagnostics,
       summaries,
       metricsFromInventory(inventory, inputBytes),
@@ -975,12 +1323,43 @@ export async function buildRepoGraph(
     summaries.some((summary) =>
       ['blocked', 'unknown', 'failed', 'invalid'].includes(summary.detection)
     );
+  if (!incomplete && graph && qualityGraph && compositionReceipt && extractionEnvironmentDigest) {
+    rememberSessionCompositionAnchor({
+      sources: Object.freeze([...sources]),
+      graph,
+      quality: qualityGraph,
+      receipt: compositionReceipt,
+      extractionEnvironmentDigest,
+    });
+  }
+  const phaseTimings = graphPhaseTimings();
+  const phaseSummary = {
+    phaseTimings,
+    cacheHits: phaseTimings.reduce((sum, timing) => sum + timing.cacheHits, 0),
+    cacheMisses: phaseTimings.reduce((sum, timing) => sum + timing.cacheMisses, 0),
+    filesRead: phaseTimings.find((timing) => timing.phase === 'fileRead')?.files ?? 0,
+    filesParsed: phaseTimings.find((timing) => timing.phase === 'parse')?.files ?? 0,
+    filesExtracted: phaseTimings.find((timing) => timing.phase === 'extract')?.files ?? 0,
+  };
+  captureMemory('end');
   return {
     status: incomplete ? 'partial' : 'complete',
-    graph: composed.value.graph,
+    graph,
     compositionSources: Object.freeze([...sources]),
+    ...(compositionReceipt ? { compositionReceipt } : {}),
+    admittedInputs,
+    inventoryMembership: freezeInventoryMembership(
+      inventory.membershipLocators ?? admittedInputs.map((input) => input.locator),
+      {
+        complete: inventoryMembershipIsComplete({
+          ...inventory,
+          membershipLocators:
+            inventory.membershipLocators ?? admittedInputs.map((input) => input.locator),
+        }),
+      }
+    ),
     quality: {
-      graph: composed.value.quality,
+      graph: qualityGraph,
       unknownZones: [
         ...inventory.unknownZones,
         ...sources.flatMap((source) => source.batch.unknownZones),
@@ -1002,7 +1381,7 @@ export async function buildRepoGraph(
         })),
     },
     providers: summaries,
-    diagnostics: [...diagnostics, ...composed.value.graph.diagnostics],
+    diagnostics: [...diagnostics, ...graph.diagnostics],
     metrics: {
       inputFiles: inventory.inputs.length,
       inputBytes,
@@ -1015,7 +1394,24 @@ export async function buildRepoGraph(
       durationMs: Math.max(0, Math.round(performance.now() - startedAt)),
       providerMs,
       compositionMs,
-      ...(composed.timings ? { compositionTimings: composed.timings } : {}),
+      inventoryMs: inventory.inventoryMs ?? 0,
+      hashedFiles: inventory.hashedFiles ?? inventory.inputs.length,
+      enumeratedFiles:
+        inventory.enumeratedFiles ??
+        inventory.membershipLocators?.length ??
+        inventory.inputs.length,
+      filesRead: phaseSummary.filesRead,
+      filesParsed: phaseSummary.filesParsed,
+      filesExtracted: phaseSummary.filesExtracted,
+      cacheHits: phaseSummary.cacheHits,
+      cacheMisses: phaseSummary.cacheMisses,
+      phaseTimings: phaseSummary.phaseTimings,
+      ...(composed?.timings ? { compositionTimings: composed.timings } : {}),
+      ...(graphDataMovementSnapshot() ? { dataMovement: graphDataMovementSnapshot() } : {}),
+      memory: memoryStages[memoryStages.length - 1],
+      memoryStages: Object.freeze(memoryStages),
+      peakObservedRssBytes: Math.max(...memoryStages.map((stage) => stage.rssBytes)),
+      processLifetimePeakRssBytes: processLifetimePeakRssBytes(),
       providerTimings: Object.freeze(
         summaries
           .filter((summary) => summary.detectionMs !== undefined)

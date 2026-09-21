@@ -131,4 +131,22 @@ describe('Graph locator identity', () => {
     });
     expect(first).toMatchObject({ accepted: true, value: { normalizedLocator: opaque } });
   });
+
+  it('keeps unicode and space-containing file locators portable and rendering-stable', () => {
+    for (const locator of ['src/café.ts', 'src/日本語.ts', 'src/foo bar.ts'] as const) {
+      expect(classifyGraphRelativeLocator(locator, 'file')).toEqual({
+        class: 'portable',
+        locator,
+      });
+      expect(
+        normalizeGraphEntityIdentity({
+          namespace: 'workspai',
+          kind: 'file',
+          relativeLocator: locator,
+          caseSensitivity: 'sensitive',
+          scope,
+        }).accepted
+      ).toBe(true);
+    }
+  });
 });

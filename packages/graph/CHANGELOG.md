@@ -2,6 +2,62 @@
 
 ## Unreleased
 
+- Incremental results now carry the current Git worktree receipt so
+  `full → incremental → incremental` can keep skip-reread. Dirty bases record
+  dirty locators and restored files are reread instead of reused stale.
+  Trusted skip-reread also proves Git can observe the whole inventory at
+  file level: gitignored files, assume-unchanged, skip-worktree, nested
+  repositories, gitlinks, and porcelain directory records force a full reread
+  instead of reusing a stale digest. Coverage stdin is bounded by locator
+  count and encoded bytes. That proof does not depend on an optional
+  current-tree reference digest.
+  Filesystem membership is the authority for added and removed inventory
+  members. Skip-reread walks portable names without hashing unchanged
+  contents, compares that membership with the base, hashes newly discovered
+  files, and invalidates removed files even when Git porcelain is silent,
+  including ignored files created after the base. Incomplete or truncated
+  membership fails closed to a full inventory reread. Full fallback publishes
+  the complete membership snapshot from that full build, not the truncated
+  pre-scan. Incremental construction observes Git and filesystem membership
+  before and after the build, retries a bounded number of times when those
+  receipts differ, and never stamps a skip-reread baseline onto an
+  inconsistent snapshot.
+  `require('express')()` and `require('fastify')({...})` bind as proven route
+  receivers. Chained factory and constructor calls such as `express().get`,
+  `express.Router().post`, `new Hono().get`, and `require('express')().get`
+  bind when the callee is a proven HTTP library import. Python Flask/FastAPI
+  and Go `net/http` plus imported routers require the same class of import and
+  construction evidence; name-only `@app` or `router.GET` calls stay
+  `graph.route-receiver-unproven`. Named ESM barrel re-exports bind calls to
+  the target module, and visible exported symbols emit `source.export` facts.
+  A fact-class quality scorer reports TP/FP/FN, precision, recall, and F1 per
+  class without aggregate node counts. Inventory and incremental metrics now
+  expose inventory, Git observation, snapshot, hashed-file, and enumerated-file
+  timers. `executePackagePrimaryWithCompare` compares an independently built
+  released-CLI graph to a package candidate and remains fail-closed:
+  `GRAPH_CONSUMER_PACKAGE_PRIMARY` is still false and production consumers still
+  call the released CLI composer.
+  JS/TS route extraction walks syntax-scanned member/call chains instead of
+  ad-hoc regexes, including fluent receiver continuations. Same-directory
+  language includes and requires join portable file paths without treating
+  package specifiers as files. Literal-route, import, export, declaration,
+  call, and package facts carry auditable extension keys for fact-class scoring.
+  Per-file route extraction is memoized by content digest, extractor version,
+  and language configuration. Extraction support is claimed per language and
+  fact class; extension detection is not semantic support.
+  Incremental rebuilds that cannot reuse any prior file digest still execute
+  the ordinary full package path.
+  Trusted Git journals require an admitted clean base, the same worktree and
+  prefix, a compatible HEAD/branch/index, and porcelain v2 `-z` parsing.
+  Dirty-base restore, branch switch, detached HEAD, and missing receipts force
+  a full reread. Incremental equivalence is assessed only against an independent
+  current-tree full build. JS/TS routes are derived from import, construction,
+  alias, and registration evidence; proven receivers with dynamic paths emit
+  `graph.dynamic-route-unsupported`, and unproven route-shaped calls emit
+  `graph.route-receiver-unproven` instead of looking complete. Member calls no
+  longer bind to unrelated free functions with the same name, and constructor
+  calls are counted as excluded forms.
+
 - Recorded a blocked G8 stage closure that can express package-primary
   replacement later without mutating the shadow-only plan. The ledger keeps
   production CLI composer authority, always-throw unadmitted package-primary

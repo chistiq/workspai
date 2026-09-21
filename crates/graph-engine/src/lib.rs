@@ -1,3 +1,15 @@
+//! Graph engine acceleration kernel.
+//!
+//! TypeScript remains semantic authority. This crate provides:
+//! - declaration extraction with TypeScript parity gates
+//! - comment/string masking (char-vector with a no-delimiter fast path)
+//! - deterministic CSR BFS
+//! - a low-level WASM ABI
+//!
+//! Not shipped: N-API/native addon, JSON/object-graph composition, Tree-sitter
+//! grammars, or unbounded Rayon fan-out. A Rust composition kernel may land
+//! only after admitted compact-fact parity against the TypeScript reference.
+
 #![forbid(unsafe_op_in_unsafe_fn)]
 
 mod extract;
@@ -56,17 +68,39 @@ pub fn reachable_nodes(
         return Err(TraversalError::TooManyEdges);
     }
 
-    let mut adjacency = vec![Vec::<u32>::new(); node_count as usize];
+    let mut offsets = vec![0usize; node_count as usize + 1];
     for &(from, to) in edges {
         if from >= node_count || to >= node_count {
             return Err(TraversalError::InvalidEdge);
         }
-        adjacency[from as usize].push(to);
+        offsets[from as usize + 1] += 1;
     }
-    for neighbors in &mut adjacency {
-        neighbors.sort_unstable();
-        neighbors.dedup();
+    for index in 1..offsets.len() {
+        offsets[index] += offsets[index - 1];
     }
+    let mut neighbors = vec![0u32; offsets[node_count as usize]];
+    let mut insert = offsets[..node_count as usize].to_vec();
+    for &(from, to) in edges {
+        let slot = insert[from as usize];
+        neighbors[slot] = to;
+        insert[from as usize] += 1;
+    }
+    let mut compact_offsets = vec![0usize; node_count as usize + 1];
+    let mut compact = Vec::with_capacity(neighbors.len());
+    for node in 0..node_count as usize {
+        compact_offsets[node] = compact.len();
+        let slice = &mut neighbors[offsets[node]..offsets[node + 1]];
+        slice.sort_unstable();
+        let mut previous: Option<u32> = None;
+        for &neighbor in slice.iter() {
+            if previous == Some(neighbor) {
+                continue;
+            }
+            compact.push(neighbor);
+            previous = Some(neighbor);
+        }
+    }
+    compact_offsets[node_count as usize] = compact.len();
 
     let mut depths = vec![u32::MAX; node_count as usize];
     let mut queue = VecDeque::new();
@@ -80,7 +114,9 @@ pub fn reachable_nodes(
         if depth >= max_depth {
             continue;
         }
-        for &neighbor in &adjacency[node as usize] {
+        let from = compact_offsets[node as usize];
+        let to = compact_offsets[node as usize + 1];
+        for &neighbor in &compact[from..to] {
             if depths[neighbor as usize] == u32::MAX {
                 depths[neighbor as usize] = depth + 1;
                 queue.push_back(neighbor);

@@ -1,3 +1,4 @@
+import type { WisDigestReference } from '@workspai/shared/contracts';
 import { Worker } from 'node:worker_threads';
 import { createHash } from 'node:crypto';
 import { setImmediate as waitForImmediate } from 'node:timers/promises';
@@ -7,8 +8,13 @@ import type {
   GraphWorkerTaskRequest,
   GraphWorkerTaskResult,
 } from '../../ports/index.js';
-import type { GraphProductHostPorts } from '../../ports/index.js';
+import type {
+  GraphProductHostPorts,
+  GraphGitWorktreeBaseline,
+  GraphIncrementalSnapshotProbePort,
+} from '../../ports/index.js';
 import {
+  GRAPH_PRODUCT_SCAN_PROFILE_ID,
   GRAPH_REFERENCE_COMPOSITION_TASK,
   GRAPH_STANDARD_REPO_BUILD_POLICY,
   buildContentStateManifest,
@@ -18,6 +24,7 @@ import {
   collectGraphSemanticDependencies,
   contentStateLeavesFromProviderInputs,
   executeGraphReferenceCompositionTask,
+  freezeGitWorktreeBaseline,
   type GraphIncrementalRepoBuildResult,
   type GraphRepoBuildPolicy,
   type GraphRepoBuildResult,
@@ -32,13 +39,41 @@ import {
 import { createStandardRepositoryProviders } from '../../providers/index.js';
 
 import { createNodeGraphFileSource } from './repository-file-source.js';
+import { createNodeGitChangeJournalPort } from './git-change-journal.js';
 import {
   GraphNativeAdapterLoadError,
   createNodeRustWasmGraphNativePort,
 } from './rust-wasm-engine.js';
 import type { GraphNativePort } from '../../ports/index.js';
+import { createHashedContentCache, type HashedContentCache } from './hashed-content-cache.js';
+import {
+  createContentAddressedFactSession,
+  runWithContentAddressedFactSession,
+  type ContentAddressedFactSession,
+} from '../../providers/content-addressed-facts.js';
+import {
+  createLocatorFactShardStore,
+  runWithLocatorFactShardStore,
+  type LocatorFactShardStore,
+} from '../../application/locator-fact-shards.js';
 
 export { createNodeGraphFileSource } from './repository-file-source.js';
+export {
+  GRAPH_HASHED_CONTENT_CACHE_LIMIT_BYTES,
+  consumeHashedContentCacheStats,
+  createHashedContentCache,
+  hashedContentCacheStats,
+  type HashedContentCache,
+  type HashedContentCacheStats,
+} from './hashed-content-cache.js';
+export {
+  createContentAddressedFactSession,
+  disposeContentAddressedFactSession,
+  runWithContentAddressedFactSession,
+  runWithOwnedContentAddressedFactSession,
+  type ContentAddressedFactSession,
+} from '../../providers/content-addressed-facts.js';
+export { createNodeGitChangeJournalPort } from './git-change-journal.js';
 export { createNodeProjectArtifactStore } from './project-artifact-store.js';
 export { createNodeWorkspaceArtifactStore } from './workspace-artifact-store.js';
 export {
@@ -83,6 +118,14 @@ export interface NodeRepoGraphBuildRequest {
   readonly signal?: AbortSignal;
   /** Overrides the packaged reference worker location for bundled executable hosts. */
   readonly workerUrl?: URL;
+  /**
+   * Caller-owned extraction session. When omitted the product API creates and
+   * disposes a session for this call. Pass the same session from a base build
+   * into incremental rebuilds in the same command/request lifecycle. Reuse is
+   * bound to the extraction environment (scope, root, inventory, manifests,
+   * policy). Never keep a session alive beyond the owner that created it.
+   */
+  readonly session?: GraphProductBuildSession;
 }
 
 function inheritedWorkerExecArgv(workerUrl: URL): string[] {
@@ -291,11 +334,55 @@ export function createNodeGraphReferenceWorkerPool(
   };
 }
 
+const productSessionShards = new WeakMap<GraphProductBuildSession, LocatorFactShardStore>();
+
+export interface GraphProductBuildSession {
+  readonly facts: ContentAddressedFactSession;
+  readonly hashedContent: HashedContentCache;
+  dispose(): void;
+}
+
+export function createGraphProductBuildSession(): GraphProductBuildSession {
+  const facts = createContentAddressedFactSession();
+  const hashedContent = createHashedContentCache();
+  const locatorShards = createLocatorFactShardStore();
+  const session: GraphProductBuildSession = {
+    facts,
+    hashedContent,
+    dispose() {
+      facts.dispose();
+      hashedContent.dispose();
+      locatorShards.dispose();
+    },
+  };
+  productSessionShards.set(session, locatorShards);
+  return session;
+}
+
+export async function runWithOwnedGraphProductBuildSession<T>(
+  session: GraphProductBuildSession | undefined,
+  fn: (session: GraphProductBuildSession) => Promise<T> | T
+): Promise<T> {
+  const owned = session ?? createGraphProductBuildSession();
+  const created = session === undefined;
+  const locatorShards = productSessionShards.get(owned) ?? createLocatorFactShardStore();
+  if (!productSessionShards.has(owned)) productSessionShards.set(owned, locatorShards);
+  try {
+    return await runWithLocatorFactShardStore(locatorShards, () =>
+      runWithContentAddressedFactSession(owned.facts, () => fn(owned))
+    );
+  } finally {
+    if (created) owned.dispose();
+  }
+}
+
 export function createNodeGraphProductHostPorts(
   options: {
     readonly signal?: AbortSignal;
     readonly workerUrl?: URL;
     readonly isolateComposition?: boolean;
+    readonly snapshotProbe?: GraphIncrementalSnapshotProbePort;
+    readonly hashedContent?: HashedContentCache;
   } = {}
 ): GraphProductHostPorts {
   const signal = options.signal;
@@ -325,111 +412,173 @@ export function createNodeGraphProductHostPorts(
     workers: createNodeGraphReferenceWorkerPool(options.workerUrl, {
       isolate: options.isolateComposition ?? false,
     }),
-    fileSource: createNodeGraphFileSource(),
+    fileSource: createNodeGraphFileSource(
+      options.hashedContent ? { hashedContent: options.hashedContent } : {}
+    ),
+    changeJournal: createNodeGitChangeJournalPort(),
     signal,
+    ...(options.snapshotProbe ? { snapshotProbe: options.snapshotProbe } : {}),
   };
+}
+
+const NODE_INCREMENTAL_SCAN_PROFILE = Object.freeze({
+  algorithm: 'sha256' as const,
+  value: createHash('sha256').update(GRAPH_PRODUCT_SCAN_PROFILE_ID).digest('hex'),
+});
+
+function overlayNodeGitBaseline<T extends GraphRepoBuildResult>(
+  result: T,
+  captured: GraphGitWorktreeBaseline | undefined
+): T {
+  if (!captured || !result.admittedInputs) return result;
+  return Object.freeze({
+    ...result,
+    gitBaseline: freezeGitWorktreeBaseline({
+      ...captured,
+      scanProfileDigest: NODE_INCREMENTAL_SCAN_PROFILE.value,
+      inventoryDigest: inventoryDigest(result.admittedInputs),
+    }),
+  });
+}
+
+function inventoryDigest(
+  inputs: readonly { readonly locator: string; readonly digest: { readonly value: string } }[]
+): string {
+  const hash = createHash('sha256');
+  for (const input of [...inputs].sort((left, right) =>
+    left.locator.localeCompare(right.locator)
+  )) {
+    hash.update(input.locator);
+    hash.update('\0');
+    hash.update(input.digest.value);
+    hash.update('\n');
+  }
+  return hash.digest('hex');
 }
 
 /**
  * Runs the package-owned, offline repository preview with secure Node host adapters.
  * It does not create Workspai metadata, execute project code or persist a graph.
  */
-export function buildNodeRepoGraph(
+export async function buildNodeRepoGraph(
   request: NodeRepoGraphBuildRequest
 ): Promise<GraphRepoBuildResult> {
-  return buildRepoGraph({
-    root: request.root,
-    scope: request.scope ?? {
-      kind: 'project',
-      projectIds: ['project:implicit-single-repository'],
-    },
-    ontology: request.ontology ?? CORE_GRAPH_ONTOLOGY_PROFILE,
-    providers:
-      request.providers ??
-      createStandardRepositoryProviders({ loadNative: loadNodeBundledGraphNativePort }),
-    policy: request.policy ?? GRAPH_STANDARD_REPO_BUILD_POLICY,
-    ports: createNodeGraphProductHostPorts({
+  return runWithOwnedGraphProductBuildSession(request.session, async (session) => {
+    const ports = createNodeGraphProductHostPorts({
       signal: request.signal,
       workerUrl: request.workerUrl,
-    }),
+      hashedContent: session.hashedContent,
+    });
+    const result = await buildRepoGraph({
+      root: request.root,
+      scope: request.scope ?? {
+        kind: 'project',
+        projectIds: ['project:implicit-single-repository'],
+      },
+      ontology: request.ontology ?? CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers:
+        request.providers ??
+        createStandardRepositoryProviders({ loadNative: loadNodeBundledGraphNativePort }),
+      policy: request.policy ?? GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports,
+    });
+    const inspection = await ports.changeJournal?.inspect({
+      root: request.root,
+      signal: request.signal,
+    });
+    return overlayNodeGitBaseline(result, inspection?.baseline);
   });
 }
 
-const NODE_INCREMENTAL_SCAN_PROFILE = Object.freeze({
-  algorithm: 'sha256' as const,
-  value: createHash('sha256').update('workspai.graph.node-product-scan-profile.v1').digest('hex'),
-});
-
 export interface NodeIncrementalRepoGraphBuildRequest extends NodeRepoGraphBuildRequest {
   readonly base: GraphRepoBuildResult;
+  /**
+   * Independent current-tree full-build digest. Equivalence is never assessed
+   * against the base generation.
+   */
+  readonly currentTreeReferenceDigest?: WisDigestReference;
+  readonly snapshotProbe?: GraphIncrementalSnapshotProbePort;
+  readonly snapshotAttempts?: number;
 }
 
 /**
  * Runs skip-reread incremental rebuild through the Node product host.
- * This host has no change journal, so skip-reread is not trusted unless a
- * journal port is later injected. Equivalence against the same tree is still
- * assessed.
+ * Git skip-reread is trusted when the base generation has an admitted
+ * worktree receipt. Dirty bases must record dirty locators so restores reread.
+ * Equivalence is assessed only against an independently supplied current-tree
+ * full build.
  */
 export async function buildNodeIncrementalRepoGraph(
   request: NodeIncrementalRepoGraphBuildRequest
 ): Promise<GraphIncrementalRepoBuildResult> {
-  if (!request.base.graph || !request.base.compositionSources) {
+  if (!request.base.graph || !request.base.compositionSources || !request.base.admittedInputs) {
     throw new Error(
-      'Incremental Node Graph build requires a complete base generation with composition sources.'
+      'Incremental Node Graph build requires a complete base generation with composition sources and admitted inventory.'
     );
   }
-  const scope = request.scope ?? {
-    kind: 'project',
-    projectIds: ['project:implicit-single-repository'],
-  };
-  const ontology = request.ontology ?? CORE_GRAPH_ONTOLOGY_PROFILE;
-  const providers =
-    request.providers ??
-    createStandardRepositoryProviders({ loadNative: loadNodeBundledGraphNativePort });
-  const policy = request.policy ?? GRAPH_STANDARD_REPO_BUILD_POLICY;
-  const ports = createNodeGraphProductHostPorts({
-    signal: request.signal,
-    workerUrl: request.workerUrl,
-  });
-  const inventory = await ports.fileSource.inventory({
-    root: request.root,
-    maxFiles: policy.limits.maxFiles,
-    maxTotalBytes: policy.limits.maxTotalBytes,
-    maxFileBytes: policy.limits.maxFileBytes,
-    maxDepth: policy.limits.maxDepth,
-    maxDirectoryEntries: policy.limits.maxDirectoryEntries,
-    excludedDirectories: policy.excludedDirectories,
-    sensitiveFiles: policy.sensitiveFiles,
-    signal: request.signal,
-  });
-  const stamps = await collectGraphSemanticDependencies({
-    ontology,
-    compositionPolicy: policy.composition,
-    redactionProfile: policy.redactionProfile,
-    providerManifests: providers.map((provider) => provider.manifest),
-    digest: ports.digest,
-  });
-  const baseManifest = buildContentStateManifest({
-    scope,
-    generatedAt: request.base.graph.generation.reference.generatedAt,
-    scanProfileDigest: NODE_INCREMENTAL_SCAN_PROFILE,
-    leaves: contentStateLeavesFromProviderInputs(inventory.inputs, NODE_INCREMENTAL_SCAN_PROFILE),
-    shardDependencies: buildShardDependenciesFromSources(request.base.compositionSources, stamps),
-  });
-  return buildIncrementalRepoGraph({
-    root: request.root,
-    scope,
-    ontology,
-    providers,
-    policy,
-    ports,
-    baseManifest,
-    baseGeneration: request.base.graph.generation.reference.id,
-    targetGeneration: `${request.base.graph.generation.reference.id}:incremental`,
-    baseSources: request.base.compositionSources,
-    providersToRecompute: [],
-    scanProfileDigest: NODE_INCREMENTAL_SCAN_PROFILE,
-    referenceGenerationDigest: request.base.graph.generation.reference.contentDigest,
-    baseGraph: request.base.graph,
+  const baseGraph = request.base.graph;
+  const baseSources = request.base.compositionSources;
+  const admittedInputs = request.base.admittedInputs;
+  return runWithOwnedGraphProductBuildSession(request.session, async (session) => {
+    const scope = request.scope ?? {
+      kind: 'project',
+      projectIds: ['project:implicit-single-repository'],
+    };
+    const ontology = request.ontology ?? CORE_GRAPH_ONTOLOGY_PROFILE;
+    const providers =
+      request.providers ??
+      createStandardRepositoryProviders({ loadNative: loadNodeBundledGraphNativePort });
+    const policy = request.policy ?? GRAPH_STANDARD_REPO_BUILD_POLICY;
+    const ports = createNodeGraphProductHostPorts({
+      signal: request.signal,
+      workerUrl: request.workerUrl,
+      hashedContent: session.hashedContent,
+      ...(request.snapshotProbe ? { snapshotProbe: request.snapshotProbe } : {}),
+    });
+    const stamps = await collectGraphSemanticDependencies({
+      ontology,
+      compositionPolicy: policy.composition,
+      redactionProfile: policy.redactionProfile,
+      providerManifests: providers.map((provider) => provider.manifest),
+      digest: ports.digest,
+    });
+    const baseManifest = buildContentStateManifest({
+      scope,
+      generatedAt: baseGraph.generation.reference.generatedAt,
+      scanProfileDigest: NODE_INCREMENTAL_SCAN_PROFILE,
+      leaves: contentStateLeavesFromProviderInputs(admittedInputs, NODE_INCREMENTAL_SCAN_PROFILE),
+      shardDependencies: buildShardDependenciesFromSources(baseSources, stamps),
+    });
+    const reconstructedInventory = inventoryDigest(admittedInputs);
+    const baseGitBaseline =
+      request.base.gitBaseline &&
+      request.base.gitBaseline.scanProfileDigest === NODE_INCREMENTAL_SCAN_PROFILE.value &&
+      request.base.gitBaseline.inventoryDigest === reconstructedInventory
+        ? request.base.gitBaseline
+        : undefined;
+    return buildIncrementalRepoGraph({
+      root: request.root,
+      scope,
+      ontology,
+      providers,
+      policy,
+      ports,
+      baseManifest,
+      baseGeneration: baseGraph.generation.reference.id,
+      targetGeneration: `${baseGraph.generation.reference.id}:incremental`,
+      baseSources,
+      providersToRecompute: [],
+      scanProfileDigest: NODE_INCREMENTAL_SCAN_PROFILE,
+      ...(request.currentTreeReferenceDigest
+        ? { referenceGenerationDigest: request.currentTreeReferenceDigest }
+        : {}),
+      ...(baseGitBaseline ? { baseGitBaseline } : {}),
+      ...(request.snapshotAttempts ? { snapshotAttempts: request.snapshotAttempts } : {}),
+      baseGraph,
+      ...(request.base.quality.graph ? { baseQuality: request.base.quality.graph } : {}),
+      ...(request.base.compositionReceipt
+        ? { baseCompositionReceipt: request.base.compositionReceipt }
+        : {}),
+    });
   });
 }

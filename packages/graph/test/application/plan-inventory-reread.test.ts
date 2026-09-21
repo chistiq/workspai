@@ -186,4 +186,48 @@ describe('Git-aware inventory reread planning', () => {
     expect(plan.reusedLocators).toEqual([]);
     expect(plan.rereadLocators).toEqual(['README.md', 'src/index.ts']);
   });
+
+  it('rereads inventoried descendants of a directory or gitlink journal record', () => {
+    const prior = buildContentStateManifest({
+      scope: { kind: 'project', projectIds: ['project:fixture'] },
+      generatedAt: '2026-09-09T20:00:00.000Z',
+      scanProfileDigest,
+      leaves: [
+        {
+          locator: 'src/index.ts',
+          contentDigest: {
+            algorithm: 'sha256',
+            value: 'cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc',
+          },
+          inputKind: 'source-file',
+          scanProfileDigest,
+        },
+        {
+          locator: 'nested/nested.ts',
+          contentDigest: {
+            algorithm: 'sha256',
+            value: 'dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd',
+          },
+          inputKind: 'source-file',
+          scanProfileDigest,
+        },
+      ],
+    });
+    const plan = planInventoryReread({
+      priorManifest: prior,
+      journal: {
+        trust: 'trusted',
+        source: 'git',
+        records: [Object.freeze({ locator: 'nested', kind: 'untracked', gitStatus: '??' })],
+        diagnostics: Object.freeze([]),
+      },
+      scanProfileDigestValue: scanProfileDigest.value,
+    });
+    expect(plan.rereadLocators).toEqual(['nested', 'nested/nested.ts']);
+    expect(plan.reusedLocators).toEqual(['src/index.ts']);
+  });
+
+  it('does not trust porcelain directory records', () => {
+    expect(parseGitStatusPorcelain('?? nested/\n').trust).toBe('untrusted');
+  });
 });

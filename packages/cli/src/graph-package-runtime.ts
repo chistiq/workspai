@@ -2,11 +2,14 @@ export { buildRepoGraph, GRAPH_STANDARD_REPO_BUILD_POLICY } from '@workspai/grap
 export type { GraphNativePort, GraphNativeTraversalRequest } from '@workspai/graph';
 export {
   GraphNativeAdapterLoadError,
+  createGraphProductBuildSession,
   createNodeGraphProductHostPorts,
   createNodeRustWasmGraphNativePort,
+  runWithOwnedGraphProductBuildSession,
   referenceGraphNativeTraversal,
   routeGraphNativeTraversal,
   type GraphNativeTraversalRoute,
+  type GraphProductBuildSession,
 } from '@workspai/graph/adapters/node';
 export { CORE_GRAPH_ONTOLOGY_PROFILE } from '@workspai/graph/contracts';
 export {

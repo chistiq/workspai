@@ -72,8 +72,9 @@ afterEach(async () => {
 
 function officialPorts(): GraphProductHostPorts {
   const nodePorts = createNodeGraphProductHostPorts();
+  const { changeJournal: _changeJournal, ...host } = nodePorts;
   return {
-    ...nodePorts,
+    ...host,
     clock: { now: () => frozenNow },
     workers: {
       async execute<TInput, TOutput>(
@@ -181,6 +182,10 @@ async function officialIncremental(
     scanProfileDigest,
     referenceGenerationDigest: referenceDigest,
     baseGraph: full.result.graph,
+    ...(full.result.quality.graph ? { baseQuality: full.result.quality.graph } : {}),
+    ...(full.result.compositionReceipt
+      ? { baseCompositionReceipt: full.result.compositionReceipt }
+      : {}),
   });
 }
 
@@ -404,7 +409,7 @@ const crossLanguageMutations = [
     extra: 'extra.py',
     extraBody: 'import json\n',
     editedBody:
-      "import os\nimport json\nfrom service.health import status\n\n@app.get('/health')\ndef health():\n    return status(os.name)\n",
+      "import os\nimport json\nfrom flask import Flask\nfrom service.health import status\n\napp = Flask(__name__)\n\n@app.get('/health')\ndef health():\n    return status(os.name)\n",
     importProvider: LANGUAGE_IMPORTS_PROVIDER_ID,
   },
   {
@@ -413,7 +418,7 @@ const crossLanguageMutations = [
     extra: 'extra.go',
     extraBody: 'package extra\n\nimport "fmt"\n',
     editedBody:
-      'package main\n\nimport (\n\t"fmt"\n\t"net/http"\n)\n\nfunc routes() {\n    router.GET("/health", health)\n}\n\nfunc health(writer http.ResponseWriter, _ *http.Request) {\n    writer.WriteHeader(http.StatusOK)\n    fmt.Fprint(writer, "ok")\n}\n',
+      'package main\n\nimport (\n\t"fmt"\n\t"net/http"\n)\n\nfunc routes() {\n    http.HandleFunc("/health", health)\n}\n\nfunc health(writer http.ResponseWriter, _ *http.Request) {\n    writer.WriteHeader(http.StatusOK)\n    fmt.Fprint(writer, "ok")\n}\n',
     importProvider: LANGUAGE_IMPORTS_PROVIDER_ID,
   },
   {

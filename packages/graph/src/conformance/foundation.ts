@@ -1,5 +1,7 @@
 import type { WisDigestReference, WisScopeReference } from '@workspai/shared/contracts';
 
+import { isGraphFactAdmitted } from '../domain/admitted-graph-facts.js';
+
 import {
   GRAPH_CLAIM_AUTHORITIES,
   GRAPH_CLAIM_DERIVATIONS,
@@ -170,6 +172,9 @@ function validateFact(
   manifest: GraphProviderManifest,
   issues: GraphValidationIssue[]
 ): value is GraphWorkspaceFact {
+  if (record(value) && isGraphFactAdmitted(value)) {
+    return true;
+  }
   if (!record(value)) {
     issue(issues, 'GRAPH_FACT_INVALID', path, 'Fact must be an object.');
     return false;

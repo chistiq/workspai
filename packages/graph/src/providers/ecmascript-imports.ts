@@ -10,18 +10,17 @@ import {
   type GraphWorkspaceFact,
 } from '../contracts/index.js';
 import { ECMASCRIPT_STATIC_IMPORT_PATTERN } from './ecmascript-import-pattern.js';
-import { maskMatrixSourceLiterals, matchAllInMatrixCodeView } from './matrix-source-mask.js';
+import { maskMatrixSourceLiteralsCached, matchAllInMatrixCodeView } from './matrix-source-mask.js';
+import { admitDeclaredGraphLocator } from '../domain/locator-identity.js';
+import {
+  classifyModuleSpecifier,
+  resolveEcmaScriptModuleLocator,
+} from '../domain/module-resolution.js';
+import { appendReusedLocatorFacts } from '../application/locator-fact-shards.js';
 
 export const ECMASCRIPT_IMPORTS_PROVIDER_ID = 'workspai.graph.provider.ecmascript-imports';
 
 const SOURCE_EXTENSIONS = new Set(['.js', '.jsx', '.mjs', '.cjs', '.ts', '.tsx', '.mts', '.cts']);
-const RESOLUTION_EXTENSIONS = ['', ...SOURCE_EXTENSIONS];
-const TYPESCRIPT_RUNTIME_REWRITES: Readonly<Record<string, readonly string[]>> = Object.freeze({
-  '.js': Object.freeze(['.ts', '.tsx']),
-  '.jsx': Object.freeze(['.tsx']),
-  '.mjs': Object.freeze(['.mts']),
-  '.cjs': Object.freeze(['.cts']),
-});
 const MAX_SOURCE_BYTES = 4 * 1024 * 1024;
 const MAX_FACTS = 500_000;
 const LITERAL_COMMONJS_REQUIRE = /\brequire\s*\(\s*(['"])([^'"\r\n]+)\1\s*\)/gmu;
@@ -31,23 +30,6 @@ function extension(locator: string): string {
   const name = locator.slice(locator.lastIndexOf('/') + 1);
   const dot = name.lastIndexOf('.');
   return dot <= 0 ? '' : name.slice(dot).toLowerCase();
-}
-
-function directory(locator: string): string {
-  const separator = locator.lastIndexOf('/');
-  return separator === -1 ? '' : locator.slice(0, separator);
-}
-
-function resolveRelative(base: string, relative: string): string | null {
-  const normalized: string[] = [];
-  for (const segment of [...(base ? base.split('/') : []), ...relative.split('/')]) {
-    if (!segment || segment === '.') continue;
-    if (segment === '..') {
-      if (normalized.length === 0) return null;
-      normalized.pop();
-    } else normalized.push(segment);
-  }
-  return normalized.join('/');
 }
 
 function sourceInputs(inputs: readonly GraphProviderInput[]): GraphProviderInput[] {
@@ -74,26 +56,11 @@ function resolveLocalImport(
   specifier: string,
   available: ReadonlySet<string>
 ): string | null {
-  const candidate = resolveRelative(directory(source), specifier);
-  if (!candidate) return null;
-  const runtimeExtension = extension(candidate);
-  const rewrites = TYPESCRIPT_RUNTIME_REWRITES[runtimeExtension] ?? [];
-  if (rewrites.length > 0) {
-    const stem = candidate.slice(0, -runtimeExtension.length);
-    for (const rewrite of rewrites) {
-      const typescriptSource = `${stem}${rewrite}`;
-      if (available.has(typescriptSource)) return typescriptSource;
-    }
-  }
-  for (const extension of RESOLUTION_EXTENSIONS) {
-    const direct = `${candidate}${extension}`;
-    if (available.has(direct)) return direct;
-  }
-  for (const extension of SOURCE_EXTENSIONS) {
-    const indexed = `${candidate}/index${extension}`;
-    if (available.has(indexed)) return indexed;
-  }
-  return null;
+  return resolveEcmaScriptModuleLocator({
+    fromLocator: source,
+    specifier,
+    available,
+  });
 }
 
 function warning(code: string, scope: string, message: string): GraphDiagnostic {
@@ -152,6 +119,22 @@ export function createEcmaScriptImportsProvider(): GraphProviderRuntime {
 
       for (const [inputIndex, input] of inputs.entries()) {
         if (request.signal?.aborted) throw new Error('Source import collection was cancelled.');
+        if (
+          appendReusedLocatorFacts(
+            {
+              providerId: ECMASCRIPT_IMPORTS_PROVIDER_ID,
+              locator: input.locator,
+              inputDigest: input.digest.value,
+              inputIndex,
+            },
+            '',
+            facts,
+            processing,
+            unknownZones
+          )
+        ) {
+          continue;
+        }
         let outcome: GraphFactBatch['processing'][number]['outcome'] = 'processed';
         const inputDiagnostics: GraphDiagnostic[] = [];
         try {
@@ -160,7 +143,7 @@ export function createEcmaScriptImportsProvider(): GraphProviderRuntime {
             signal: request.signal,
           });
           const source = new TextDecoder('utf-8', { fatal: true }).decode(bytes);
-          const codeView = maskMatrixSourceLiterals(source, 'node');
+          const codeView = maskMatrixSourceLiteralsCached(source, 'node', input.digest.value);
           const specifiers = [
             ...matchAllInMatrixCodeView(source, codeView, ECMASCRIPT_STATIC_IMPORT_PATTERN).map(
               (match) => match[1]
@@ -194,10 +177,12 @@ export function createEcmaScriptImportsProvider(): GraphProviderRuntime {
               });
               break;
             }
-            const local = specifier.startsWith('.')
-              ? resolveLocalImport(input.locator, specifier, available)
-              : null;
-            if (specifier.startsWith('.') && !local) {
+            const specifierClass = classifyModuleSpecifier(specifier);
+            const local =
+              specifierClass === 'relative'
+                ? resolveLocalImport(input.locator, specifier, available)
+                : null;
+            if (specifierClass === 'relative' && !local) {
               unknownZones.push({
                 code: 'graph.ecmascript-local-import-unresolved',
                 scope: input.locator,
@@ -205,10 +190,18 @@ export function createEcmaScriptImportsProvider(): GraphProviderRuntime {
               });
               continue;
             }
+            if (specifierClass === 'unsupported') {
+              unknownZones.push({
+                code: 'graph.ecmascript-import-specifier-unsupported',
+                scope: input.locator,
+                reason: 'A static import specifier is not a portable relative or package locator.',
+              });
+              continue;
+            }
             const object = await request.resolveIdentity({
               namespace: local ? 'workspai' : 'ecmascript-module',
               kind: local ? 'file' : 'module',
-              relativeLocator: local ?? specifier,
+              relativeLocator: local ?? admitDeclaredGraphLocator(specifier, 'encoded'),
               caseSensitivity: 'sensitive',
               scope: request.scope,
             });
@@ -238,6 +231,7 @@ export function createEcmaScriptImportsProvider(): GraphProviderRuntime {
               observedAt: request.observedAt,
               inputDigest: input.digest,
               unknownZones: [],
+              extensions: Object.freeze({ moduleSpecifier: specifier }),
             });
           }
           if (hasComputedModuleCall(source, codeView)) {

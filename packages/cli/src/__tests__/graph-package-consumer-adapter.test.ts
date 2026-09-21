@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -15,8 +15,11 @@ import {
   GRAPH_CONSUMER_SHADOW_RECEIPT_SCHEMA_VERSION,
   GRAPH_CONSUMER_SILENT_FALLBACK,
   GRAPH_CONSUMER_SURFACE_IDS,
+  GRAPH_PACKAGE_PRIMARY_COMPARE_OVERLAY,
+  GRAPH_PACKAGE_PRIMARY_COMPARE_RECEIPT_SCHEMA_VERSION,
   GRAPH_PACKAGE_PRIMARY_NOT_ADMITTED,
   buildPackageIntelligenceConsumerParity,
+  executePackagePrimaryWithCompare,
   graphConsumerParityStatuses,
   refuseUnadmittedPackagePrimaryExecution,
   resolveWorkspaceKnowledgeGraphForConsumer,
@@ -110,6 +113,15 @@ describe('package Graph consumer adapter', () => {
     expect(GRAPH_CONSUMER_RUNTIME_AUTHORITY).toBe('official-internal-graph-capability');
     expect(GRAPH_CONSUMER_PACKAGE_PRIMARY).toBe(false);
     expect(GRAPH_CONSUMER_SILENT_FALLBACK).toBe('prohibited');
+  });
+
+  it('keeps prepared package graph builds on the product session lifecycle', async () => {
+    const source = await readFile(
+      new URL('../graph-package-project-build.ts', import.meta.url),
+      'utf8'
+    );
+    expect(source).toContain('runWithOwnedGraphProductBuildSession');
+    expect(GRAPH_CONSUMER_PACKAGE_PRIMARY).toBe(false);
   });
 
   it('renders supported v1 entities and omits unmapped package kinds', () => {
@@ -227,6 +239,67 @@ describe('package Graph consumer adapter', () => {
     await expect(refuseUnadmittedPackagePrimaryExecution()).rejects.toMatchObject({
       name: 'GraphPackagePrimaryNotAdmittedError',
       code: GRAPH_PACKAGE_PRIMARY_NOT_ADMITTED,
+    });
+  });
+
+  it('compares independent legacy and package graphs without becoming the producer', async () => {
+    const packageGraph = renderCanonicalGraphAsWorkspaceKnowledgeGraph({
+      projectId: 'fixture',
+      workspaceName: 'fixture',
+      generatedAt: '2026-09-12T00:00:00.000Z',
+      package: packageInput(),
+      projectTopology: topology('fixture'),
+      sourceBinding: { status: 'unbound', modelHash: 'a'.repeat(64) },
+    });
+    const legacyGraph = {
+      ...packageGraph,
+      entities: [
+        ...packageGraph.entities,
+        {
+          ...packageGraph.entities[0]!,
+          id: 'n-legacy-only',
+          kind: 'file' as const,
+        },
+      ],
+    };
+    const receipt = await executePackagePrimaryWithCompare({
+      legacyAuthority: legacyGraph,
+      packageCandidate: {
+        authority: 'package-shadow-candidate',
+        packagePrimary: false,
+        fallback: 'prohibited',
+        graph: packageGraph,
+        packageGeneration: {
+          inputsDigest: 'a'.repeat(64),
+          providerSetDigest: 'b'.repeat(64),
+          compositionPolicyDigest: 'c'.repeat(64),
+        },
+      },
+    });
+    expect(receipt.schemaVersion).toBe(GRAPH_PACKAGE_PRIMARY_COMPARE_RECEIPT_SCHEMA_VERSION);
+    expect(receipt.packagePrimary).toBe(false);
+    expect(receipt.admittedProducer).toBe(false);
+    expect(receipt.authority).toBe('released-cli');
+    expect(receipt.overlay).toBe('independent-legacy-versus-package');
+    expect(receipt.comparison.entities.removed.length).toBeGreaterThan(0);
+    await expect(
+      executePackagePrimaryWithCompare({
+        legacyAuthority: packageGraph,
+        packageCandidate: {
+          authority: 'package-shadow-candidate',
+          packagePrimary: false,
+          fallback: 'prohibited',
+          graph: packageGraph,
+          packageGeneration: {
+            inputsDigest: 'a'.repeat(64),
+            providerSetDigest: 'b'.repeat(64),
+            compositionPolicyDigest: 'c'.repeat(64),
+          },
+        },
+      })
+    ).rejects.toMatchObject({
+      name: 'GraphPackagePrimaryCompareOverlayError',
+      code: GRAPH_PACKAGE_PRIMARY_COMPARE_OVERLAY,
     });
   });
 });

@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Reference Graph quality evaluation now lowercases mixed-case corpus folder
+  names into portable project identifiers, so repositories such as OpenBot are
+  not rejected as `GRAPH_REPO_SCOPE_INVALID` before any facts are scored.
+- G8 shadow comparison now maps ASP.NET root routes such as `GET /` onto one
+  comparable endpoint identity instead of treating the trailing slash as an
+  unsafe empty filesystem locator.
 - G8 completeness comparison no longer treats package binding-precision call
   coverage (`source-calls-resolved` / `ambiguous` / `unresolved`) as inventory
   truncation. Those KPIs have no released-CLI counterpart, so `attention` on
@@ -19,6 +25,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Isolated Graph producer benchmarks now spawn package and legacy producers in
+  child processes. Process-cold times are spawn-to-exit, including the child's
+  JSON serialization and stdout write. Process-warm times are the inner build
+  call after warmup. Incremental output is compared to an independent
+  current-tree full build. This is not an installed CLI measurement.
 - Adaptive source-structure extraction now uses the deep-scan file window
   instead of 25% of it, so large polyglot inventories are not stuck at the
   2,000-file floor after deep scan already admitted more candidates.
@@ -88,6 +99,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Tolerate Windows runner `fsync` `EPERM`/`ENOSYS` during atomic file replace so
   durability sync cannot abort an otherwise successful overwrite.
+
 ## [0.76.0] - 2026-09-20
 
 ### Added
