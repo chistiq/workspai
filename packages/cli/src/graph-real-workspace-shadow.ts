@@ -964,7 +964,11 @@ async function qualifyOne(input: {
     limits: comparisonLimits,
     signal: input.signal,
     legacy,
-    ...(input.packageBuilder ? { package: input.packageBuilder } : {}),
+    ...(input.packageBuilder
+      ? { package: input.packageBuilder }
+      : discovery.comparison
+        ? { package: async () => discovery.comparison }
+        : {}),
   });
   const report = result.report;
   const semantic = semanticOutputDigestFrom(report);
@@ -1001,12 +1005,12 @@ async function qualifyOne(input: {
     status: unapproved ? 'failed' : 'compared',
     ...(unapproved ? { reason: 'unapproved-semantic-difference' } : {}),
     packageExecution: {
-      status: result.packageExecution.status,
-      inputFiles: result.packageExecution.inputFiles,
-      omittedFiles: result.packageExecution.omittedFiles,
-      omittedBytes: result.packageExecution.omittedBytes,
-      providerFacts: result.packageExecution.providerFacts,
-      workspaceId: result.packageExecution.workspaceId,
+      status: discovery.packageExecution.status,
+      inputFiles: discovery.packageExecution.inputFiles,
+      omittedFiles: discovery.packageExecution.omittedFiles,
+      omittedBytes: discovery.packageExecution.omittedBytes,
+      providerFacts: discovery.packageExecution.providerFacts,
+      workspaceId: discovery.packageExecution.workspaceId,
     },
     comparison: {
       status: report.status,

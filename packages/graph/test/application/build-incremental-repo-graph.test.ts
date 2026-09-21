@@ -1581,6 +1581,95 @@ describe('buildIncrementalRepoGraph', () => {
     expect(collectCalls).toEqual(['workspai.graph.provider.fixture-a']);
   });
 
+  it('reuses the base manifest only when scope, scan profile, and input kind match', async () => {
+    const files = { 'src/index.ts': 'export const ok = 1;' };
+    const providers = [fixtureProvider('workspai.graph.provider.fixture-a', 'src/index.ts', [])];
+    const full = await buildRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files),
+    });
+    const baseManifest = buildContentStateManifest({
+      scope,
+      generatedAt: '2026-09-09T12:00:00.000Z',
+      scanProfileDigest,
+      leaves: contentStateLeavesFromProviderInputs(
+        [inputFor('src/index.ts', files['src/index.ts']!)],
+        scanProfileDigest
+      ),
+      shardDependencies: buildShardDependenciesFromSources(
+        full.compositionSources ?? [],
+        await semanticStampsFor(providers)
+      ),
+    });
+    const unchanged = await buildIncrementalRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files, { porcelain: '' }),
+      baseManifest,
+      baseGeneration: 'generation:base',
+      targetGeneration: 'generation:target',
+      baseSources: full.compositionSources ?? [],
+      providersToRecompute: [],
+      scanProfileDigest,
+    });
+    expect(unchanged.targetManifest).toBe(baseManifest);
+
+    const nextScope = { kind: 'project' as const, projectIds: ['project:other'] as [string] };
+    const scoped = await buildIncrementalRepoGraph({
+      root: '/fixture',
+      scope: nextScope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files, { porcelain: '' }),
+      baseManifest,
+      baseGeneration: 'generation:base',
+      targetGeneration: 'generation:target',
+      baseSources: full.compositionSources ?? [],
+      providersToRecompute: [],
+      scanProfileDigest,
+    });
+    expect(scoped.targetManifest).not.toBe(baseManifest);
+    expect(scoped.targetManifest.scope).toEqual(nextScope);
+
+    const foreignKind = buildContentStateManifest({
+      scope,
+      generatedAt: '2026-09-09T12:00:00.000Z',
+      scanProfileDigest,
+      leaves: contentStateLeavesFromProviderInputs(
+        [inputFor('src/index.ts', files['src/index.ts']!)],
+        scanProfileDigest,
+        'generated'
+      ),
+      shardDependencies: baseManifest.shardDependencies,
+    });
+    const rekinded = await buildIncrementalRepoGraph({
+      root: '/fixture',
+      scope,
+      ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      providers,
+      policy: GRAPH_STANDARD_REPO_BUILD_POLICY,
+      ports: ports(files, { porcelain: '' }),
+      baseManifest: foreignKind,
+      baseGeneration: 'generation:base',
+      targetGeneration: 'generation:target',
+      baseSources: full.compositionSources ?? [],
+      providersToRecompute: [],
+      scanProfileDigest,
+    });
+    expect(rekinded.targetManifest).not.toBe(foreignKind);
+    expect(rekinded.targetManifest.nodes.filter((node) => node.kind === 'file')).toEqual([
+      expect.objectContaining({ inputKind: 'source-file', locator: 'src/index.ts' }),
+    ]);
+  });
+
   it('applies query-cache invalidation without failing the incremental build', async () => {
     const files = { 'src/index.ts': 'export const ok = 1;' };
     const collectCalls: string[] = [];

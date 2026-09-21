@@ -1,3 +1,4 @@
+import { appendReusedLocatorFacts } from '../application/locator-fact-shards.js';
 import {
   GRAPH_FACT_BATCH_CONTRACT,
   GRAPH_IDENTITY_SCHEME,
@@ -149,6 +150,22 @@ export function createSourceEntrypointsProvider(): GraphProviderRuntime {
       const unknownZones: GraphFactBatch['unknownZones'][number][] = [];
       const processing: GraphFactBatch['processing'][number][] = [];
       for (const [inputIndex, input] of inputs.entries()) {
+        if (
+          appendReusedLocatorFacts(
+            {
+              providerId: SOURCE_ENTRYPOINTS_PROVIDER_ID,
+              locator: input.locator,
+              inputDigest: input.digest.value,
+              inputIndex,
+            },
+            '',
+            facts,
+            processing,
+            unknownZones
+          )
+        ) {
+          continue;
+        }
         let outcome: GraphFactBatch['processing'][number]['outcome'] = 'processed';
         const inputDiagnostics: GraphDiagnostic[] = [];
         try {

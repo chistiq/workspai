@@ -1,5 +1,6 @@
 import type {
   GraphCanonicalGraph,
+  GraphContentStateManifest,
   GraphDiagnostic,
   GraphOntologyProfile,
   GraphProviderInput,
@@ -80,6 +81,18 @@ export interface GraphRepoBuildMetrics {
   readonly inventoryMs?: number;
   readonly gitObservationMs?: number;
   readonly snapshotMs?: number;
+  /** Adapter semantic-stamp collection before the incremental build. */
+  readonly preambleMs?: number;
+  /** Base content-state manifest built from the prior generation. */
+  readonly baseManifestMs?: number;
+  /** Semantic-stamp collection inside the incremental build. */
+  readonly semanticStampsMs?: number;
+  /** Target manifest, shard dependencies, and the final incremental plan. */
+  readonly postManifestMs?: number;
+  /** Filesystem walk that confirms incremental membership before provider reuse. */
+  readonly inventoryWalkMs?: number;
+  /** Projected manifest used to choose providers. Zero when the base manifest is reused. */
+  readonly projectedManifestMs?: number;
   readonly hashedFiles?: number;
   readonly enumeratedFiles?: number;
   readonly filesRead?: number;
@@ -145,4 +158,9 @@ export interface GraphRepoBuildResult {
    * authority for added or removed inventory members.
    */
   readonly inventoryMembership?: GraphInventoryMembershipSnapshot;
+  /**
+   * In-process content-state manifest for a later incremental rebuild. It is
+   * not part of the published graph digest. Portable CLI output must omit it.
+   */
+  readonly contentStateManifest?: GraphContentStateManifest;
 }

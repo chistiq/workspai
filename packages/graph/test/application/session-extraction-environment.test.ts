@@ -457,6 +457,33 @@ describe('session extraction-environment reuse vs independent oracle', () => {
     parent.dispose();
   });
 
+  it('reuses a stable honest-partial generation and still matches an independent oracle', async () => {
+    const root = await writeRepo({
+      ...FILES,
+      'k8s/broken.yaml': '{{ .Values.image }}\nkind: Deployment\n',
+    });
+    const session = createGraphProductBuildSession();
+    const first = await buildNodeRepoGraph({ root, session });
+    expect(first.status).toBe('partial');
+    expect(
+      first.quality.unknownZones.some((zone) => zone.code === 'graph.kubernetes-unreadable')
+    ).toBe(true);
+    const reused = await buildNodeRepoGraph({ root, session });
+    const oracle = await independentOracle({ root });
+    expect(reused.status).toBe('partial');
+    expect(reused.status).toBe(oracle.status);
+    expect(digestOf(reused)).toBe(digestOf(oracle));
+    expect(digestOf(reused)).toBe(digestOf(first));
+    expect(
+      reused.providers.some((summary) =>
+        summary.diagnostics.some(
+          (item) => item.code === 'GRAPH_PROVIDER_REUSED_FROM_PRIOR_GENERATION'
+        )
+      )
+    ).toBe(true);
+    session.dispose();
+  });
+
   it('records memory by stage and estimated retained bytes from real cache owners', async () => {
     const root = await writeRepo(FILES);
     const session = createGraphProductBuildSession();

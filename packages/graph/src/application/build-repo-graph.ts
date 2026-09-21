@@ -42,8 +42,10 @@ import {
   lookupLocatorFactShard,
   rebindLocatorFactShards,
   rememberLocatorFactShard,
+  discardStagedCompositionPreparation,
   rememberSessionCompositionAnchor,
   setLocatorFactShardExtractionEnvironment,
+  stagedCompositionLineageDigest,
   setLocatorFactShardMembership,
 } from './locator-fact-shards.js';
 import {
@@ -88,6 +90,39 @@ function diagnostic(
   message: string
 ): GraphDiagnostic {
   return { code, severity, path, message };
+}
+
+function codeLooksLikeResourceTruncation(code: string): boolean {
+  return (
+    code.includes('truncated') ||
+    code.includes('budget') ||
+    code === 'GRAPH_INPUT_ACCOUNTING_INCOMPLETE'
+  );
+}
+
+function providerRunPreventsSessionAnchor(summary: GraphProviderRunSummary): boolean {
+  return (
+    ['failed', 'cancelled', 'invalid'].includes(summary.collection) ||
+    ['blocked', 'unknown', 'failed', 'invalid'].includes(summary.detection)
+  );
+}
+
+function sessionCompositionAnchorIsUnsafe(input: {
+  readonly inventoryStatus: GraphFileInventoryResult['status'];
+  readonly summaries: readonly GraphProviderRunSummary[];
+  readonly diagnostics: readonly GraphDiagnostic[];
+  readonly sources: readonly GraphCompositionSource[];
+}): boolean {
+  if (input.inventoryStatus !== 'complete') return true;
+  if (input.summaries.some(providerRunPreventsSessionAnchor)) return true;
+  const codes = [
+    ...input.diagnostics.map((entry) => entry.code),
+    ...input.sources.flatMap((source) => [
+      ...source.batch.diagnostics.map((entry) => entry.code),
+      ...source.batch.unknownZones.map((zone) => zone.code),
+    ]),
+  ];
+  return codes.some(codeLooksLikeResourceTruncation);
 }
 
 function issueDiagnostics(
@@ -1281,6 +1316,7 @@ async function executeRepoGraphBuild(
     recordGraphPhase('graphIndexConstruction', { wallMs: composed.timings.edgeProofMs });
   }
   if (composed && !composed.accepted) {
+    discardStagedCompositionPreparation();
     diagnostics.push(...issueDiagnostics('composition', composed.issues));
     return emptyResult(
       composed.code === 'cancelled' ? 'cancelled' : 'failed',
@@ -1306,6 +1342,7 @@ async function executeRepoGraphBuild(
       ? composed.value.receipt
       : undefined;
   if (!graph) {
+    discardStagedCompositionPreparation();
     return emptyResult(
       'failed',
       diagnostics,
@@ -1316,6 +1353,7 @@ async function executeRepoGraphBuild(
   }
 
   const incomplete =
+    (Boolean(reuseSessionExtractedSources) && sessionExtracted?.incomplete === true) ||
     inventory.status === 'partial' ||
     summaries.some((summary) =>
       ['partial', 'failed', 'cancelled', 'invalid'].includes(summary.collection)
@@ -1323,14 +1361,29 @@ async function executeRepoGraphBuild(
     summaries.some((summary) =>
       ['blocked', 'unknown', 'failed', 'invalid'].includes(summary.detection)
     );
-  if (!incomplete && graph && qualityGraph && compositionReceipt && extractionEnvironmentDigest) {
+  if (
+    graph &&
+    qualityGraph &&
+    compositionReceipt &&
+    extractionEnvironmentDigest &&
+    !sessionCompositionAnchorIsUnsafe({
+      inventoryStatus: inventory.status,
+      summaries,
+      diagnostics,
+      sources,
+    })
+  ) {
     rememberSessionCompositionAnchor({
       sources: Object.freeze([...sources]),
       graph,
       quality: qualityGraph,
       receipt: compositionReceipt,
       extractionEnvironmentDigest,
+      lineageDigest: stagedCompositionLineageDigest(),
+      incomplete,
     });
+  } else {
+    discardStagedCompositionPreparation();
   }
   const phaseTimings = graphPhaseTimings();
   const phaseSummary = {

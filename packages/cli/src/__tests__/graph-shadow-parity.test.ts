@@ -306,6 +306,27 @@ describe('Graph package shadow parity', () => {
     );
   });
 
+  it('keeps composer-absent export edges outside the released-CLI comparable surface', async () => {
+    const candidate = packageGraph();
+    candidate.graph.edges.push({
+      id: 'edge:exports',
+      from: 'project:app',
+      to: 'test:app',
+      relation: 'exports',
+      proof: { evidence: [{ relativeLocator: 'src/app.ts' }] },
+    });
+    const result = await runGraphShadowComparison({
+      profile: 'g8-export-truth-depth',
+      binding,
+      limits: GRAPH_SHADOW_DEFAULT_LIMITS,
+      legacy: async () => legacy(),
+      package: async () => candidate,
+    });
+
+    expect(result.status).toBe('equivalent');
+    expect(result.differences).toEqual([]);
+  });
+
   it('bounds difference evidence while preserving exact set digests and counts', async () => {
     const legacyCandidate: LegacyGraphShadowInput = {
       ...legacy(),

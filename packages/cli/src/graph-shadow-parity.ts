@@ -17,6 +17,7 @@ import {
   GRAPH_SHADOW_UNSAFE_DIFFERENCE_CODES,
   inferLegacyProjectId,
   isGraphShadowCliCompatibleIdentity,
+  isGraphShadowCliCompatibleRelation,
   isGraphShadowComparableDiagnostic,
   isGraphShadowComparableSourceProofLocator,
   isGraphShadowTruncatingCoverage,
@@ -803,14 +804,16 @@ function compareGraphs(
   const legacyRelations = legacy.relations.flatMap((relation) => {
     const from = legacyNodeById.get(relation.from);
     const to = legacyNodeById.get(relation.to);
-    return from && to ? [mapLegacyRelation(from, relation.kind, to, policy.relationMappings)] : [];
+    if (!from || !to) return [];
+    if (!isGraphShadowCliCompatibleRelation(relation.kind, policy.relationMappings)) return [];
+    return [mapLegacyRelation(from, relation.kind, to, policy.relationMappings)];
   });
   const packageRelations = packageInput.graph.edges.flatMap((edge) => {
     const from = packageComparable.get(edge.from);
     const to = packageComparable.get(edge.to);
-    return from && to
-      ? [`${from}\0${mapShadowRelation(edge.relation, policy.relationMappings)}\0${to}`]
-      : [];
+    if (!from || !to) return [];
+    if (!isGraphShadowCliCompatibleRelation(edge.relation, policy.relationMappings)) return [];
+    return [`${from}\0${mapShadowRelation(edge.relation, policy.relationMappings)}\0${to}`];
   });
   pushDirectional(
     'relation',

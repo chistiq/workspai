@@ -1,6 +1,7 @@
 import type { WisDigestReference } from '@workspai/shared/contracts';
 import { Worker } from 'node:worker_threads';
 import { createHash } from 'node:crypto';
+import { performance } from 'node:perf_hooks';
 import { setImmediate as waitForImmediate } from 'node:timers/promises';
 
 import type {
@@ -26,12 +27,14 @@ import {
   executeGraphReferenceCompositionTask,
   freezeGitWorktreeBaseline,
   type GraphIncrementalRepoBuildResult,
+  type GraphIncrementalSemanticStamps,
   type GraphRepoBuildPolicy,
   type GraphRepoBuildResult,
 } from '../../application/index.js';
 import type { GraphCompositionRequest } from '../../application/composition-types.js';
 import {
   CORE_GRAPH_ONTOLOGY_PROFILE,
+  type GraphContentStateManifest,
   type GraphOntologyProfile,
   type GraphProviderRuntime,
   type GraphScope,
@@ -95,6 +98,10 @@ export {
 } from '../../application/route-native-traversal.js';
 
 let bundledNativePort: Promise<GraphNativePort | undefined> | undefined;
+const semanticStampsByManifest = new WeakMap<
+  GraphContentStateManifest,
+  GraphIncrementalSemanticStamps
+>();
 
 /** Loads the product-bundled engine once per process. Missing artifacts stay TypeScript-only. */
 export function loadNodeBundledGraphNativePort(): Promise<GraphNativePort | undefined> {
@@ -126,6 +133,12 @@ export interface NodeRepoGraphBuildRequest {
    * policy). Never keep a session alive beyond the owner that created it.
    */
   readonly session?: GraphProductBuildSession;
+  /**
+   * Build the content-state manifest on this full generation so a later
+   * incremental call in the same session does not rebuild every shard.
+   * Omitted from the warm full-build measurement path.
+   */
+  readonly captureContentStateManifest?: boolean;
 }
 
 function inheritedWorkerExecArgv(workerUrl: URL): string[] {
@@ -469,24 +482,58 @@ export async function buildNodeRepoGraph(
       workerUrl: request.workerUrl,
       hashedContent: session.hashedContent,
     });
+    const scope = request.scope ?? {
+      kind: 'project' as const,
+      projectIds: ['project:implicit-single-repository'],
+    };
+    const ontology = request.ontology ?? CORE_GRAPH_ONTOLOGY_PROFILE;
+    const providers =
+      request.providers ??
+      createStandardRepositoryProviders({ loadNative: loadNodeBundledGraphNativePort });
+    const policy = request.policy ?? GRAPH_STANDARD_REPO_BUILD_POLICY;
     const result = await buildRepoGraph({
       root: request.root,
-      scope: request.scope ?? {
-        kind: 'project',
-        projectIds: ['project:implicit-single-repository'],
-      },
-      ontology: request.ontology ?? CORE_GRAPH_ONTOLOGY_PROFILE,
-      providers:
-        request.providers ??
-        createStandardRepositoryProviders({ loadNative: loadNodeBundledGraphNativePort }),
-      policy: request.policy ?? GRAPH_STANDARD_REPO_BUILD_POLICY,
+      scope,
+      ontology,
+      providers,
+      policy,
       ports,
     });
     const inspection = await ports.changeJournal?.inspect({
       root: request.root,
       signal: request.signal,
     });
-    return overlayNodeGitBaseline(result, inspection?.baseline);
+    const withGit = overlayNodeGitBaseline(result, inspection?.baseline);
+    if (
+      request.captureContentStateManifest !== true ||
+      !withGit.graph ||
+      !withGit.compositionSources ||
+      !withGit.admittedInputs
+    ) {
+      return withGit;
+    }
+    const stamps = await collectGraphSemanticDependencies({
+      ontology,
+      compositionPolicy: policy.composition,
+      redactionProfile: policy.redactionProfile,
+      providerManifests: providers.map((provider) => provider.manifest),
+      digest: ports.digest,
+    });
+    const contentStateManifest = buildContentStateManifest({
+      scope,
+      generatedAt: withGit.graph.generation.reference.generatedAt,
+      scanProfileDigest: NODE_INCREMENTAL_SCAN_PROFILE,
+      leaves: contentStateLeavesFromProviderInputs(
+        withGit.admittedInputs,
+        NODE_INCREMENTAL_SCAN_PROFILE
+      ),
+      shardDependencies: buildShardDependenciesFromSources(withGit.compositionSources, stamps),
+    });
+    semanticStampsByManifest.set(contentStateManifest, stamps);
+    return Object.freeze({
+      ...withGit,
+      contentStateManifest,
+    });
   });
 }
 
@@ -535,20 +582,32 @@ export async function buildNodeIncrementalRepoGraph(
       hashedContent: session.hashedContent,
       ...(request.snapshotProbe ? { snapshotProbe: request.snapshotProbe } : {}),
     });
-    const stamps = await collectGraphSemanticDependencies({
-      ontology,
-      compositionPolicy: policy.composition,
-      redactionProfile: policy.redactionProfile,
-      providerManifests: providers.map((provider) => provider.manifest),
-      digest: ports.digest,
-    });
-    const baseManifest = buildContentStateManifest({
-      scope,
-      generatedAt: baseGraph.generation.reference.generatedAt,
-      scanProfileDigest: NODE_INCREMENTAL_SCAN_PROFILE,
-      leaves: contentStateLeavesFromProviderInputs(admittedInputs, NODE_INCREMENTAL_SCAN_PROFILE),
-      shardDependencies: buildShardDependenciesFromSources(baseSources, stamps),
-    });
+    const capturedManifest = request.base.contentStateManifest;
+    const capturedStamps = capturedManifest
+      ? semanticStampsByManifest.get(capturedManifest)
+      : undefined;
+    const preambleStartedAt = performance.now();
+    const stamps =
+      capturedStamps ??
+      (await collectGraphSemanticDependencies({
+        ontology,
+        compositionPolicy: policy.composition,
+        redactionProfile: policy.redactionProfile,
+        providerManifests: providers.map((provider) => provider.manifest),
+        digest: ports.digest,
+      }));
+    const semanticStampPreambleMs = Math.max(0, Math.round(performance.now() - preambleStartedAt));
+    const manifestStartedAt = performance.now();
+    const baseManifest =
+      capturedManifest ??
+      buildContentStateManifest({
+        scope,
+        generatedAt: baseGraph.generation.reference.generatedAt,
+        scanProfileDigest: NODE_INCREMENTAL_SCAN_PROFILE,
+        leaves: contentStateLeavesFromProviderInputs(admittedInputs, NODE_INCREMENTAL_SCAN_PROFILE),
+        shardDependencies: buildShardDependenciesFromSources(baseSources, stamps),
+      });
+    const baseManifestMs = Math.max(0, Math.round(performance.now() - manifestStartedAt));
     const reconstructedInventory = inventoryDigest(admittedInputs);
     const baseGitBaseline =
       request.base.gitBaseline &&
@@ -556,13 +615,15 @@ export async function buildNodeIncrementalRepoGraph(
       request.base.gitBaseline.inventoryDigest === reconstructedInventory
         ? request.base.gitBaseline
         : undefined;
-    return buildIncrementalRepoGraph({
+    const result = await buildIncrementalRepoGraph({
       root: request.root,
       scope,
       ontology,
       providers,
       policy,
       ports,
+      semanticStamps: stamps,
+      ...(capturedStamps && capturedManifest ? { manifestStampsVerified: true } : {}),
       baseManifest,
       baseGeneration: baseGraph.generation.reference.id,
       targetGeneration: `${baseGraph.generation.reference.id}:incremental`,
@@ -579,6 +640,14 @@ export async function buildNodeIncrementalRepoGraph(
       ...(request.base.compositionReceipt
         ? { baseCompositionReceipt: request.base.compositionReceipt }
         : {}),
+    });
+    return Object.freeze({
+      ...result,
+      metrics: Object.freeze({
+        ...result.metrics,
+        preambleMs: semanticStampPreambleMs,
+        baseManifestMs,
+      }),
     });
   });
 }

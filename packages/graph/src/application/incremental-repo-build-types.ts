@@ -11,6 +11,7 @@ import type {
 } from '../contracts/index.js';
 import type { GraphGitWorktreeBaseline, GraphQueryCacheStorePort } from '../ports/index.js';
 
+import type { GraphIncrementalSemanticStamps } from './collect-semantic-dependencies.js';
 import type { GraphCompositionReceipt, GraphCompositionSource } from './composition-types.js';
 import type { GraphIncrementalBuildPlan } from './incremental-build-types.js';
 import type { GraphInventoryRereadPlan } from './plan-inventory-reread.js';
@@ -48,6 +49,17 @@ export interface GraphIncrementalRepoBuildRequest extends GraphRepoBuildRequest 
   readonly queryCache?: GraphIncrementalQueryCacheRequest;
   /** Bounded pre/post snapshot attempts. Defaults to 3. */
   readonly snapshotAttempts?: number;
+  /**
+   * Precomputed semantic stamps. When omitted, the incremental build collects
+   * them. Callers that already collected the same ontology and provider set
+   * pass them so the canonical digest work is not repeated.
+   */
+  readonly semanticStamps?: GraphIncrementalSemanticStamps;
+  /**
+   * The caller captured these stamps together with `baseManifest`. The
+   * unchanged-leaf path can skip a per-shard stamp walk.
+   */
+  readonly manifestStampsVerified?: boolean;
 }
 
 export type GraphIncrementalExecutionPath = 'skip-reread' | 'full';

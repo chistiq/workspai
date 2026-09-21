@@ -223,13 +223,16 @@ export function planIncrementalGraphBuild(
     });
   }
 
-  const shardReuse = planShardReuseAndInvalidation({
-    base: request.baseManifest,
-    target: request.targetManifest,
-    changedInputs: comparison.changedInputs,
-    requiredSemanticDependencies: request.requiredSemanticDependencies,
-    authorizedShardIds: request.authorizedShardIds,
-  });
+  const shardReuse = planShardReuseAndInvalidation(
+    {
+      base: request.baseManifest,
+      target: request.targetManifest,
+      changedInputs: comparison.changedInputs,
+      requiredSemanticDependencies: request.requiredSemanticDependencies,
+      authorizedShardIds: request.authorizedShardIds,
+    },
+    { trustIdenticalManifest: request.trustIdenticalManifest === true }
+  );
 
   const providersToRecompute = Object.freeze([...shardReuse.invalidatedProviders].sort());
   const downstreamInvalidations = Object.freeze(

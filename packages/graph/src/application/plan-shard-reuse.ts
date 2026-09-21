@@ -135,8 +135,26 @@ function semanticMismatchReason(
  * Plans exact-digest shard reuse and downstream invalidation from content changes.
  */
 export function planShardReuseAndInvalidation(
-  request: GraphShardReuseRequest
+  request: GraphShardReuseRequest,
+  options: { readonly trustIdenticalManifest?: boolean } = {}
 ): GraphShardReusePlan {
+  if (
+    options.trustIdenticalManifest === true &&
+    request.changedInputs.length === 0 &&
+    request.base === request.target
+  ) {
+    return Object.freeze({
+      reused: Object.freeze([...request.base.shardDependencies]),
+      rejected: Object.freeze([]),
+      invalidatedProviders: Object.freeze([]),
+      invalidatedProjections: Object.freeze([]),
+      invalidatedQueryIndexes: Object.freeze([]),
+      invalidatedGraphRegions: Object.freeze([]),
+      diagnostics: Object.freeze([]),
+      status: 'complete',
+    });
+  }
+
   const diagnostics: GraphDiagnostic[] = [];
   const reused: GraphShardDependency[] = [];
   const rejected: GraphShardReuseDecision[] = [];

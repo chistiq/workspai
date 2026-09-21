@@ -189,4 +189,18 @@ describe('prepared project Graph shadow bridge', () => {
       })
     ).rejects.toThrow('Prepared Graph project context is invalid.');
   });
+
+  it('normalizes mixed-case project ids to Graph repo-scope identifiers', async () => {
+    const input = await request();
+    const { buildPreparedProjectPackageGraph } = await import('../graph-package-project-build.js');
+    const built = await buildPreparedProjectPackageGraph({
+      context: {
+        projectId: 'OpenBot',
+        projectRoot: input.context.projectRoot,
+        workspaceId: input.context.workspaceId,
+      },
+    });
+    expect(built.status).not.toBe('failed');
+    expect(built.comparison).toBeDefined();
+  });
 });

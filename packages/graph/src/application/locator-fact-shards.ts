@@ -25,7 +25,11 @@ import type {
   GraphUnknownZone,
   GraphWorkspaceFact,
 } from '../contracts/index.js';
-import type { GraphCompositionReceipt, GraphCompositionSource } from './composition-types.js';
+import type {
+  GraphCompositionReceipt,
+  GraphCompositionSource,
+  GraphReferenceCompositionTaskOutput,
+} from './composition-types.js';
 import { recordGraphRetainedBytes } from './data-movement.js';
 
 export const GRAPH_LOCATOR_FACT_SHARD_SCHEMA = 'workspai.graph.locator-fact-shard.v1' as const;
@@ -69,6 +73,29 @@ export interface GraphSessionCompositionAnchor {
   readonly quality: GraphQualityReport;
   readonly receipt: GraphCompositionReceipt;
   readonly extractionEnvironmentDigest: string;
+  /**
+   * Canonical lineage digest of the generation that produced this anchor.
+   * Empty means the generation was published without a verified lineage and
+   * must not reuse prior edges.
+   */
+  readonly lineageDigest: string;
+  /**
+   * Published completeness of the remembered generation. Honest unsupported
+   * partial results are reusable; failed, cancelled, or truncated results are
+   * never stored as anchors.
+   */
+  readonly incomplete: boolean;
+}
+
+/**
+ * Preparation staged by a successful compose. It becomes visible only when
+ * `rememberComposition` publishes it in the same record as the matching anchor.
+ */
+export interface GraphCompositionPreparationStage {
+  readonly prepared: GraphReferenceCompositionTaskOutput;
+  readonly factSetDigest: WisDigestReference;
+  readonly proofPolicyDigest: WisDigestReference;
+  readonly lineageDigest: string;
 }
 
 export interface GraphSessionFactDigestEntry {
@@ -93,6 +120,10 @@ export interface LocatorFactShardStore {
   rebind(providerId: string, facts: readonly GraphWorkspaceFact[]): void;
   rememberComposition(anchor: GraphSessionCompositionAnchor): void;
   lastComposition(): GraphSessionCompositionAnchor | undefined;
+  stagePreparation(stage: GraphCompositionPreparationStage): void;
+  discardStagedPreparation(): void;
+  stagedLineageDigest(): string;
+  lastPreparation(): GraphReferenceCompositionTaskOutput | undefined;
   rememberFactDigest(anchor: GraphSessionFactDigestAnchor): void;
   lastFactDigest(): GraphSessionFactDigestAnchor | undefined;
   rememberInternedNode(internKey: string, node: GraphEntityReference): void;
@@ -124,6 +155,36 @@ function shardMapKey(membership: string, key: GraphLocatorFactShardKey): string 
   ].join('\0');
 }
 
+function digestRefEqual(left: WisDigestReference, right: WisDigestReference): boolean {
+  return left.algorithm === right.algorithm && left.value === right.value;
+}
+
+function preparationStageMatchesAnchor(
+  anchor: GraphSessionCompositionAnchor,
+  stage: GraphCompositionPreparationStage
+): boolean {
+  return (
+    anchor.lineageDigest.length > 0 &&
+    anchor.lineageDigest === stage.lineageDigest &&
+    anchor.extractionEnvironmentDigest.length > 0 &&
+    digestRefEqual(anchor.receipt.factSetDigest, stage.factSetDigest) &&
+    digestRefEqual(anchor.receipt.proofPolicySetDigest, stage.proofPolicyDigest)
+  );
+}
+
+function samePublishedCompositionIdentity(
+  previous: GraphSessionCompositionAnchor,
+  next: GraphSessionCompositionAnchor
+): boolean {
+  return (
+    previous.lineageDigest.length > 0 &&
+    previous.extractionEnvironmentDigest === next.extractionEnvironmentDigest &&
+    (next.lineageDigest.length === 0 || next.lineageDigest === previous.lineageDigest) &&
+    digestRefEqual(previous.receipt.factSetDigest, next.receipt.factSetDigest) &&
+    digestRefEqual(previous.receipt.proofPolicySetDigest, next.receipt.proofPolicySetDigest)
+  );
+}
+
 function estimateShardBytes(shard: GraphLocatorFactShard): number {
   return (
     256 + shard.facts.length * 384 + shard.unknownZones.length * 128 + shard.locator.length * 2
@@ -136,7 +197,13 @@ class LocatorFactShardRegistry implements LocatorFactShardStore {
   private readonly limits: GraphLocatorFactShardLimits;
   private membershipToken = '';
   private environmentDigest = '';
-  private compositionAnchor: GraphSessionCompositionAnchor | undefined;
+  private publishedComposition:
+    | {
+        readonly anchor: GraphSessionCompositionAnchor;
+        readonly preparation?: GraphReferenceCompositionTaskOutput;
+      }
+    | undefined;
+  private stagedPreparation: GraphCompositionPreparationStage | undefined;
   private factDigestAnchor: GraphSessionFactDigestAnchor | undefined;
   private estimatedBytes = 0;
   private factCount = 0;
@@ -165,7 +232,8 @@ class LocatorFactShardRegistry implements LocatorFactShardStore {
 
   private dropAnchors(): void {
     this.internedNodes.clear();
-    this.compositionAnchor = undefined;
+    this.publishedComposition = undefined;
+    this.stagedPreparation = undefined;
     this.factDigestAnchor = undefined;
   }
 
@@ -248,21 +316,77 @@ class LocatorFactShardRegistry implements LocatorFactShardStore {
   rebind(providerId: string, facts: readonly GraphWorkspaceFact[]): void {
     if (this.disposed) return;
     const byId = new Map(facts.map((fact) => [fact.factId, fact]));
+    let changed = false;
     for (const [key, shard] of this.shards) {
       if (shard.providerId !== providerId) continue;
+      let differs = false;
+      for (const fact of shard.facts) {
+        const next = byId.get(fact.factId);
+        if (next && next !== fact) {
+          differs = true;
+          break;
+        }
+      }
+      if (!differs) continue;
+      changed = true;
       const rebound = shard.facts.map((fact) => byId.get(fact.factId) ?? fact);
       this.shards.set(key, Object.freeze({ ...shard, facts: Object.freeze(rebound) }));
     }
-    this.recount();
+    if (changed) this.recount();
   }
 
   rememberComposition(anchor: GraphSessionCompositionAnchor): void {
     if (this.disposed) return;
-    this.compositionAnchor = anchor;
+    const staged = this.stagedPreparation;
+    this.stagedPreparation = undefined;
+    const previous = this.publishedComposition;
+    if (staged && preparationStageMatchesAnchor(anchor, staged)) {
+      this.publishedComposition = {
+        anchor: Object.freeze({ ...anchor, lineageDigest: staged.lineageDigest }),
+        preparation: staged.prepared,
+      };
+      return;
+    }
+    if (staged) {
+      this.publishedComposition = {
+        anchor: Object.freeze({ ...anchor, lineageDigest: '' }),
+      };
+      return;
+    }
+    if (previous?.preparation && samePublishedCompositionIdentity(previous.anchor, anchor)) {
+      this.publishedComposition = {
+        anchor: Object.freeze({
+          ...anchor,
+          lineageDigest: previous.anchor.lineageDigest,
+        }),
+        preparation: previous.preparation,
+      };
+      return;
+    }
+    this.publishedComposition = {
+      anchor: Object.freeze({ ...anchor, lineageDigest: '' }),
+    };
   }
 
   lastComposition(): GraphSessionCompositionAnchor | undefined {
-    return this.disposed ? undefined : this.compositionAnchor;
+    return this.disposed ? undefined : this.publishedComposition?.anchor;
+  }
+
+  stagePreparation(stage: GraphCompositionPreparationStage): void {
+    if (this.disposed) return;
+    this.stagedPreparation = stage;
+  }
+
+  discardStagedPreparation(): void {
+    this.stagedPreparation = undefined;
+  }
+
+  stagedLineageDigest(): string {
+    return this.disposed ? '' : (this.stagedPreparation?.lineageDigest ?? '');
+  }
+
+  lastPreparation(): GraphReferenceCompositionTaskOutput | undefined {
+    return this.disposed ? undefined : this.publishedComposition?.preparation;
   }
 
   rememberFactDigest(anchor: GraphSessionFactDigestAnchor): void {
@@ -346,6 +470,22 @@ export function rememberSessionCompositionAnchor(anchor: GraphSessionComposition
 
 export function lastSessionCompositionAnchor(): GraphSessionCompositionAnchor | undefined {
   return sessions.getStore()?.lastComposition();
+}
+
+export function stageSessionCompositionPreparation(stage: GraphCompositionPreparationStage): void {
+  sessions.getStore()?.stagePreparation(stage);
+}
+
+export function discardStagedCompositionPreparation(): void {
+  sessions.getStore()?.discardStagedPreparation();
+}
+
+export function stagedCompositionLineageDigest(): string {
+  return sessions.getStore()?.stagedLineageDigest() ?? '';
+}
+
+export function lastCompositionPreparation(): GraphReferenceCompositionTaskOutput | undefined {
+  return sessions.getStore()?.lastPreparation();
 }
 
 export function rememberSessionFactDigestAnchor(anchor: GraphSessionFactDigestAnchor): void {

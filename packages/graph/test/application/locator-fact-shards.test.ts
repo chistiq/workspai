@@ -16,11 +16,20 @@ import {
   internedCompositionNode,
   rememberInternedCompositionNode,
   rememberLocatorFactShard,
+  lastCompositionPreparation,
   lastSessionCompositionAnchor,
+  rememberSessionCompositionAnchor,
   runWithLocatorFactShardStore,
   setLocatorFactShardMembership,
+  stageSessionCompositionPreparation,
+  stagedCompositionLineageDigest,
 } from '../../src/application/locator-fact-shards.js';
-import type { GraphCompositionSource } from '../../src/application/composition-types.js';
+import type {
+  GraphCompositionReceipt,
+  GraphCompositionSource,
+  GraphReferenceCompositionTaskOutput,
+} from '../../src/application/composition-types.js';
+import type { GraphSessionCompositionAnchor } from '../../src/application/locator-fact-shards.js';
 import type { GraphWorkspaceFact } from '../../src/contracts/index.js';
 
 function fact(id: string, locator: string): GraphWorkspaceFact {
@@ -334,4 +343,99 @@ describe('locator fact shards', () => {
     expect(withLib).not.toBe(withoutLib);
     expect(withLib).toContain('src/lib.ts');
   });
+
+  it('publishes preparation only with the matching anchor after a successful compose', () => {
+    const store = createLocatorFactShardStore();
+    const prepared = { id: 'prepared-a' } as unknown as GraphReferenceCompositionTaskOutput;
+    const replacement = { id: 'prepared-b' } as unknown as GraphReferenceCompositionTaskOutput;
+    const anchor = compositionAnchor('fact-a');
+    runWithLocatorFactShardStore(store, () => {
+      stageSessionCompositionPreparation({
+        prepared,
+        factSetDigest: anchor.receipt.factSetDigest,
+        proofPolicyDigest: anchor.receipt.proofPolicySetDigest,
+        lineageDigest: anchor.lineageDigest,
+      });
+      expect(lastCompositionPreparation()).toBeUndefined();
+      expect(lastSessionCompositionAnchor()).toBeUndefined();
+      expect(stagedCompositionLineageDigest()).toBe(anchor.lineageDigest);
+
+      rememberSessionCompositionAnchor(anchor);
+      expect(lastCompositionPreparation()).toBe(prepared);
+      expect(lastSessionCompositionAnchor()?.receipt.factSetDigest.value).toBe('fact-a');
+      expect(lastSessionCompositionAnchor()?.lineageDigest).toBe(anchor.lineageDigest);
+
+      stageSessionCompositionPreparation({
+        prepared: replacement,
+        factSetDigest: { algorithm: 'sha256', value: 'fact-b' },
+        proofPolicyDigest: anchor.receipt.proofPolicySetDigest,
+        lineageDigest: 'lineage-b',
+      });
+      expect(lastCompositionPreparation()).toBe(prepared);
+      expect(lastSessionCompositionAnchor()?.lineageDigest).toBe(anchor.lineageDigest);
+
+      rememberSessionCompositionAnchor({
+        ...anchor,
+        receipt: receiptFor('fact-b'),
+        lineageDigest: 'lineage-b',
+      });
+      expect(lastCompositionPreparation()).toBe(replacement);
+      expect(lastSessionCompositionAnchor()?.receipt.factSetDigest.value).toBe('fact-b');
+    });
+    store.dispose();
+  });
+
+  it('drops a staged preparation when composition does not publish', () => {
+    const store = createLocatorFactShardStore();
+    const prepared = { id: 'prepared-a' } as unknown as GraphReferenceCompositionTaskOutput;
+    const stranded = { id: 'prepared-failed' } as unknown as GraphReferenceCompositionTaskOutput;
+    const anchor = compositionAnchor('fact-a');
+    runWithLocatorFactShardStore(store, () => {
+      stageSessionCompositionPreparation({
+        prepared,
+        factSetDigest: anchor.receipt.factSetDigest,
+        proofPolicyDigest: anchor.receipt.proofPolicySetDigest,
+        lineageDigest: anchor.lineageDigest,
+      });
+      rememberSessionCompositionAnchor(anchor);
+
+      stageSessionCompositionPreparation({
+        prepared: stranded,
+        factSetDigest: { algorithm: 'sha256', value: 'fact-failed' },
+        proofPolicyDigest: anchor.receipt.proofPolicySetDigest,
+        lineageDigest: 'lineage-failed',
+      });
+      expect(lastCompositionPreparation()).toBe(prepared);
+      expect(lastSessionCompositionAnchor()?.receipt.factSetDigest.value).toBe('fact-a');
+
+      rememberSessionCompositionAnchor({
+        ...anchor,
+        receipt: receiptFor('fact-other'),
+        lineageDigest: '',
+      });
+      expect(lastCompositionPreparation()).toBeUndefined();
+      expect(lastSessionCompositionAnchor()?.receipt.factSetDigest.value).toBe('fact-other');
+      expect(lastSessionCompositionAnchor()?.lineageDigest).toBe('');
+    });
+    store.dispose();
+  });
 });
+
+function receiptFor(factDigest: string): GraphCompositionReceipt {
+  return {
+    factSetDigest: { algorithm: 'sha256', value: factDigest },
+    proofPolicySetDigest: { algorithm: 'sha256', value: 'policy' },
+  } as GraphCompositionReceipt;
+}
+
+function compositionAnchor(factDigest: string): GraphSessionCompositionAnchor {
+  return {
+    sources: [],
+    graph: { edges: [] },
+    quality: {},
+    receipt: receiptFor(factDigest),
+    extractionEnvironmentDigest: 'env-a',
+    lineageDigest: 'lineage-a',
+    incomplete: false,
+  } as unknown as GraphSessionCompositionAnchor;
+}

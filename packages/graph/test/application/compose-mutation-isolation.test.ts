@@ -24,6 +24,15 @@ import type {
   GraphWorkerTaskResult,
 } from '../../src/ports/index.js';
 import { executeGraphReferenceCompositionTask } from '../../src/application/index.js';
+import {
+  createLocatorFactShardStore,
+  lastCompositionPreparation,
+  lastSessionCompositionAnchor,
+  rememberSessionCompositionAnchor,
+  runWithLocatorFactShardStore,
+  stageSessionCompositionPreparation,
+  stagedCompositionLineageDigest,
+} from '../../src/application/locator-fact-shards.js';
 
 const digest = { algorithm: 'sha256' as const, value: 'a'.repeat(64) };
 const scope = { kind: 'project' as const, projectIds: ['project:mutation'] as [string] };
@@ -328,5 +337,179 @@ describe('composeGraph mutation isolation', () => {
     expect(
       result.issues.some((item) => item.path.includes('/facts/') || item.code.includes('FACT'))
     ).toBe(true);
+  });
+
+  it('does not reuse an accepted edge when a stable fact id changes confidence', async () => {
+    const store = createLocatorFactShardStore();
+    const changed = fact('fact:stable-id', { confidence: 0.8 });
+    const changedRequest = {
+      ontology,
+      sources: [sourceFromFacts([changed])],
+      policy: GRAPH_STANDARD_COMPOSITION_POLICY,
+    };
+    const reused = await runWithLocatorFactShardStore(store, async () => {
+      const original = fact('fact:stable-id', { confidence: 0.9 });
+      const first = await composeGraph(
+        {
+          ontology,
+          sources: [sourceFromFacts([original])],
+          policy: GRAPH_STANDARD_COMPOSITION_POLICY,
+        },
+        ports()
+      );
+      expect(first.accepted).toBe(true);
+      if (!first.accepted) return undefined;
+      rememberSessionCompositionAnchor({
+        sources: [sourceFromFacts([original])],
+        graph: first.value.graph,
+        quality: first.value.quality,
+        receipt: first.value.receipt,
+        extractionEnvironmentDigest: 'env-edge-reuse',
+        lineageDigest: stagedCompositionLineageDigest(),
+        incomplete: false,
+      });
+      return composeGraph(changedRequest, ports());
+    });
+    const oracle = await composeGraph(changedRequest, ports());
+    expect(reused?.accepted).toBe(true);
+    expect(oracle.accepted).toBe(true);
+    if (!reused?.accepted || !oracle.accepted) return;
+    expect(reused.value.graph.edges[0]?.confidence).toBe(0.8);
+    expect(reused.value.graph.generation.reference.contentDigest).toEqual(
+      oracle.value.graph.generation.reference.contentDigest
+    );
+    store.dispose();
+  });
+
+  it('does not reuse an accepted edge when lineage changes and fact ids stay the same', async () => {
+    const store = createLocatorFactShardStore();
+    const stable = fact('fact:lineage');
+    const withLineage = {
+      ontology,
+      sources: [sourceFromFacts([stable])],
+      policy: GRAPH_STANDARD_COMPOSITION_POLICY,
+      lineages: [
+        {
+          factId: 'fact:lineage',
+          derivation: 'extracted' as const,
+          evidenceRoots: ['e'],
+          parentFactIds: [] as string[],
+        },
+      ],
+    };
+    const reused = await runWithLocatorFactShardStore(store, async () => {
+      const first = await composeGraph(
+        {
+          ontology,
+          sources: [sourceFromFacts([fact('fact:lineage')])],
+          policy: GRAPH_STANDARD_COMPOSITION_POLICY,
+        },
+        ports()
+      );
+      expect(first.accepted).toBe(true);
+      if (!first.accepted) return undefined;
+      const publishedEdge = first.value.graph.edges[0];
+      rememberSessionCompositionAnchor({
+        sources: [sourceFromFacts([fact('fact:lineage')])],
+        graph: first.value.graph,
+        quality: first.value.quality,
+        receipt: first.value.receipt,
+        extractionEnvironmentDigest: 'env-lineage',
+        lineageDigest: stagedCompositionLineageDigest(),
+        incomplete: false,
+      });
+      const second = await composeGraph(withLineage, ports());
+      return { publishedEdge, second };
+    });
+    const oracle = await composeGraph(withLineage, ports());
+    expect(reused?.second.accepted).toBe(true);
+    expect(oracle.accepted).toBe(true);
+    if (!reused?.second.accepted || !oracle.accepted) return;
+    expect(reused.second.value.graph.edges[0]).not.toBe(reused.publishedEdge);
+    expect(reused.second.value.graph.generation.reference.contentDigest).toEqual(
+      oracle.value.graph.generation.reference.contentDigest
+    );
+    store.dispose();
+  });
+
+  it('reuses an accepted edge when fact semantics, proof policy, and lineage are unchanged', async () => {
+    const store = createLocatorFactShardStore();
+    const request = {
+      ontology,
+      sources: [sourceFromFacts([fact('fact:same')])],
+      policy: GRAPH_STANDARD_COMPOSITION_POLICY,
+    };
+    const reused = await runWithLocatorFactShardStore(store, async () => {
+      const first = await composeGraph(request, ports());
+      expect(first.accepted).toBe(true);
+      if (!first.accepted) return undefined;
+      rememberSessionCompositionAnchor({
+        sources: request.sources,
+        graph: first.value.graph,
+        quality: first.value.quality,
+        receipt: first.value.receipt,
+        extractionEnvironmentDigest: 'env-same',
+        lineageDigest: stagedCompositionLineageDigest(),
+        incomplete: false,
+      });
+      const second = await composeGraph(request, ports());
+      return { edge: first.value.graph.edges[0], second };
+    });
+    expect(reused?.second.accepted).toBe(true);
+    if (!reused?.second.accepted) return;
+    expect(reused.second.value.graph.edges[0]).toBe(reused.edge);
+    store.dispose();
+  });
+
+  it('does not reuse an accepted edge when the published proof-policy digest differs', async () => {
+    const store = createLocatorFactShardStore();
+    const request = {
+      ontology,
+      sources: [sourceFromFacts([fact('fact:policy')])],
+      policy: GRAPH_STANDARD_COMPOSITION_POLICY,
+    };
+    const reused = await runWithLocatorFactShardStore(store, async () => {
+      const first = await composeGraph(request, ports());
+      expect(first.accepted).toBe(true);
+      if (!first.accepted) return undefined;
+      rememberSessionCompositionAnchor({
+        sources: request.sources,
+        graph: first.value.graph,
+        quality: first.value.quality,
+        receipt: first.value.receipt,
+        extractionEnvironmentDigest: 'env-policy',
+        lineageDigest: stagedCompositionLineageDigest(),
+        incomplete: false,
+      });
+      const prepared = lastCompositionPreparation();
+      const lineageDigest = lastSessionCompositionAnchor()?.lineageDigest ?? '';
+      const proofPolicyDigest = { algorithm: 'sha256' as const, value: 'f'.repeat(64) };
+      stageSessionCompositionPreparation({
+        prepared: prepared!,
+        factSetDigest: first.value.receipt.factSetDigest,
+        proofPolicyDigest,
+        lineageDigest,
+      });
+      rememberSessionCompositionAnchor({
+        sources: request.sources,
+        graph: first.value.graph,
+        quality: first.value.quality,
+        receipt: { ...first.value.receipt, proofPolicySetDigest: proofPolicyDigest },
+        extractionEnvironmentDigest: 'env-policy',
+        lineageDigest,
+        incomplete: false,
+      });
+      const second = await composeGraph(request, ports());
+      return { edge: first.value.graph.edges[0], second };
+    });
+    const oracle = await composeGraph(request, ports());
+    expect(reused?.second.accepted).toBe(true);
+    expect(oracle.accepted).toBe(true);
+    if (!reused?.second.accepted || !oracle.accepted) return;
+    expect(reused.second.value.graph.edges[0]).not.toBe(reused.edge);
+    expect(reused.second.value.graph.generation.reference.contentDigest).toEqual(
+      oracle.value.graph.generation.reference.contentDigest
+    );
+    store.dispose();
   });
 });

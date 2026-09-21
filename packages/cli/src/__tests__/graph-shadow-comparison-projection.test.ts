@@ -21,6 +21,7 @@ import {
   inferLegacyProjectId,
   isGeneratedWorkspaceControlLocator,
   isGraphShadowCliCompatibleIdentity,
+  isGraphShadowCliCompatibleRelation,
   isGraphShadowComparableDiagnostic,
   isGraphShadowComparableSourceProofLocator,
   isGraphShadowTestSurfaceLocator,
@@ -196,6 +197,11 @@ describe('Graph shadow comparison projection', () => {
     expect(isGraphShadowCliCompatibleIdentity('module:node:assert/strict', 'module')).toBe(false);
     expect(isGraphShadowCliCompatibleIdentity('module:deeper', 'module')).toBe(true);
     expect(isGraphShadowCliCompatibleIdentity('command:.#app:test', 'command')).toBe(false);
+    expect(isGraphShadowCliCompatibleRelation('defines')).toBe(true);
+    expect(isGraphShadowCliCompatibleRelation('tests')).toBe(true);
+    expect(isGraphShadowCliCompatibleRelation('documents')).toBe(true);
+    expect(isGraphShadowCliCompatibleRelation('exports')).toBe(false);
+    expect(isGraphShadowCliCompatibleRelation('declares')).toBe(false);
     expect(
       isGraphShadowTruncatingCoverage({
         dimension: 'source-calls-unresolved',

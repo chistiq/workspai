@@ -5,8 +5,9 @@
  * runs, and never admit dirty in-place checkouts. Filesystem page cache is not
  * controlled (`filesystemCold: not-controlled`). Output never includes host paths.
  */
-import { spawn, spawnSync } from 'node:child_process';
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { writeSync } from 'node:fs';
 import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 import { fileURLToPath } from 'node:url';
@@ -18,12 +19,17 @@ import {
 } from '@workspai/graph/adapters/node';
 
 import {
+  GRAPH_BENCHMARK_INCREMENTAL_KINDS,
+  GRAPH_PRODUCER_BENCHMARK_DEFAULT_CHILD_TIMEOUT_MS,
+  GRAPH_PRODUCER_BENCHMARK_DEFAULT_DEADLINE_MS,
   GRAPH_PRODUCER_BENCHMARK_SCHEMA,
   GRAPH_REFERENCE_CORPUS_PROTOCOL,
   applyIncrementalMutation,
   createCopiedEvaluationTree,
   createPinnedCommitWorktree,
   implementationSourceDigest,
+  parseGraphBenchmarkIncrementalKinds,
+  portableGraphProjectId,
   prepareIncrementalBase,
   resetPinnedWorktree,
   type GraphBenchmarkIncrementalKind,
@@ -35,27 +41,24 @@ import { hashCanonicalJson } from '../src/workspace-model-hash.js';
 const PATH_LEAK = /(?:[A-Za-z]:[\\/]|\/home\/|\/Users\/|\\\\)/u;
 const FIXED_GENERATED_AT = '2026-09-12T00:00:00.000Z';
 const SCRIPT_PATH = fileURLToPath(import.meta.url);
-const INCREMENTAL_KINDS = [
-  'no-change',
-  'one-file-edit',
-  'file-create',
-  'file-delete',
-  'module-invalidation',
-  'framework-binding',
-  'configuration-change',
-] as const satisfies readonly GraphBenchmarkIncrementalKind[];
 
 function parseArgs(args: readonly string[]): {
   readonly referenceRoot?: string;
   readonly projects: readonly string[];
   readonly iterations: number;
+  readonly warmup: number;
   readonly includeCommitted: boolean;
+  readonly skipIncremental: boolean;
+  readonly skipFull: boolean;
+  readonly incrementalKinds: readonly GraphBenchmarkIncrementalKind[];
+  readonly deadlineMs: number;
+  readonly childTimeoutMs: number;
 } {
   const values = new Map<string, string>();
   for (let index = 0; index < args.length; index += 1) {
     const key = args[index];
     if (!key?.startsWith('--')) throw new Error('All benchmark arguments must be named.');
-    if (key === '--include-committed') {
+    if (key === '--include-committed' || key === '--skip-incremental' || key === '--skip-full') {
       values.set(key, 'true');
       continue;
     }
@@ -76,11 +79,45 @@ function parseArgs(args: readonly string[]): {
   if (!Number.isInteger(iterations) || iterations < 1 || iterations > 20) {
     throw new Error('--iterations must be an integer from 1 to 20.');
   }
+  const warmup = Number.parseInt(values.get('--warmup') ?? '3', 10);
+  if (!Number.isInteger(warmup) || warmup < 0 || warmup > 10) {
+    throw new Error('--warmup must be an integer from 0 to 10.');
+  }
+  const deadlineMs = Number.parseInt(
+    values.get('--deadline-ms') ?? String(GRAPH_PRODUCER_BENCHMARK_DEFAULT_DEADLINE_MS),
+    10
+  );
+  if (!Number.isInteger(deadlineMs) || deadlineMs < 1_000 || deadlineMs > 3_600_000) {
+    throw new Error('--deadline-ms must be an integer from 1000 to 3600000.');
+  }
+  const childTimeoutMs = Number.parseInt(
+    values.get('--child-timeout-ms') ?? String(GRAPH_PRODUCER_BENCHMARK_DEFAULT_CHILD_TIMEOUT_MS),
+    10
+  );
+  if (!Number.isInteger(childTimeoutMs) || childTimeoutMs < 1_000 || childTimeoutMs > 300_000) {
+    throw new Error('--child-timeout-ms must be an integer from 1000 to 300000.');
+  }
+  const skipIncremental = values.get('--skip-incremental') === 'true';
+  const skipFull = values.get('--skip-full') === 'true';
+  if (skipIncremental && skipFull) {
+    throw new Error('Cannot combine --skip-incremental with --skip-full.');
+  }
+  const incrementalKinds = skipIncremental
+    ? []
+    : values.has('--incremental-kinds')
+      ? parseGraphBenchmarkIncrementalKinds(values.get('--incremental-kinds') ?? '')
+      : GRAPH_BENCHMARK_INCREMENTAL_KINDS;
   return {
     ...(referenceRoot ? { referenceRoot } : {}),
     projects,
     iterations,
+    warmup,
     includeCommitted: values.get('--include-committed') === 'true' || projects.length === 0,
+    skipIncremental,
+    skipFull,
+    incrementalKinds,
+    deadlineMs,
+    childTimeoutMs,
   };
 }
 
@@ -93,17 +130,6 @@ function percentile(values: readonly number[], p: number): number {
 
 function peakRssBytes(): number {
   return process.resourceUsage().maxRSS * 1024;
-}
-
-function portableProjectId(id: string): string {
-  return (
-    id
-      .normalize('NFC')
-      .toLowerCase()
-      .replace(/[^a-z0-9._-]+/gu, '-')
-      .replace(/^-+|-+$/gu, '')
-      .slice(0, 128) || 'project'
-  );
 }
 
 function topology(projectId: string) {
@@ -181,6 +207,28 @@ interface ChildResult {
   readonly admitted?: boolean;
   readonly rejection?: string;
   readonly incrementalKind?: GraphBenchmarkIncrementalKind;
+  readonly timedOut?: boolean;
+  readonly lastPhase?: string;
+  readonly serializationMs?: number;
+  readonly gitObservationMs?: number;
+  readonly snapshotMs?: number;
+  readonly preambleMs?: number;
+  readonly baseManifestMs?: number;
+  readonly semanticStampsMs?: number;
+  readonly postManifestMs?: number;
+  readonly inventoryWalkMs?: number;
+  readonly projectedManifestMs?: number;
+  readonly providerTimings?: readonly {
+    readonly providerId: string;
+    readonly detectionMs: number;
+    readonly collectionMs: number;
+    readonly factCount: number;
+  }[];
+  readonly rereadLocatorCount?: number;
+  readonly reusedLocatorCount?: number;
+  readonly childPhases?: readonly { readonly phase: string; readonly wallMs: number }[];
+  readonly incrementalDigest?: string;
+  readonly currentTreeDigest?: string;
 }
 
 function summarizePhases(metrics: {
@@ -188,6 +236,8 @@ function summarizePhases(metrics: {
   readonly providerMs?: number;
   readonly compositionMs?: number;
   readonly inventoryMs?: number;
+  readonly gitObservationMs?: number;
+  readonly snapshotMs?: number;
   readonly inputBytes?: number;
   readonly providerFacts?: number;
   readonly hashedFiles?: number;
@@ -218,12 +268,17 @@ function summarizePhases(metrics: {
   const contentDigestMs =
     metrics.compositionTimings?.contentDigestMs ??
     metrics.phaseTimings?.find((timing) => timing.phase === 'contentDigest')?.wallMs;
+  const gitObservationMs =
+    metrics.gitObservationMs ??
+    metrics.phaseTimings?.find((timing) => timing.phase === 'gitObservation')?.wallMs;
   return {
     ...(typeof metrics.providerMs === 'number' ? { providerMs: metrics.providerMs } : {}),
     ...(typeof metrics.compositionMs === 'number' ? { compositionMs: metrics.compositionMs } : {}),
     ...(typeof factCanonicalizationMs === 'number' ? { factCanonicalizationMs } : {}),
     ...(typeof graphIndexConstructionMs === 'number' ? { graphIndexConstructionMs } : {}),
     ...(typeof contentDigestMs === 'number' ? { contentDigestMs } : {}),
+    ...(typeof gitObservationMs === 'number' ? { gitObservationMs } : {}),
+    ...(typeof metrics.snapshotMs === 'number' ? { snapshotMs: metrics.snapshotMs } : {}),
     ...(typeof metrics.inventoryMs === 'number' ? { inventoryMs: metrics.inventoryMs } : {}),
     ...(typeof metrics.inputBytes === 'number' ? { inputBytes: metrics.inputBytes } : {}),
     ...(typeof metrics.providerFacts === 'number' ? { providerFacts: metrics.providerFacts } : {}),
@@ -249,6 +304,29 @@ function summarizePhases(metrics: {
         }
       : {}),
   };
+}
+
+function logProgress(event: Record<string, unknown>): void {
+  const payload = JSON.stringify({
+    schemaVersion: 'workspai.graph-producer-benchmark-progress.v1',
+    ...event,
+  });
+  if (PATH_LEAK.test(payload)) return;
+  writeSync(2, `${payload}\n`);
+}
+
+async function timedPhase<T>(
+  phases: { phase: string; wallMs: number }[],
+  phase: string,
+  work: () => Promise<T>
+): Promise<T> {
+  logProgress({ event: 'child-phase', phase });
+  const started = performance.now();
+  try {
+    return await work();
+  } finally {
+    phases.push({ phase, wallMs: Math.round(performance.now() - started) });
+  }
 }
 
 async function runChild(request: ChildRequest): Promise<ChildResult> {
@@ -308,15 +386,19 @@ async function runChild(request: ChildRequest): Promise<ChildResult> {
   }
   if (request.mode === 'package-incremental') {
     const kind = request.incrementalKind ?? 'no-change';
-    await prepareIncrementalBase(request.root, kind);
+    const childPhases: { phase: string; wallMs: number }[] = [];
+    await timedPhase(childPhases, 'prepare-base', () => prepareIncrementalBase(request.root, kind));
     const hostSession = createGraphProductBuildSession();
     const referenceSession = createGraphProductBuildSession();
     try {
-      const base = await buildNodeRepoGraph({
-        root: request.root,
-        scope: { kind: 'project', projectIds: [request.projectId] },
-        session: hostSession,
-      });
+      const base = await timedPhase(childPhases, 'full-base', () =>
+        buildNodeRepoGraph({
+          root: request.root,
+          scope: { kind: 'project', projectIds: [request.projectId] },
+          session: hostSession,
+          captureContentStateManifest: true,
+        })
+      );
       if (!base.graph || !base.compositionSources || !base.admittedInputs) {
         return {
           mode: request.mode,
@@ -326,26 +408,38 @@ async function runChild(request: ChildRequest): Promise<ChildResult> {
           admitted: false,
           rejection: 'incomplete-base',
           incrementalKind: kind,
+          lastPhase: 'full-base',
+          childPhases,
         };
       }
-      await applyIncrementalMutation(request.root, kind);
-      const current = await buildNodeRepoGraph({
-        root: request.root,
-        scope: { kind: 'project', projectIds: [request.projectId] },
-        session: referenceSession,
-      });
-      const timedStart = performance.now();
-      const incremental = await buildNodeIncrementalRepoGraph({
-        root: request.root,
-        scope: { kind: 'project', projectIds: [request.projectId] },
-        base,
-        currentTreeReferenceDigest: current.graph?.generation.reference.contentDigest,
-        session: hostSession,
-      });
-      const wallMs = Math.round(performance.now() - timedStart);
-      const digestEqual =
-        incremental.graph?.generation.reference.contentDigest.value ===
-        current.graph?.generation.reference.contentDigest.value;
+      await timedPhase(childPhases, 'mutate', () => applyIncrementalMutation(request.root, kind));
+      const current = await timedPhase(childPhases, 'current-tree-full', () =>
+        buildNodeRepoGraph({
+          root: request.root,
+          scope: { kind: 'project', projectIds: [request.projectId] },
+          session: referenceSession,
+        })
+      );
+      const incremental = await timedPhase(childPhases, 'incremental-timed', () =>
+        buildNodeIncrementalRepoGraph({
+          root: request.root,
+          scope: { kind: 'project', projectIds: [request.projectId] },
+          base,
+          currentTreeReferenceDigest: current.graph?.generation.reference.contentDigest,
+          session: hostSession,
+        })
+      );
+      const serializeStarted = performance.now();
+      logProgress({ event: 'child-phase', phase: 'serialize' });
+      const graphJson = incremental.graph ? JSON.stringify(incremental.graph) : '';
+      const serializationMs = Math.round(performance.now() - serializeStarted);
+      childPhases.push({ phase: 'serialize', wallMs: serializationMs });
+      if (PATH_LEAK.test(graphJson)) throw new Error('Package graph contained a host path.');
+      const timedPhaseMs =
+        childPhases.find((item) => item.phase === 'incremental-timed')?.wallMs ?? 0;
+      const incrementalDigest = incremental.graph?.generation.reference.contentDigest.value;
+      const currentTreeDigest = current.graph?.generation.reference.contentDigest.value;
+      const digestEqual = incrementalDigest === currentTreeDigest;
       const admitted =
         incremental.inventoryReread.trust === 'trusted' &&
         incremental.equivalence === 'pass' &&
@@ -353,17 +447,33 @@ async function runChild(request: ChildRequest): Promise<ChildResult> {
         incremental.snapshotConsistency !== 'unstable';
       return {
         mode: request.mode,
-        wallMs,
+        wallMs: timedPhaseMs,
         processStartupMs,
         peakRssBytes: peakRssBytes(),
         ...summarizePhases(incremental.metrics),
-        digest: incremental.graph?.generation.reference.contentDigest.value,
+        digest: incrementalDigest,
+        incrementalDigest,
+        currentTreeDigest,
         incrementalTrust: incremental.inventoryReread.trust,
         digestEqualToCurrentTree: digestEqual,
         equivalence: incremental.equivalence,
         snapshotConsistency: incremental.snapshotConsistency,
         executionPath: incremental.executionPath,
         admitted,
+        lastPhase: 'serialize',
+        serializationMs,
+        rereadLocatorCount: incremental.inventoryReread.rereadLocators.length,
+        reusedLocatorCount: incremental.inventoryReread.reusedLocators.length,
+        preambleMs: incremental.metrics.preambleMs,
+        baseManifestMs: incremental.metrics.baseManifestMs,
+        semanticStampsMs: incremental.metrics.semanticStampsMs,
+        postManifestMs: incremental.metrics.postManifestMs,
+        inventoryWalkMs: incremental.metrics.inventoryWalkMs,
+        projectedManifestMs: incremental.metrics.projectedManifestMs,
+        providerTimings: incremental.metrics.providerTimings?.filter(
+          (timing: { collectionMs: number; detectionMs: number; }) => timing.collectionMs > 0 || timing.detectionMs > 20
+        ),
+        childPhases,
         ...(admitted
           ? {}
           : {
@@ -416,36 +526,103 @@ async function runChild(request: ChildRequest): Promise<ChildResult> {
   };
 }
 
-function spawnChild(request: ChildRequest): Promise<ChildResult> {
+function terminateChild(child: ChildProcess): void {
+  child.stdin?.destroy();
+  child.stdout?.destroy();
+  child.stderr?.destroy();
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  child.kill('SIGKILL');
+}
+
+function lastProgressPhase(stderr: string): string | undefined {
+  const lines = stderr.split('\n').filter((line) => line.length > 0);
+  for (let index = lines.length - 1; index >= 0; index -= 1) {
+    try {
+      const parsed = JSON.parse(lines[index] ?? '') as { phase?: unknown };
+      if (typeof parsed.phase === 'string' && parsed.phase.length > 0) return parsed.phase;
+    } catch {
+      continue;
+    }
+  }
+  return undefined;
+}
+
+function spawnChild(request: ChildRequest, timeoutMs: number): Promise<ChildResult> {
   return new Promise((resolve, reject) => {
     const spawnedAt = performance.now();
+    let settled = false;
+    let timedOut = false;
     const child = spawn(process.execPath, ['--import', 'tsx', SCRIPT_PATH, '--child'], {
       stdio: ['pipe', 'pipe', 'pipe'],
       env: { ...process.env, WORKSPAI_GRAPH_BENCH_CHILD: '1' },
     });
     const stdout: Buffer[] = [];
+    const stderr: Buffer[] = [];
     child.stdout?.on('data', (chunk: Buffer) => stdout.push(chunk));
-    child.stderr?.resume();
-    child.on('error', reject);
+    child.stderr?.on('data', (chunk: Buffer) => {
+      stderr.push(chunk);
+      const text = chunk.toString('utf8');
+      if (!PATH_LEAK.test(text)) process.stderr.write(chunk);
+    });
+    const timeoutResult = (): ChildResult => ({
+      mode: request.mode,
+      wallMs: 0,
+      processStartupMs: 0,
+      processLifetimeMs: Math.round(performance.now() - spawnedAt),
+      peakRssBytes: 0,
+      admitted: false,
+      rejection: 'timeout',
+      timedOut: true,
+      lastPhase: lastProgressPhase(Buffer.concat(stderr).toString('utf8')) ?? 'spawn',
+      ...(request.incrementalKind ? { incrementalKind: request.incrementalKind } : {}),
+    });
+    let forceCloseTimer: NodeJS.Timeout | undefined;
+    const timeout = setTimeout(() => {
+      if (settled) return;
+      timedOut = true;
+      terminateChild(child);
+      forceCloseTimer = setTimeout(() => {
+        settle(() => resolve(timeoutResult()));
+      }, 3_000);
+    }, timeoutMs);
+    const settle = (result: () => void): void => {
+      if (settled) return;
+      settled = true;
+      clearTimeout(timeout);
+      if (forceCloseTimer) clearTimeout(forceCloseTimer);
+      terminateChild(child);
+      result();
+    };
+    child.on('error', (error) => {
+      settle(() => reject(error));
+    });
     child.on('close', (code) => {
-      if (code !== 0) {
-        reject(new Error('Isolated benchmark child failed.'));
+      if (timedOut) {
+        settle(() => resolve(timeoutResult()));
         return;
       }
-      try {
-        const parsed = JSON.parse(Buffer.concat(stdout).toString('utf8')) as ChildResult;
-        const withLifetime = {
-          ...parsed,
-          processLifetimeMs: Math.round(performance.now() - spawnedAt),
-        };
-        if (PATH_LEAK.test(JSON.stringify(withLifetime))) {
-          reject(new Error('Isolated benchmark child leaked a host path.'));
+      settle(() => {
+        if (code !== 0) {
+          reject(new Error('Isolated benchmark child failed.'));
           return;
         }
-        resolve(withLifetime);
-      } catch {
-        reject(new Error('Isolated benchmark child returned invalid output.'));
-      }
+        try {
+          const parsed = JSON.parse(Buffer.concat(stdout).toString('utf8')) as ChildResult;
+          const withLifetime = {
+            ...parsed,
+            processLifetimeMs: Math.round(performance.now() - spawnedAt),
+            lastPhase:
+              parsed.lastPhase ?? lastProgressPhase(Buffer.concat(stderr).toString('utf8')),
+          };
+          if (PATH_LEAK.test(JSON.stringify(withLifetime))) {
+            reject(new Error('Isolated benchmark child leaked a host path.'));
+            return;
+          }
+          resolve(withLifetime);
+        } catch {
+          reject(new Error('Isolated benchmark child returned invalid output.'));
+        }
+      });
     });
     child.stdin?.end(JSON.stringify({ ...request, root: request.root }));
   });
@@ -522,9 +699,15 @@ async function measureOne(input: {
   readonly id: string;
   readonly root: string;
   readonly iterations: number;
+  readonly warmup: number;
+  readonly skipIncremental: boolean;
+  readonly skipFull: boolean;
+  readonly incrementalKinds: readonly GraphBenchmarkIncrementalKind[];
+  readonly deadlineMs: number;
+  readonly childTimeoutMs: number;
   readonly pin: boolean;
 }): Promise<unknown> {
-  const projectId = portableProjectId(input.id);
+  const projectId = portableGraphProjectId(input.id);
   const corpusDigest = createHash('sha256').update(projectId).digest('hex');
   const pin = input.pin
     ? await createPinnedCommitWorktree(input.root)
@@ -534,6 +717,9 @@ async function measureOne(input: {
     if (pin.kind === 'copied-fixture') await pin.reset();
     else await resetPinnedWorktree(root);
   };
+  const deadlineAt = Date.now() + input.deadlineMs;
+  let timedOut = false;
+  let lastPhase = 'pin';
   try {
     const packageCold: ChildResult[] = [];
     const packageWarm: ChildResult[] = [];
@@ -542,34 +728,97 @@ async function measureOne(input: {
     const incremental = new Map<GraphBenchmarkIncrementalKind, ChildResult[]>();
     const incrementalRejected = new Map<GraphBenchmarkIncrementalKind, number>();
     const incrementalRejection = new Map<GraphBenchmarkIncrementalKind, string>();
-    for (const kind of INCREMENTAL_KINDS) {
+    for (const kind of input.incrementalKinds) {
       incremental.set(kind, []);
       incrementalRejected.set(kind, 0);
     }
-    for (let index = 0; index < input.iterations; index += 1) {
+    const totalRounds = input.warmup + input.iterations;
+    const fullModes = input.skipFull
+      ? []
+      : ([
+          'package-process-cold-full',
+          'package-process-warm-full',
+          'legacy-process-cold-full',
+          'legacy-process-warm-full',
+        ] as const);
+    roundLoop: for (let index = 0; index < totalRounds; index += 1) {
+      const record = index >= input.warmup;
+      if (Date.now() >= deadlineAt) {
+        timedOut = true;
+        lastPhase = `iteration-${index}`;
+        break;
+      }
+      logProgress({
+        event: 'phase-start',
+        corpus: projectId,
+        iteration: index,
+        warmup: !record,
+        phase: 'reset',
+      });
+      lastPhase = 'reset';
       await reset();
       const packageFirst = index % 2 === 0;
-      const packageModes = ['package-process-cold-full', 'package-process-warm-full'] as const;
-      const legacyModes = ['legacy-process-cold-full', 'legacy-process-warm-full'] as const;
-      const order = packageFirst
-        ? [...packageModes, ...legacyModes]
-        : [...legacyModes, ...packageModes];
+      const order = packageFirst ? [...fullModes] : [...fullModes].reverse();
       for (const mode of order) {
+        if (Date.now() >= deadlineAt) {
+          timedOut = true;
+          lastPhase = mode;
+          break roundLoop;
+        }
+        logProgress({
+          event: 'phase-start',
+          corpus: projectId,
+          iteration: index,
+          warmup: !record,
+          phase: mode,
+        });
+        lastPhase = mode;
         await reset();
-        const sample = await spawnChild({ mode, root, projectId });
+        const sample = await spawnChild({ mode, root, projectId }, input.childTimeoutMs);
+        if (sample.timedOut === true) {
+          timedOut = true;
+          lastPhase = sample.lastPhase ?? mode;
+          break roundLoop;
+        }
+        if (!record) continue;
         if (mode === 'package-process-cold-full') packageCold.push(sample);
         if (mode === 'package-process-warm-full') packageWarm.push(sample);
         if (mode === 'legacy-process-cold-full') legacyCold.push(sample);
         if (mode === 'legacy-process-warm-full') legacyWarm.push(sample);
       }
-      for (const kind of INCREMENTAL_KINDS) {
-        await reset();
-        const sample = await spawnChild({
-          mode: 'package-incremental',
-          root,
-          projectId,
-          incrementalKind: kind,
+      for (const kind of input.incrementalKinds) {
+        if (Date.now() >= deadlineAt) {
+          timedOut = true;
+          lastPhase = `package-incremental:${kind}`;
+          break roundLoop;
+        }
+        logProgress({
+          event: 'phase-start',
+          corpus: projectId,
+          iteration: index,
+          warmup: !record,
+          phase: 'package-incremental',
+          kind,
         });
+        lastPhase = `package-incremental:${kind}`;
+        await reset();
+        const sample = await spawnChild(
+          {
+            mode: 'package-incremental',
+            root,
+            projectId,
+            incrementalKind: kind,
+          },
+          input.childTimeoutMs
+        );
+        if (sample.timedOut === true) {
+          timedOut = true;
+          lastPhase = sample.lastPhase ?? `package-incremental:${kind}`;
+          incrementalRejected.set(kind, (incrementalRejected.get(kind) ?? 0) + 1);
+          incrementalRejection.set(kind, sample.rejection ?? 'timeout');
+          break roundLoop;
+        }
+        if (!record) continue;
         if (sample.admitted === false) {
           incrementalRejected.set(kind, (incrementalRejected.get(kind) ?? 0) + 1);
           incrementalRejection.set(kind, sample.rejection ?? sample.incrementalTrust ?? 'rejected');
@@ -584,27 +833,53 @@ async function measureOne(input: {
     const legacyColdSummary = summarize(legacyCold, 'processLifetimeMs');
     const legacyColdBuild = summarize(legacyCold, 'wallMs');
     const legacyWarmSummary = summarize(legacyWarm, 'wallMs');
-    const lastPackage = packageWarmSummary.last ?? packageColdSummary.last;
+    const lastIncremental = input.incrementalKinds
+      .map((kind) => (incremental.get(kind) ?? []).at(-1))
+      .find((sample): sample is ChildResult => sample !== undefined);
+    const lastPackage = packageWarmSummary.last ?? packageColdSummary.last ?? lastIncremental;
     const incrementalReport = Object.fromEntries(
-      INCREMENTAL_KINDS.map((kind) => {
+      input.incrementalKinds.map((kind) => {
         const admitted = incremental.get(kind) ?? [];
         const rejected = incrementalRejected.get(kind) ?? 0;
         const summary = summarize(admitted, 'wallMs');
+        const lifetime = summarize(admitted, 'processLifetimeMs');
         return [
           kind,
           {
             ...timingBlock(summary, {
               rejectedSamples: rejected,
+              processLifetimeP50Ms: lifetime.p50Ms,
+              processLifetimeP95Ms: lifetime.p95Ms,
               lastRejection: incrementalRejection.get(kind),
               inventoryRereadTrust: summary.last?.incrementalTrust,
               digestEqualToCurrentTree: summary.last?.digestEqualToCurrentTree === true,
+              incrementalDigest: summary.last?.incrementalDigest,
+              currentTreeDigest: summary.last?.currentTreeDigest,
               equivalence: summary.last?.equivalence,
               snapshotConsistency: summary.last?.snapshotConsistency,
               executionPath: summary.last?.executionPath,
+              serializationMs: summary.last?.serializationMs,
+              gitObservationMs: summary.last?.gitObservationMs,
+              snapshotMs: summary.last?.snapshotMs,
+              preambleMs: summary.last?.preambleMs,
+              baseManifestMs: summary.last?.baseManifestMs,
+              semanticStampsMs: summary.last?.semanticStampsMs,
+              postManifestMs: summary.last?.postManifestMs,
+              inventoryWalkMs: summary.last?.inventoryWalkMs,
+              projectedManifestMs: summary.last?.projectedManifestMs,
+              providerTimings: summary.last?.providerTimings,
+              inventoryMs: summary.last?.inventoryMs,
+              providerMs: summary.last?.providerMs,
+              compositionMs: summary.last?.compositionMs,
+              rereadLocatorCount: summary.last?.rereadLocatorCount,
+              reusedLocatorCount: summary.last?.reusedLocatorCount,
+              childPhases: summary.last?.childPhases,
+              lastPhase: summary.last?.lastPhase,
               timing: 'incremental-after-untimed-base-and-current-full',
               peakRssIncludesWarmup: true,
-              claim:
-                admitted.length >= 5
+              claim: timedOut
+                ? 'timed-out-no-performance-claim'
+                : admitted.length >= 5
                   ? 'trusted-pinned-worktree'
                   : 'insufficient-admitted-samples-no-performance-claim',
             }),
@@ -620,8 +895,16 @@ async function measureOne(input: {
       sourceDirty: pin.dirty,
       dirtyCount: pin.dirtyCount,
       filesystemCold: 'not-controlled',
-      claim:
-        input.iterations >= 5
+      hostPeakRssMb: Math.round(peakRssBytes() / (1024 * 1024)),
+      timedOut,
+      lastPhase,
+      skipFull: input.skipFull,
+      incrementalKinds: input.incrementalKinds,
+      deadlineMs: input.deadlineMs,
+      childTimeoutMs: input.childTimeoutMs,
+      claim: timedOut
+        ? 'timed-out-no-performance-claim'
+        : input.iterations >= 5
           ? 'isolated-process-p50-p95'
           : 'insufficient-iterations-no-performance-claim',
       package: {
@@ -711,12 +994,29 @@ async function main(): Promise<void> {
   }
   const results = [];
   for (const corpus of corpora) {
-    results.push(await measureOne({ ...corpus, iterations: args.iterations }));
+    results.push(
+      await measureOne({
+        ...corpus,
+        iterations: args.iterations,
+        warmup: args.warmup,
+        skipIncremental: args.skipIncremental,
+        skipFull: args.skipFull,
+        incrementalKinds: args.incrementalKinds,
+        deadlineMs: args.deadlineMs,
+        childTimeoutMs: args.childTimeoutMs,
+      })
+    );
   }
   const payload = JSON.stringify(
     {
       schemaVersion: GRAPH_PRODUCER_BENCHMARK_SCHEMA,
       iterations: args.iterations,
+      warmup: args.warmup,
+      skipIncremental: args.skipIncremental,
+      skipFull: args.skipFull,
+      incrementalKinds: args.incrementalKinds,
+      deadlineMs: args.deadlineMs,
+      childTimeoutMs: args.childTimeoutMs,
       node: process.version,
       os: process.platform,
       arch: process.arch,
@@ -731,9 +1031,12 @@ async function main(): Promise<void> {
         processCold:
           'spawn-to-exit includes Node start, --import tsx, module evaluation, the build, and the child JSON serialization/stdout write',
         processWarm:
-          'build-call after untimed warmup in the same process; peak RSS includes warmup',
-        incremental:
-          'trusted incremental on a pinned-commit worktree; independent current-tree full build uses a separate fact-cache session and is outside the timed window; untrusted or inequivalent samples are rejected',
+          'build-call after untimed same-process warmup; peak RSS includes that warmup; not installed-CLI warm',
+        incremental: args.skipIncremental
+          ? 'not-measured-this-run; full-build modes only'
+          : 'each incremental child does untimed full-base then untimed independent current-tree full, then times only the incremental call; host deadline and per-child timeout abort without recording a performance claim; untrusted or inequivalent samples are rejected',
+        warmup:
+          'untimed isolated-process rounds using the same modes as measured samples; filesystem page cache is not flushed',
       },
       results,
     },

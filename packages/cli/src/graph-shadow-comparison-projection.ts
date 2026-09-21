@@ -187,6 +187,43 @@ export function isGraphShadowTruncatingCoverage(observation: {
 }
 
 /**
+ * Mapped relation kinds the released CLI composer actually emits. Package
+ * ontology relations such as `exports` stay outside the G8 shadow surface
+ * until the official composer claims them too.
+ */
+export const GRAPH_SHADOW_CLI_COMPATIBLE_RELATIONS = Object.freeze([
+  'calls',
+  'configured-by',
+  'consumes',
+  'contains',
+  'decided-by',
+  'defines',
+  'deployed-as',
+  'deploys',
+  'depends-on',
+  'documented-by',
+  'documents',
+  'equivalent-to',
+  'exposes',
+  'generated-by',
+  'generated-from',
+  'implements',
+  'implements-protocol',
+  'imports',
+  'owned-by',
+  'owns',
+  'produced-by',
+  'produces',
+  'publishes',
+  'references',
+  'runs-on',
+  'tests',
+  'uses-language',
+]);
+
+const CLI_COMPATIBLE_RELATION_SET = new Set<string>(GRAPH_SHADOW_CLI_COMPATIBLE_RELATIONS);
+
+/**
  * Released-CLI comparable claims for G8 shadow. Package truth-depth extras
  * that the official composer does not emit stay outside this surface.
  */
@@ -208,6 +245,14 @@ export function isGraphShadowCliCompatibleIdentity(identity: string, kind: strin
     return isGraphShadowSourceCodeLocator(identity.slice('document:'.length));
   }
   return true;
+}
+
+export function isGraphShadowCliCompatibleRelation(
+  relation: string,
+  overrides?: Readonly<Record<string, string>>
+): boolean {
+  const mapped = mapShadowRelation(relation, overrides);
+  return CLI_COMPATIBLE_RELATION_SET.has(relation) || CLI_COMPATIBLE_RELATION_SET.has(mapped);
 }
 
 export function isGraphShadowComparableSourceProofLocator(locator: string): boolean {

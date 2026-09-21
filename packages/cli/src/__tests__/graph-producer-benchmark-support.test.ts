@@ -13,8 +13,13 @@ import {
   createPinnedCommitWorktree,
   implementationSourceDigest,
   inspectReferenceRepository,
+  parseGraphBenchmarkIncrementalKinds,
+  portableGraphProjectId,
   prepareIncrementalBase,
   resetPinnedWorktree,
+  GRAPH_BENCHMARK_INCREMENTAL_KINDS,
+  GRAPH_PRODUCER_BENCHMARK_DEFAULT_CHILD_TIMEOUT_MS,
+  GRAPH_PRODUCER_BENCHMARK_DEFAULT_DEADLINE_MS,
 } from '../graph-producer-benchmark-support.js';
 
 const temporary: string[] = [];
@@ -45,7 +50,8 @@ describe('graph producer benchmark support', () => {
     await fs.writeFile(path.join(root, 'index.ts'), 'export const value = 2;\n');
     const inspection = inspectReferenceRepository(root);
     expect(inspection.dirty).toBe(true);
-    expect(GRAPH_PRODUCER_BENCHMARK_SCHEMA).toBe('workspai.graph-producer-benchmark.v3');
+    expect(GRAPH_PRODUCER_BENCHMARK_SCHEMA).toBe('workspai.graph-producer-benchmark.v5');
+    expect(portableGraphProjectId('OpenBot')).toBe('openbot');
     expect(GRAPH_REFERENCE_CORPUS_PROTOCOL.heldOut).toEqual(['bun', 'istio']);
     const pin = await createPinnedCommitWorktree(root);
     temporary.push(pin.root);
@@ -93,6 +99,31 @@ describe('graph producer benchmark support', () => {
     const digest = implementationSourceDigest(root);
     expect(digest.head).toMatch(/^[0-9a-f]{40}$/u);
     expect(digest.workingTreeDigest).toMatch(/^[a-f0-9]{64}$/u);
+  });
+
+  it('parses explicit incremental kinds and rejects repeats or unknown names', () => {
+    expect(GRAPH_PRODUCER_BENCHMARK_DEFAULT_DEADLINE_MS).toBe(900_000);
+    expect(GRAPH_PRODUCER_BENCHMARK_DEFAULT_CHILD_TIMEOUT_MS).toBe(60_000);
+    expect([...GRAPH_BENCHMARK_INCREMENTAL_KINDS]).toEqual([
+      'no-change',
+      'one-file-edit',
+      'file-create',
+      'file-delete',
+      'module-invalidation',
+      'framework-binding',
+      'configuration-change',
+    ]);
+    expect(parseGraphBenchmarkIncrementalKinds('no-change,one-file-edit')).toEqual([
+      'no-change',
+      'one-file-edit',
+    ]);
+    expect(() => parseGraphBenchmarkIncrementalKinds('')).toThrow(/at least one kind/u);
+    expect(() => parseGraphBenchmarkIncrementalKinds('no-change,no-change')).toThrow(
+      /cannot repeat/u
+    );
+    expect(() => parseGraphBenchmarkIncrementalKinds('openbot-fast-path')).toThrow(
+      /Unsupported incremental kind/u
+    );
   });
 
   it('copies a non-git fixture instead of mutating the original tree', async () => {

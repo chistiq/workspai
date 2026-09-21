@@ -35,6 +35,15 @@ export interface PreparedPackageProjectBuildResult {
 }
 
 const PORTABLE_PROJECT_ID = /^[a-zA-Z0-9][a-zA-Z0-9._:-]{0,255}$/u;
+const GRAPH_REPO_SCOPE_PROJECT_ID = /^[a-z0-9][a-z0-9._:/#@+-]{0,511}$/u;
+
+function graphRepoScopeProjectId(id: string): string {
+  const normalized = id.normalize('NFC').toLowerCase();
+  if (!GRAPH_REPO_SCOPE_PROJECT_ID.test(normalized) || normalized.length > 512) {
+    throw new Error('Prepared Graph project context is invalid.');
+  }
+  return normalized;
+}
 
 function bundledReferenceWorkerUrl(): URL | undefined {
   return import.meta.url.endsWith('/dist/internal/graph-package-shadow-bridge.js')
@@ -168,7 +177,7 @@ export async function buildPreparedProjectPackageGraph(input: {
     const identityRenderings = new Map<string, string>();
     const result = await buildRepoGraph({
       root: path.resolve(input.context.projectRoot),
-      scope: { kind: 'project', projectIds: [input.context.projectId] },
+      scope: { kind: 'project', projectIds: [graphRepoScopeProjectId(input.context.projectId)] },
       ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
       providers: Object.freeze([
         ...createStandardRepositoryProviders(),

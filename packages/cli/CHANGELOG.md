@@ -20,16 +20,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   truncation. Those KPIs have no released-CLI counterpart, so `attention` on
   them must not fail the committed real-workspace corpus with
   `GRAPH_SHADOW_COMPLETENESS_DIFFERENT`.
+- G8 shadow comparison now keeps package `exports` (and other composer-absent
+  ontology relations) outside the released-CLI comparable relation surface.
+  Those edges remain Graph truth-depth; they are not unapproved shadow
+  regressions against `defines`.
+- Real-workspace qualification now reuses the discovered canonical package
+  graph for the compare pass in the same child. The second pass does not
+  rebuild. No daemon or on-disk cache is introduced.
 - Windows CLI wrapper tests that spawn `dist` now use the same 90s timeout as
   the Vitest Windows coverage budget instead of a 20s per-test cap.
 
 ### Changed
 
-- Isolated Graph producer benchmarks now spawn package and legacy producers in
-  child processes. Process-cold times are spawn-to-exit, including the child's
-  JSON serialization and stdout write. Process-warm times are the inner build
-  call after warmup. Incremental output is compared to an independent
-  current-tree full build. This is not an installed CLI measurement.
+- Incremental no-change builds reuse the base generation's content-state
+  manifest and semantic stamps, skip a second canonical graph diff when the
+  published graph object is unchanged, and reuse a fresh Git index snapshot
+  when HEAD and the index file are unchanged. Equivalence against an
+  independent current-tree full build stays mandatory. One-file declaration
+  reuse no longer filters the full fact list once per file. Unchanged
+  per-file provider facts are reused instead of rereading the tree, and
+  accepted edges whose fact ids are unchanged keep their previous proof.
+- Isolated Graph producer benchmarks now use schema v5: a host deadline, a
+  per-child timeout that SIGKILLs hung workers, stderr phase logs, and
+  `--skip-full` / `--incremental-kinds` so no-change and one-file can run
+  without mixing four full modes and seven incremental kinds. A timeout
+  writes diagnostics and last phase and does not record a performance claim.
+  Process-cold times are spawn-to-exit, including the child's JSON
+  serialization and stdout write. Process-warm times are the inner build call
+  after warmup. Incremental output is compared to an independent current-tree
+  full build. This is not an installed CLI measurement.
 - Adaptive source-structure extraction now uses the deep-scan file window
   instead of 25% of it, so large polyglot inventories are not stuck at the
   2,000-file floor after deep scan already admitted more candidates.

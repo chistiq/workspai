@@ -7,14 +7,18 @@ import { fileURLToPath } from 'node:url';
 
 import { buildNodeRepoGraph, createGraphProductBuildSession } from '@workspai/graph/adapters/node';
 
-import { createPinnedCommitWorktree } from '../src/graph-producer-benchmark-support.js';
+import {
+  createPinnedCommitWorktree,
+  portableGraphProjectId,
+} from '../src/graph-producer-benchmark-support.js';
 
 const PATH_LEAK = /(?:[A-Za-z]:[\\/]|\/home\/|\/Users\/|\\\\)/u;
 
 const repo = process.argv[2];
-const id = process.argv[3] ?? 'profile';
+const rawId = process.argv[3] ?? 'profile';
 if (!repo) throw new Error('-- profile requires an absolute repository path.');
 if (!path.isAbsolute(repo)) throw new Error('Repository path must be absolute.');
+const id = portableGraphProjectId(rawId);
 
 const pin = await createPinnedCommitWorktree(repo);
 try {
@@ -30,18 +34,23 @@ try {
     const payload = {
       schemaVersion: 'workspai.graph-phase-profile.v1',
       id,
+      requestedId: rawId === id ? undefined : rawId,
+      status: { cold: cold.status, warm: warm.status },
       commit: pin.commit,
       sourceDirty: pin.dirty,
       dirtyCount: pin.dirtyCount,
       evaluatedFrom: pin.kind,
       filesystemCold: 'not-controlled',
       implementation: path.basename(fileURLToPath(import.meta.url)),
+      retainedOwner: 'same-process-graph-product-build-session',
       coldMs,
       warmMs,
       peakRssMb: Math.round((process.resourceUsage().maxRSS * 1024) / (1024 * 1024)),
       inputFiles: warm.metrics.inputFiles,
       inputBytes: warm.metrics.inputBytes,
       providerFacts: warm.metrics.providerFacts,
+      nodes: warm.graph?.nodes.length ?? 0,
+      edges: warm.graph?.edges.length ?? 0,
       cold: {
         providerMs: cold.metrics.providerMs,
         compositionMs: cold.metrics.compositionMs,
@@ -53,6 +62,7 @@ try {
         filesExtracted: cold.metrics.filesExtracted,
         providerTimings: cold.metrics.providerTimings,
         phaseTimings: cold.metrics.phaseTimings,
+        dataMovement: cold.metrics.dataMovement,
       },
       warm: {
         providerMs: warm.metrics.providerMs,
@@ -65,6 +75,7 @@ try {
         filesExtracted: warm.metrics.filesExtracted,
         providerTimings: warm.metrics.providerTimings,
         phaseTimings: warm.metrics.phaseTimings,
+        dataMovement: warm.metrics.dataMovement,
       },
     };
     const json = JSON.stringify(payload, null, 2);

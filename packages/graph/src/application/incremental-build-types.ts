@@ -21,6 +21,11 @@ export interface GraphIncrementalBuildRequest {
   readonly semanticStamps?: GraphIncrementalSemanticStamps;
   readonly authorizedShardIds?: readonly string[];
   readonly comparisonBudget?: Partial<GraphContentStateComparisonBudget>;
+  /**
+   * The caller proved this manifest is internally consistent and semantically
+   * current. Identical base and target then skip the per-shard reuse walk.
+   */
+  readonly trustIdenticalManifest?: boolean;
 }
 
 export interface GraphIncrementalAccounting {

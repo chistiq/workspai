@@ -78,7 +78,7 @@ export function diffGraphGenerations(request: {
   const changedNodes = [...toNodes.entries()]
     .filter(([id, node]) => {
       const prior = fromNodes.get(id);
-      return prior !== undefined && !semanticEqual(prior, node);
+      return prior !== undefined && prior !== node && !semanticEqual(prior, node);
     })
     .map(([id]) => id)
     .sort();
@@ -86,7 +86,7 @@ export function diffGraphGenerations(request: {
   const changedEdges = [...toEdges.entries()]
     .filter(([id, edge]) => {
       const prior = fromEdges.get(id);
-      return prior !== undefined && !semanticEqual(prior, edge);
+      return prior !== undefined && prior !== edge && !semanticEqual(prior, edge);
     })
     .map(([id]) => id)
     .sort();
@@ -94,7 +94,7 @@ export function diffGraphGenerations(request: {
   const changedAssertions = [...toAssertions.entries()]
     .filter(([id, assertion]) => {
       const prior = fromAssertions.get(id);
-      return prior !== undefined && !semanticEqual(prior, assertion);
+      return prior !== undefined && prior !== assertion && !semanticEqual(prior, assertion);
     })
     .map(([id]) => id)
     .sort();

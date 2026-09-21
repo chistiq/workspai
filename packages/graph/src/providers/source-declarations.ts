@@ -12,6 +12,7 @@ import {
   type GraphUnknownZone,
   type GraphWorkspaceFact,
 } from '../contracts/index.js';
+import { writeSync } from 'node:fs';
 import type { GraphNativePort } from '../ports/index.js';
 import { createObservedEdgeFact, extensionOf } from './observed-edge-fact.js';
 import { isGeneratedSource } from './generated-source.js';
@@ -51,6 +52,15 @@ import {
 } from '../application/locator-fact-shards.js';
 
 export const SOURCE_DECLARATIONS_PROVIDER_ID = 'workspai.graph.provider.source-declarations';
+/**
+ * Mandatory semantic implementation identity for this provider. Changing
+ * detection, extraction, binding, call-resolution, identity, proof, or quality
+ * semantics requires bumping this version (and/or
+ * GRAPH_CALL_RESOLUTION_ENVIRONMENT_VERSION). Session reuse keys the full
+ * manifest, so an unversioned implementation change would otherwise reuse
+ * stale facts.
+ */
+export const GRAPH_SOURCE_DECLARATIONS_PROVIDER_VERSION = '0.1.0-candidate' as const;
 
 const MAX_SOURCE_BYTES = 4 * 1024 * 1024;
 const MAX_FACTS = 500_000;
@@ -99,6 +109,19 @@ interface SourceDeclarationShardExtras {
   readonly exportPairs: readonly (readonly [string, string])[];
   readonly pythonAllNames: readonly string[] | undefined;
   readonly reexports: readonly MatrixReexportBinding[];
+}
+
+function declarationBench(phase: string, startedAt: number): void {
+  if (process.env.WORKSPAI_GRAPH_BENCH_CHILD !== '1') return;
+  writeSync(
+    2,
+    `${JSON.stringify({
+      schemaVersion: 'workspai.graph-producer-benchmark-progress.v1',
+      event: 'declaration-split',
+      phase,
+      wallMs: Math.max(0, Math.round(performance.now() - startedAt)),
+    })}\n`
+  );
 }
 
 function isSourceDeclarationExtras(value: unknown): value is SourceDeclarationShardExtras {
@@ -579,7 +602,7 @@ export function createSourceDeclarationsProvider(
   const manifest = {
     contract: GRAPH_PROVIDER_MANIFEST_CONTRACT,
     id: SOURCE_DECLARATIONS_PROVIDER_ID,
-    version: '0.1.0-candidate',
+    version: GRAPH_SOURCE_DECLARATIONS_PROVIDER_VERSION,
     displayName: 'Source declarations and local calls',
     determinism: 'deterministic' as const,
     capabilities: {
@@ -671,9 +694,11 @@ export function createSourceDeclarationsProvider(
         });
       }
       let native = options.native;
+      const nativeStartedAt = performance.now();
       if (!native && options.loadNative && inputs.length >= NATIVE_DECLARATION_MIN_FILES) {
         native = await options.loadNative();
       }
+      declarationBench('native-load', nativeStartedAt);
 
       const preparedFiles: {
         readonly inputIndex: number;
@@ -695,6 +720,7 @@ export function createSourceDeclarationsProvider(
         Awaited<ReturnType<GraphProviderCollectionRequest['resolveIdentity']>>
       >[] = [];
 
+      const prepareStartedAt = performance.now();
       for (const [inputIndex, input] of inputs.entries()) {
         if (request.signal?.aborted)
           throw new Error('Source declaration collection was cancelled.');
@@ -907,6 +933,7 @@ export function createSourceDeclarationsProvider(
         }
       }
 
+      declarationBench('prepare', prepareStartedAt);
       const identityStartedAt = performance.now();
       const fileIdentities = await Promise.all(fileIdentityJobs);
       const symbolIdentityJobs: Promise<
@@ -1380,7 +1407,17 @@ export function createSourceDeclarationsProvider(
         files: inputs.length,
         facts: emittedCalls,
       });
+      declarationBench('call-bind', callBindStartedAt);
 
+      const rememberStartedAt = performance.now();
+      const factsByLocator = new Map<string, GraphWorkspaceFact[]>();
+      for (const fact of facts) {
+        const locator = fact.evidence[0]?.relativeLocator;
+        if (!locator) continue;
+        const group = factsByLocator.get(locator);
+        if (group) group.push(fact);
+        else factsByLocator.set(locator, [fact]);
+      }
       for (const [inputIndex, input] of inputs.entries()) {
         const index = symbolIndexes.get(input.locator);
         const processingRecord = processing.find(
@@ -1394,9 +1431,7 @@ export function createSourceDeclarationsProvider(
           locator: input.locator,
           inputDigest: input.digest.value,
           inputIndex,
-          facts: Object.freeze(
-            facts.filter((fact) => fact.evidence[0]?.relativeLocator === input.locator)
-          ),
+          facts: Object.freeze(factsByLocator.get(input.locator) ?? []),
           unknownZones: Object.freeze(unknownZones.filter((zone) => zone.scope === input.locator)),
           processing: processingRecord,
           callEnvironmentDigest: locatorCallEnvironmentDigest(
@@ -1418,6 +1453,7 @@ export function createSourceDeclarationsProvider(
           } satisfies SourceDeclarationShardExtras),
         });
       }
+      declarationBench('remember', rememberStartedAt);
 
       return {
         contract: GRAPH_FACT_BATCH_CONTRACT,

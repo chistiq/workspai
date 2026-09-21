@@ -1,5 +1,6 @@
 export { createNodeGraphProductHostPorts } from './graph-package-runtime.js';
 
+import type { GraphProductBuildSession } from './graph-package-runtime.js';
 import type {
   GraphShadowComparisonBinding,
   GraphShadowComparisonPolicy,
@@ -28,6 +29,7 @@ export interface PreparedProjectGraphShadowRequest {
   readonly policy?: GraphShadowComparisonPolicy;
   readonly legacy: () => Promise<LegacyGraphShadowInput>;
   readonly package?: () => Promise<PackageGraphShadowInput | undefined>;
+  readonly session?: GraphProductBuildSession;
   readonly signal?: AbortSignal;
   readonly limits?: typeof GRAPH_SHADOW_DEFAULT_LIMITS;
 }
@@ -47,6 +49,7 @@ export interface PreparedProjectGraphShadowResult {
       readonly graphPolicyDigest: string;
     };
   };
+  readonly comparison?: PackageGraphShadowInput;
 }
 
 function bundledReferenceWorkerUrl(): URL | undefined {
@@ -71,6 +74,7 @@ export async function runPreparedProjectGraphShadow(
     providerFacts: 0,
     workspaceId: request.context.workspaceId,
   };
+  let comparison: PackageGraphShadowInput | undefined;
 
   const packagePath = async (): Promise<PackageGraphShadowInput | undefined> => {
     if (request.package) {
@@ -99,12 +103,14 @@ export async function runPreparedProjectGraphShadow(
           graphPolicyDigest: `sha256:${input.graph.generation.compositionPolicyDigest.value}`,
         },
       };
+      comparison = input;
       return input;
     }
     const built = await buildPreparedProjectPackageGraph({
       context: request.context,
       signal: request.signal,
       workerUrl: bundledReferenceWorkerUrl(),
+      ...(request.session ? { session: request.session } : {}),
     });
     packageExecution = {
       status: built.status,
@@ -115,6 +121,7 @@ export async function runPreparedProjectGraphShadow(
       workspaceId: request.context.workspaceId,
       ...(built.semanticBinding ? { semanticBinding: built.semanticBinding } : {}),
     };
+    comparison = built.comparison;
     return built.comparison;
   };
 
@@ -131,5 +138,5 @@ export async function runPreparedProjectGraphShadow(
     legacy: request.legacy,
     package: packagePath,
   });
-  return { report, packageExecution };
+  return { report, packageExecution, ...(comparison ? { comparison } : {}) };
 }

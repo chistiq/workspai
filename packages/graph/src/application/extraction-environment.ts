@@ -188,7 +188,7 @@ function canonicalScope(scope: GraphScope): unknown {
   return Object.freeze(JSON.parse(JSON.stringify(scope)) as unknown);
 }
 
-function scopesEqual(left: GraphScope, right: GraphScope): boolean {
+export function scopesEqual(left: GraphScope, right: GraphScope): boolean {
   return JSON.stringify(canonicalScope(left)) === JSON.stringify(canonicalScope(right));
 }
 

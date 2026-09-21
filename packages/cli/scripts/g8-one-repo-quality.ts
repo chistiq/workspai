@@ -10,6 +10,7 @@ import path from 'node:path';
 import { performance } from 'node:perf_hooks';
 
 import { buildNodeRepoGraph } from '@workspai/graph/adapters/node';
+import { portableGraphProjectId } from '../src/graph-producer-benchmark-support.js';
 
 const PATH_LEAK = /(?:[A-Za-z]:[\\/]|\/home\/|\/Users\/|\\\\)/u;
 
@@ -67,7 +68,7 @@ async function main(): Promise<void> {
   try {
     const result = await buildNodeRepoGraph({
       root,
-      scope: { kind: 'project', projectIds: [project] },
+      scope: { kind: 'project', projectIds: [portableGraphProjectId(project)] },
     });
     const payload = {
       id: project,

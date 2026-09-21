@@ -45,9 +45,13 @@ import { digestCanonicalGraphInput } from './digest-canonical-graph-input.js';
 import {
   compositionSourcesAreIdenticalFacts,
   internedCompositionNode,
+  discardStagedCompositionPreparation,
+  lastCompositionPreparation,
+  lastSessionCompositionAnchor,
   lastSessionFactDigestAnchor,
   rememberInternedCompositionNode,
   rememberSessionFactDigestAnchor,
+  stageSessionCompositionPreparation,
 } from './locator-fact-shards.js';
 import type {
   GraphCompositionDecision,
@@ -497,6 +501,7 @@ function deepFreeze<T>(input: T): Readonly<T> {
     const value = pending.pop();
     if (!value || visited.has(value)) continue;
     visited.add(value);
+    if (Object.isFrozen(value) && isGraphFactAdmitted(value)) continue;
     for (const child of Object.values(value)) {
       if (typeof child === 'object' && child !== null) pending.push(child);
     }
@@ -1067,8 +1072,266 @@ export function compositionFactOrder(
   return order;
 }
 
-export function executeGraphReferenceCompositionTask(
+const MAX_PREPARED_FACT_DELTA = 4_096;
+
+function semanticFactsEqual(left: GraphWorkspaceFact, right: GraphWorkspaceFact): boolean {
+  const projectedLeft = canonicalizeGraphValue(semanticFact(left));
+  const projectedRight = canonicalizeGraphValue(semanticFact(right));
+  return (
+    projectedLeft.accepted &&
+    projectedRight.accepted &&
+    projectedLeft.value === projectedRight.value
+  );
+}
+
+function sameEntityIdentity(left: GraphEntityReference, right: GraphEntityReference): boolean {
+  return (
+    left.kind === right.kind &&
+    left.identityScheme === right.identityScheme &&
+    canonical(left.scope) === canonical(right.scope)
+  );
+}
+
+/**
+ * Rebuilds worker preparation from the session's previous preparation when only
+ * a bounded set of fact objects changed and entity aliasing is unchanged.
+ * Returns undefined whenever that proof is incomplete; the caller then runs the
+ * full composition task. The canonical digest still comes from the same edge
+ * and node material as a full preparation.
+ */
+function tryPatchPreparedComposition(
   request: GraphCompositionRequest
+): PreparedComposition | undefined {
+  const anchor = lastSessionCompositionAnchor();
+  const prepared = lastCompositionPreparation();
+  if (
+    !anchor ||
+    !prepared ||
+    anchor.lineageDigest.length === 0 ||
+    anchor.extractionEnvironmentDigest.length === 0
+  ) {
+    return undefined;
+  }
+  const previousSources = anchor.sources;
+  if (prepared.unresolved.length > 0 || prepared.diagnostics.length > 0) {
+    return undefined;
+  }
+  if (prepared.nodes.some((node) => (node.aliases?.length ?? 0) > 0)) {
+    return undefined;
+  }
+
+  const previousById = new Map<string, GraphWorkspaceFact>();
+  for (const source of previousSources) {
+    for (const fact of source.batch.facts) {
+      if (previousById.has(fact.factId)) return undefined;
+      previousById.set(fact.factId, fact);
+    }
+  }
+  const currentFacts: GraphWorkspaceFact[] = [];
+  const currentIds = new Set<string>();
+  for (const source of request.sources) {
+    for (const fact of source.batch.facts) {
+      if (currentIds.has(fact.factId)) return undefined;
+      currentFacts.push(fact);
+      currentIds.add(fact.factId);
+    }
+  }
+  const added: GraphWorkspaceFact[] = [];
+  for (const fact of currentFacts) {
+    const prior = previousById.get(fact.factId);
+    if (!prior) {
+      added.push(fact);
+      continue;
+    }
+    if (prior === fact) continue;
+    if (!semanticFactsEqual(prior, fact)) {
+      return undefined;
+    }
+  }
+  const removedIds: string[] = [];
+  for (const id of previousById.keys()) {
+    if (!currentIds.has(id)) removedIds.push(id);
+  }
+  if (added.length === 0 && removedIds.length === 0) {
+    return prepared;
+  }
+  if (added.length > MAX_PREPARED_FACT_DELTA || removedIds.length > MAX_PREPARED_FACT_DELTA) {
+    return undefined;
+  }
+  for (const fact of added) {
+    if (!('identityScheme' in fact.object)) {
+      return undefined;
+    }
+    if ((fact.subject.aliases?.length ?? 0) > 0 || (fact.object.aliases?.length ?? 0) > 0) {
+      return undefined;
+    }
+  }
+
+  const factKey = new Map<string, string>();
+  for (const candidate of prepared.candidates) {
+    for (const fact of candidate.facts) factKey.set(fact.factId, candidate.key);
+  }
+  for (const id of removedIds) {
+    if (!factKey.has(id)) {
+      return undefined;
+    }
+  }
+
+  const nodeById = new Map(prepared.nodes.map((node) => [node.id, node]));
+  const relations = new Map(
+    request.ontology.relations.map((relation) => [relation.kind, relation])
+  );
+  const dirty = new Set<string>();
+  for (const id of removedIds) {
+    const key = factKey.get(id);
+    if (key) dirty.add(key);
+  }
+  const extraNodes: GraphEntityReference[] = [];
+  const extraIds = new Set<string>();
+  for (const fact of added) {
+    if (!('identityScheme' in fact.object)) return undefined;
+    for (const entity of [fact.subject, fact.object]) {
+      const existing = nodeById.get(entity.id);
+      if (!existing) {
+        if (extraIds.has(entity.id)) continue;
+        extraIds.add(entity.id);
+        extraNodes.push(
+          Object.freeze({
+            id: entity.id,
+            identityScheme: entity.identityScheme,
+            kind: entity.kind,
+            scope: entity.scope,
+          })
+        );
+        continue;
+      }
+      if (!sameEntityIdentity(existing, entity)) {
+        return undefined;
+      }
+    }
+    const key = `${fact.subject.id}|${fact.predicate}|${fact.object.id}`;
+    if (!relations.has(fact.predicate)) {
+      return undefined;
+    }
+    dirty.add(key);
+  }
+
+  const referenced = new Set<string>();
+  for (const fact of currentFacts) {
+    referenced.add(fact.subject.id);
+    if ('identityScheme' in fact.object) referenced.add(fact.object.id);
+  }
+  const nodes = Object.freeze(
+    [...prepared.nodes.filter((node) => referenced.has(node.id)), ...extraNodes].sort(
+      (left, right) => left.id.localeCompare(right.id)
+    )
+  );
+  const included = new Set<string>();
+  for (const fact of currentFacts) {
+    if (!('identityScheme' in fact.object)) continue;
+    const key = `${fact.subject.id}|${fact.predicate}|${fact.object.id}`;
+    if (dirty.has(key)) included.add(fact.factId);
+  }
+  const rebuilt =
+    included.size === 0
+      ? undefined
+      : executeGraphReferenceCompositionTask(
+          {
+            ...request,
+            identityFreeze: {
+              nodes,
+              resolvedIds: Object.freeze(nodes.map((node) => [node.id, node.id] as const)),
+              invalidIds: Object.freeze([]),
+              unresolved: Object.freeze([]),
+            },
+          },
+          { includedFactIds: included }
+        );
+  if (rebuilt && (rebuilt.unresolved.length > 0 || rebuilt.diagnostics.length > 0)) {
+    return undefined;
+  }
+  if (rebuilt?.nodes.some((node) => (node.aliases?.length ?? 0) > 0)) {
+    return undefined;
+  }
+
+  const keptCandidates = prepared.candidates.filter((candidate) => !dirty.has(candidate.key));
+  const keptDecisions = prepared.decisions.filter(
+    (decision) => !dirty.has(decision.edgeKey) && decision.factIds.every((id) => currentIds.has(id))
+  );
+  return {
+    nodes: rebuilt?.nodes ?? nodes,
+    candidates: Object.freeze(
+      [...keptCandidates, ...(rebuilt?.candidates ?? [])].sort((left, right) =>
+        left.key.localeCompare(right.key)
+      )
+    ),
+    decisions: Object.freeze([...keptDecisions, ...(rebuilt?.decisions ?? [])]),
+    diagnostics: Object.freeze([]),
+    unresolved: Object.freeze([]),
+  };
+}
+
+function digestRefEqual(left: WisDigestReference, right: WisDigestReference): boolean {
+  return left.algorithm === right.algorithm && left.value === right.value;
+}
+
+function derivationLineageDigest(lineages: readonly GraphDerivationLineage[] | undefined): string {
+  const ordered = [...(lineages ?? [])]
+    .map((lineage) => ({
+      factId: lineage.factId,
+      derivation: lineage.derivation,
+      evidenceRoots: [...lineage.evidenceRoots].sort((left, right) => left.localeCompare(right)),
+      parentFactIds: [...lineage.parentFactIds].sort((left, right) => left.localeCompare(right)),
+    }))
+    .sort(
+      (left, right) =>
+        left.factId.localeCompare(right.factId) || left.derivation.localeCompare(right.derivation)
+    );
+  const canonicalized = canonicalizeGraphValue(ordered);
+  return canonicalized.accepted ? canonicalized.value : '';
+}
+
+function indexAnchorFacts(
+  sources: readonly GraphCompositionSource[]
+): Map<string, GraphWorkspaceFact> | undefined {
+  const byId = new Map<string, GraphWorkspaceFact>();
+  for (const source of sources) {
+    for (const fact of source.batch.facts) {
+      if (byId.has(fact.factId)) return undefined;
+      byId.set(fact.factId, fact);
+    }
+  }
+  return byId;
+}
+
+function edgeFactsSemanticallyBound(
+  factsById: ReadonlyMap<string, GraphWorkspaceFact>,
+  candidateFacts: readonly FactRecord[]
+): boolean {
+  for (const record of candidateFacts) {
+    const prior = factsById.get(record.fact.factId);
+    if (!prior) return false;
+    if (prior !== record.fact && !semanticFactsEqual(prior, record.fact)) return false;
+  }
+  return true;
+}
+
+function sameEdgeFactIds(
+  edgeFacts: readonly string[],
+  candidateFacts: readonly { readonly fact: { readonly factId: string } }[]
+): boolean {
+  if (edgeFacts.length !== candidateFacts.length) return false;
+  const seen = new Set(edgeFacts);
+  if (seen.size !== edgeFacts.length) return false;
+  for (const record of candidateFacts) {
+    if (!seen.delete(record.fact.factId)) return false;
+  }
+  return seen.size === 0;
+}
+
+export function executeGraphReferenceCompositionTask(
+  request: GraphCompositionRequest,
+  options?: { readonly includedFactIds?: ReadonlySet<string> }
 ): PreparedComposition {
   const relations = new Map(
     request.ontology.relations.map((relation) => [relation.kind, relation])
@@ -1076,7 +1339,12 @@ export function executeGraphReferenceCompositionTask(
   const entityFamilies = new Map(
     request.ontology.entities.map((entity) => [entity.kind, entity.family])
   );
-  const records = collectCompositionRecords(request);
+  const collected = collectCompositionRecords(request);
+  const includedFactIds = options?.includedFactIds;
+  const records =
+    includedFactIds && request.identityFreeze
+      ? collected.filter((record) => includedFactIds.has(record.fact.factId))
+      : collected;
   const entityResult = request.identityFreeze
     ? identityFromFreeze(request.identityFreeze)
     : mergeEntityAliases(
@@ -1825,6 +2093,7 @@ async function composeGraphWithIntern(
   ports: GraphExecutionPorts
 ): Promise<GraphCompositionResult> {
   try {
+    discardStagedCompositionPreparation();
     ports.cancellation.throwIfAborted();
     const ontology = validateGraphOntologyProfile(request.ontology);
     if (!ontology.accepted) return failure('invalid-input', ontology.issues);
@@ -1943,14 +2212,22 @@ async function composeGraphWithIntern(
     let inputBytes = 0;
     let outputBytes = 0;
     if (shardPlan.shards.length <= 1) {
-      const workerResult = await executeWorker(normalizedRequest);
-      recordGraphDataMovement('workerTransferred');
-      const workerFailure = compositionWorkerFailure(workerResult);
-      if (workerFailure) return workerFailure;
-      compactOutput = workerResult.output as PreparedComposition;
-      durationMs = workerResult.metrics.durationMs;
-      inputBytes = workerResult.metrics.inputBytes;
-      outputBytes = workerResult.metrics.outputBytes;
+      const patched = tryPatchPreparedComposition(normalizedRequest);
+      if (patched) {
+        compactOutput = patched;
+        durationMs = 0;
+        inputBytes = 0;
+        outputBytes = 1;
+      } else {
+        const workerResult = await executeWorker(normalizedRequest);
+        recordGraphDataMovement('workerTransferred');
+        const workerFailure = compositionWorkerFailure(workerResult);
+        if (workerFailure) return workerFailure;
+        compactOutput = workerResult.output as PreparedComposition;
+        durationMs = workerResult.metrics.durationMs;
+        inputBytes = workerResult.metrics.inputBytes;
+        outputBytes = workerResult.metrics.outputBytes;
+      }
     } else {
       const freeze = freezeGraphCompositionIdentity(normalizedRequest);
       const freezeBudget = Math.max(1, Math.floor(request.policy.maxWorkerOutputBytes / 2));
@@ -2116,13 +2393,56 @@ async function composeGraphWithIntern(
     const semanticDigestMs = Math.max(0, Math.round(performance.now() - semanticStartedAt));
 
     const proofStartedAt = performance.now();
-    const evaluatedProofs = new Map(
-      eligibleCandidates.map((candidate) => [
-        candidate.key,
-        evaluateProof(candidate, normalizedRequest, lineageByFactId),
-      ])
-    );
+    const lineageDigest = derivationLineageDigest(normalizedRequest.lineages);
+    const sessionAnchor = lastSessionCompositionAnchor();
+    const boundAnchor =
+      sessionAnchor &&
+      sessionAnchor.lineageDigest.length > 0 &&
+      sessionAnchor.lineageDigest === lineageDigest &&
+      digestRefEqual(sessionAnchor.receipt.proofPolicySetDigest, semanticDigests.proofPolicies)
+        ? sessionAnchor
+        : undefined;
+    const previousFactsById = boundAnchor ? indexAnchorFacts(boundAnchor.sources) : undefined;
+    const previousEdgesByKey = new Map<string, GraphEdge>();
+    if (boundAnchor && previousFactsById) {
+      for (const edge of boundAnchor.graph.edges) {
+        if (edge.state !== 'accepted') continue;
+        previousEdgesByKey.set(`${edge.from}|${edge.relation}|${edge.to}`, edge);
+      }
+    }
+    const reusedEdges = new Map<string, GraphEdge>();
+    for (const candidate of eligibleCandidates) {
+      const previous = previousEdgesByKey.get(candidate.key);
+      if (
+        previousFactsById &&
+        previous &&
+        sameEdgeFactIds(previous.facts, candidate.facts) &&
+        edgeFactsSemanticallyBound(previousFactsById, candidate.facts)
+      ) {
+        reusedEdges.set(candidate.key, previous);
+      }
+    }
     const functional = new Set(request.policy.functionalRelations);
+    const poisonedSlots = new Set<string>();
+    for (const candidate of eligibleCandidates) {
+      if (reusedEdges.has(candidate.key) || !functional.has(candidate.relation.kind)) continue;
+      poisonedSlots.add(`${candidate.from.id}|${candidate.relation.kind}`);
+    }
+    if (poisonedSlots.size > 0) {
+      for (const candidate of eligibleCandidates) {
+        if (!reusedEdges.has(candidate.key) || !functional.has(candidate.relation.kind)) continue;
+        if (poisonedSlots.has(`${candidate.from.id}|${candidate.relation.kind}`)) {
+          reusedEdges.delete(candidate.key);
+        }
+      }
+    }
+    const evaluatedProofs = new Map(
+      eligibleCandidates.flatMap((candidate) =>
+        reusedEdges.has(candidate.key)
+          ? []
+          : [[candidate.key, evaluateProof(candidate, normalizedRequest, lineageByFactId)] as const]
+      )
+    );
     const competing = new Map<string, EdgeCandidate[]>();
     for (const candidate of eligibleCandidates) {
       if (!functional.has(candidate.relation.kind)) continue;
@@ -2139,6 +2459,18 @@ async function composeGraphWithIntern(
     const evaluatedAt = ports.clock.now().toISOString();
     for (const candidate of eligibleCandidates) {
       ports.cancellation.throwIfAborted();
+      const reused = reusedEdges.get(candidate.key);
+      if (reused) {
+        edges.push(reused);
+        decisions.push({
+          edgeKey: candidate.key,
+          state: reused.state,
+          includedInGraph: true,
+          factIds: reused.facts,
+          explanation: reused.explanation,
+        });
+        continue;
+      }
       const proof = evaluatedProofs.get(candidate.key);
       if (!proof) throw new Error(`Proof evaluation is missing for ${candidate.key}.`);
       const competitors = competing.get(`${candidate.from.id}|${candidate.relation.kind}`) ?? [];
@@ -2428,6 +2760,12 @@ async function composeGraphWithIntern(
       semanticDigests,
       receipt,
     } satisfies GraphCompositionOutput);
+    stageSessionCompositionPreparation({
+      prepared: compactPrepared,
+      factSetDigest: receipt.factSetDigest,
+      proofPolicyDigest: receipt.proofPolicySetDigest,
+      lineageDigest,
+    });
 
     return {
       accepted: true,
@@ -2442,6 +2780,7 @@ async function composeGraphWithIntern(
       }),
     };
   } catch (error) {
+    discardStagedCompositionPreparation();
     if (ports.cancellation.aborted) {
       return failure('cancelled', [
         issue('GRAPH_COMPOSITION_CANCELLED', '', 'Composition was cancelled before publication.'),

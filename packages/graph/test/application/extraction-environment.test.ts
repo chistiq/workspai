@@ -9,6 +9,7 @@ import {
   GRAPH_EXTRACTION_ENVIRONMENT_SCHEMA,
   GRAPH_LANGUAGE_RUNTIME_DETECTION_VERSION,
   GRAPH_MATRIX_SOURCE_MASK_VERSION,
+  GRAPH_NATIVE_ENGINE_ABI_VERSION,
   GRAPH_PRODUCT_SCAN_PROFILE_ID,
   GRAPH_STANDARD_REPO_BUILD_POLICY,
   digestGraphExtractionEnvironment,
@@ -16,7 +17,11 @@ import {
 import { CORE_GRAPH_ONTOLOGY_PROFILE } from '../../src/contracts/index.js';
 import type { GraphProviderInput, GraphProviderRuntime } from '../../src/contracts/index.js';
 import type { GraphDigestPort } from '../../src/ports/index.js';
-import { createPackageJsonProvider } from '../../src/providers/index.js';
+import {
+  createPackageJsonProvider,
+  createSourceDeclarationsProvider,
+  GRAPH_SOURCE_DECLARATIONS_PROVIDER_VERSION,
+} from '../../src/providers/index.js';
 import { ECMASCRIPT_SYNTAX_VERSION } from '../../src/providers/ecmascript-syntax.js';
 import { MATRIX_SOURCE_MASK_VERSION } from '../../src/providers/matrix-source-mask.js';
 import { WORKSPACE_IDENTITY_INPUT_LOCATOR } from '../../src/providers/scope-containment.js';
@@ -93,6 +98,11 @@ describe('extraction environment digest', () => {
     );
     expect(GRAPH_CALL_RESOLUTION_ENVIRONMENT_VERSION).toBe(
       'workspai.graph.call-resolution-environment.v2'
+    );
+    expect(GRAPH_NATIVE_ENGINE_ABI_VERSION).toBe(1);
+    expect(GRAPH_SOURCE_DECLARATIONS_PROVIDER_VERSION).toBe('0.1.0-candidate');
+    expect(createSourceDeclarationsProvider().manifest.version).toBe(
+      GRAPH_SOURCE_DECLARATIONS_PROVIDER_VERSION
     );
     expect(GRAPH_LANGUAGE_RUNTIME_DETECTION_VERSION).toContain('language-runtime-detection');
     expect(GRAPH_PRODUCT_SCAN_PROFILE_ID).toContain('node-product-scan-profile');

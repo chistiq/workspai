@@ -15,6 +15,7 @@ import {
 } from '../../src/domain/admitted-graph-facts.js';
 import { snapshotAdmittedGraphCompositionSource } from '../../src/application/compose-graph.js';
 import { CORE_GRAPH_ONTOLOGY_PROFILE } from '../../src/contracts/index.js';
+import type { GraphRepoBuildResult } from '../../src/application/index.js';
 import type { GraphWorkspaceFact } from '../../src/contracts/index.js';
 import {
   GRAPH_FACT_BATCH_CONTRACT,
@@ -145,6 +146,50 @@ function fixtureSource(facts: readonly GraphWorkspaceFact[]): GraphCompositionSo
   };
 }
 
+function factIdsOf(result: GraphRepoBuildResult): readonly string[] {
+  return (result.compositionSources ?? [])
+    .flatMap((source) => source.batch.facts.map((fact) => fact.factId))
+    .sort();
+}
+
+function expectIndependentOracleMatch(
+  incremental: GraphRepoBuildResult,
+  oracle: GraphRepoBuildResult
+): void {
+  expect(incremental.status).toBe(oracle.status);
+  expect(incremental.graph?.generation.reference.contentDigest).toEqual(
+    oracle.graph?.generation.reference.contentDigest
+  );
+  expect(incremental.graph?.nodes.map((node) => node.id)).toEqual(
+    oracle.graph?.nodes.map((node) => node.id)
+  );
+  expect(incremental.graph?.edges.map((edge) => edge.id)).toEqual(
+    oracle.graph?.edges.map((edge) => edge.id)
+  );
+  expect(incremental.graph?.assertions.map((assertion) => assertion.id)).toEqual(
+    oracle.graph?.assertions.map((assertion) => assertion.id)
+  );
+  expect(factIdsOf(incremental)).toEqual(factIdsOf(oracle));
+  expect(incremental.quality.unknownZones).toEqual(oracle.quality.unknownZones);
+  expect(incremental.quality.unsupportedZones).toEqual(oracle.quality.unsupportedZones);
+  expect(incremental.quality.graph?.integrity).toBe(oracle.quality.graph?.integrity);
+  expect(
+    incremental.providers.map((summary) => ({
+      id: summary.provider.id,
+      version: summary.provider.version,
+      collection: summary.collection,
+      factCount: summary.factCount,
+    }))
+  ).toEqual(
+    oracle.providers.map((summary) => ({
+      id: summary.provider.id,
+      version: summary.provider.version,
+      collection: summary.collection,
+      factCount: summary.factCount,
+    }))
+  );
+}
+
 describe('session incremental composition', () => {
   it('aliases already admitted facts instead of cloning them in a mixed snapshot', () => {
     const admitted = fixtureFact('fact:admitted', 'a.ts');
@@ -271,6 +316,93 @@ describe('session incremental composition', () => {
     expect(second.graph?.generation.ontologySetDigest.value).not.toBe(
       first.graph?.generation.ontologySetDigest.value
     );
+    session.dispose();
+  });
+
+  it('matches an independent full build after a source-file rename', async () => {
+    const root = await writeRepo({
+      'package.json': '{"name":"session-rename","private":true}\n',
+      'src/alpha.ts': 'export function ping(): number { return 1; }\n',
+      'src/app.ts': `import { ping } from './alpha.js';\nexport function run(): number { return ping(); }\n`,
+    });
+    const session = createGraphProductBuildSession();
+    const first = await buildNodeRepoGraph({ root, session });
+    await fs.rename(path.join(root, 'src/alpha.ts'), path.join(root, 'src/beta.ts'));
+    await fs.writeFile(
+      path.join(root, 'src/app.ts'),
+      `import { ping } from './beta.js';\nexport function run(): number { return ping(); }\n`,
+      'utf8'
+    );
+    const incremental = await buildNodeIncrementalRepoGraph({
+      root,
+      session,
+      base: first,
+    });
+    const oracleSession = createGraphProductBuildSession();
+    const oracle = await buildNodeRepoGraph({ root, session: oracleSession });
+    expectIndependentOracleMatch(incremental, oracle);
+    expect(oracle.admittedInputs?.some((input) => input.locator === 'src/beta.ts')).toBe(true);
+    expect(oracle.admittedInputs?.some((input) => input.locator === 'src/alpha.ts')).toBe(false);
+    oracleSession.dispose();
+    session.dispose();
+  });
+
+  it('matches an independent full build after deleting then restoring a source file', async () => {
+    const files = {
+      'package.json': '{"name":"session-restore","private":true}\n',
+      'src/alpha.ts': 'export function ping(): number { return 1; }\n',
+      'src/app.ts': `import { ping } from './alpha.js';\nexport function run(): number { return ping(); }\n`,
+    };
+    const root = await writeRepo(files);
+    const session = createGraphProductBuildSession();
+    const first = await buildNodeRepoGraph({ root, session });
+    await fs.rm(path.join(root, 'src/alpha.ts'));
+    const deleted = await buildNodeIncrementalRepoGraph({
+      root,
+      session,
+      base: first,
+    });
+    const deletedOracleSession = createGraphProductBuildSession();
+    const deletedOracle = await buildNodeRepoGraph({ root, session: deletedOracleSession });
+    expectIndependentOracleMatch(deleted, deletedOracle);
+    deletedOracleSession.dispose();
+    await fs.writeFile(path.join(root, 'src/alpha.ts'), files['src/alpha.ts'], 'utf8');
+    const restored = await buildNodeIncrementalRepoGraph({
+      root,
+      session,
+      base: deleted,
+    });
+    const oracleSession = createGraphProductBuildSession();
+    const oracle = await buildNodeRepoGraph({ root, session: oracleSession });
+    expectIndependentOracleMatch(restored, oracle);
+    expect(oracle.admittedInputs?.some((input) => input.locator === 'src/alpha.ts')).toBe(true);
+    oracleSession.dispose();
+    session.dispose();
+  });
+
+  it('matches an independent full build when a re-export cycle callee changes', async () => {
+    const root = await writeRepo({
+      'package.json': '{"name":"session-reexport-cycle","private":true}\n',
+      'src/a.ts': 'export function ping(): number { return 1; }\nexport { pong } from "./b.js";\n',
+      'src/b.ts': 'export function pong(): number { return 2; }\nexport { ping } from "./a.js";\n',
+      'src/app.ts': `import { ping, pong } from './a.js';\nexport function run(): number { return ping() + pong(); }\n`,
+    });
+    const session = createGraphProductBuildSession();
+    const first = await buildNodeRepoGraph({ root, session });
+    await fs.writeFile(
+      path.join(root, 'src/a.ts'),
+      'export function ping(): number { return 9; }\nexport { pong } from "./b.js";\n',
+      'utf8'
+    );
+    const incremental = await buildNodeIncrementalRepoGraph({
+      root,
+      session,
+      base: first,
+    });
+    const oracleSession = createGraphProductBuildSession();
+    const oracle = await buildNodeRepoGraph({ root, session: oracleSession });
+    expectIndependentOracleMatch(incremental, oracle);
+    oracleSession.dispose();
     session.dispose();
   });
 

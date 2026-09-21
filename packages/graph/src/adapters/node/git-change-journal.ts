@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
+import { statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -348,6 +349,52 @@ interface GitSnapshot {
   readonly prefix: string;
   readonly baseline: GraphGitWorktreeBaseline;
   readonly stageListing: Buffer;
+  readonly indexPath: string;
+}
+
+interface GitObservationCache {
+  readonly root: string;
+  readonly head: string;
+  readonly indexMtimeMs: number;
+  readonly indexSize: number;
+  readonly snapshot: GitSnapshot;
+  coveredLocatorDigest?: string;
+}
+
+let gitObservationCache: GitObservationCache | undefined;
+
+function locatorCoverageDigest(locators: readonly string[] | undefined): string {
+  const hash = createHash('sha256');
+  hash.update(String(locators?.length ?? 0));
+  for (const locator of locators ?? []) {
+    hash.update('\0');
+    hash.update(locator);
+  }
+  return hash.digest('hex');
+}
+
+function rememberGitObservation(cache: GitObservationCache): void {
+  gitObservationCache = cache;
+}
+
+function cachedGitSnapshot(
+  root: string,
+  signal?: AbortSignal
+): { readonly snapshot: GitSnapshot; readonly cache: GitObservationCache } | undefined {
+  const cached = gitObservationCache;
+  if (!cached || cached.root !== root) return undefined;
+  if (signal?.aborted) return undefined;
+  const head = spawnGit(root, ['rev-parse', 'HEAD'], signal);
+  if (head.status !== 0 || utf8Trim(head.stdout) !== cached.head) return undefined;
+  let stamp: { mtimeMs: number; size: number };
+  try {
+    const stat = statSync(cached.snapshot.indexPath);
+    stamp = { mtimeMs: stat.mtimeMs, size: stat.size };
+  } catch {
+    return undefined;
+  }
+  if (stamp.mtimeMs !== cached.indexMtimeMs || stamp.size !== cached.indexSize) return undefined;
+  return { snapshot: cached.snapshot, cache: cached };
 }
 
 function captureGitSnapshot(root: string, signal?: AbortSignal): GitSnapshot | undefined {
@@ -380,10 +427,21 @@ function captureGitSnapshot(root: string, signal?: AbortSignal): GitSnapshot | u
     : (['ls-files', '--stage', '-z'] as const);
   const index = spawnGit(resolvedTop, indexArgs, signal);
   if (index.status !== 0) return undefined;
-  return {
+  const indexPathResult = spawnGit(resolvedTop, ['rev-parse', '--git-path', 'index'], signal);
+  if (indexPathResult.status !== 0) return undefined;
+  const indexPath = path.resolve(resolvedTop, utf8Trim(indexPathResult.stdout));
+  let indexStat: { mtimeMs: number; size: number };
+  try {
+    const stat = statSync(indexPath);
+    indexStat = { mtimeMs: stat.mtimeMs, size: stat.size };
+  } catch {
+    return undefined;
+  }
+  const snapshot = {
     toplevel: resolvedTop,
     prefix,
     stageListing: index.stdout,
+    indexPath,
     baseline: freezeGitWorktreeBaseline({
       schema: GRAPH_GIT_WORKTREE_BASELINE_SCHEMA,
       worktreeKey: digestKey([utf8Trim(gitDir.stdout), prefix]),
@@ -395,6 +453,14 @@ function captureGitSnapshot(root: string, signal?: AbortSignal): GitSnapshot | u
       branch: symbolic.status === 0 ? utf8Trim(symbolic.stdout).replace(/^refs\/heads\//u, '') : '',
     }),
   };
+  rememberGitObservation({
+    root: path.resolve(root),
+    head: headOid,
+    indexMtimeMs: indexStat.mtimeMs,
+    indexSize: indexStat.size,
+    snapshot,
+  });
+  return snapshot;
 }
 
 /**
@@ -410,7 +476,9 @@ export function createNodeGitChangeJournalPort(): GraphChangeJournalPort {
       if (request.signal?.aborted) {
         return untrustedChangeJournal('git', 'Change journal inspection was cancelled.');
       }
-      const snapshot = captureGitSnapshot(request.root, request.signal);
+      const resolvedRoot = path.resolve(request.root);
+      const reused = cachedGitSnapshot(resolvedRoot, request.signal);
+      const snapshot = reused?.snapshot ?? captureGitSnapshot(request.root, request.signal);
       if (!snapshot) return absentChangeJournal();
       const porcelain = spawnGit(
         snapshot.toplevel,
@@ -455,14 +523,25 @@ export function createNodeGitChangeJournalPort(): GraphChangeJournalPort {
       if (!admission.admitted) {
         return untrustedChangeJournal('git', admission.reason, current);
       }
-      const coverage = proveInventoryGitCoverage({
-        toplevel: snapshot.toplevel,
-        prefix: snapshot.prefix,
-        locators: request.inventoryLocators,
-        porcelainRecords: scoped.records,
-        stageListing: snapshot.stageListing,
-        signal: request.signal,
-      });
+      const coverageDigest = locatorCoverageDigest(request.inventoryLocators);
+      const porcelainClean = scoped.records.length === 0;
+      const cachedCoverage =
+        porcelainClean &&
+        reused?.cache.coveredLocatorDigest === coverageDigest &&
+        reused.cache.snapshot === snapshot;
+      const coverage = cachedCoverage
+        ? { covered: true as const }
+        : proveInventoryGitCoverage({
+            toplevel: snapshot.toplevel,
+            prefix: snapshot.prefix,
+            locators: request.inventoryLocators,
+            porcelainRecords: scoped.records,
+            stageListing: snapshot.stageListing,
+            signal: request.signal,
+          });
+      if (!cachedCoverage && coverage.covered && porcelainClean && gitObservationCache) {
+        gitObservationCache.coveredLocatorDigest = coverageDigest;
+      }
       if (!coverage.covered) {
         return untrustedChangeJournal('git', coverage.reason, current);
       }

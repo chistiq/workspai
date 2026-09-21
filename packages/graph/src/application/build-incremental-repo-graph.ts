@@ -1,3 +1,5 @@
+import { performance } from 'node:perf_hooks';
+
 import type {
   GraphContentStateManifest,
   GraphDiagnostic,
@@ -12,8 +14,13 @@ import { assessIncrementalBuildEquivalence } from './assess-incremental-build-eq
 import { buildContentStateManifest } from './build-content-state-manifest.js';
 import { buildRepoGraph } from './build-repo-graph.js';
 import { buildShardDependenciesFromSources } from './build-shard-dependencies.js';
-import { collectGraphSemanticDependencies } from './collect-semantic-dependencies.js';
+import {
+  collectGraphSemanticDependencies,
+  semanticDependenciesForShard,
+  type GraphIncrementalSemanticStamps,
+} from './collect-semantic-dependencies.js';
 import { contentStateLeavesFromProviderInputs } from './content-state-manifest-types.js';
+import { scopesEqual } from './extraction-environment.js';
 import { summarizeCanonicalGraphDelta } from './diff-graph-generations.js';
 import { freezeGitWorktreeBaseline } from './git-worktree-baseline.js';
 import type {
@@ -91,6 +98,60 @@ function failedBuild(
   });
 }
 
+const REUSED_MANIFEST_INPUT_KIND = 'source-file';
+
+function leafDigestEqual(
+  left: { readonly algorithm: string; readonly value: string },
+  right: { readonly algorithm: string; readonly value: string }
+): boolean {
+  return left.algorithm === right.algorithm && left.value === right.value;
+}
+
+/**
+ * The unchanged-manifest fast path may reuse the previous manifest object only
+ * when a rebuild would write the same identity. Locator and content-digest
+ * value are not enough: scope, scan profile, input kind, digest algorithm,
+ * and recorded size must match too. Any miss rebuilds the manifest.
+ */
+function contentLeavesMatch(
+  manifest: GraphContentStateManifest,
+  inputs: readonly GraphProviderInput[],
+  scope: GraphContentStateManifest['scope'],
+  scanProfileDigest: { readonly algorithm: string; readonly value: string }
+): boolean {
+  if (!scopesEqual(manifest.scope, scope)) return false;
+  const byLocator = new Map(inputs.map((input) => [input.locator, input]));
+  if (byLocator.size !== inputs.length) return false;
+  let files = 0;
+  for (const node of manifest.nodes) {
+    if (node.kind !== 'file') continue;
+    files += 1;
+    const input = byLocator.get(node.locator);
+    if (!input) return false;
+    if (node.inputKind !== REUSED_MANIFEST_INPUT_KIND) return false;
+    if (!leafDigestEqual(input.digest, node.contentDigest)) return false;
+    if (!leafDigestEqual(node.scanProfileDigest, scanProfileDigest)) return false;
+    if (node.observations?.sizeBytes !== input.byteLength) return false;
+  }
+  return files === inputs.length;
+}
+
+function manifestCarriesCurrentStamps(
+  manifest: GraphContentStateManifest,
+  stamps: GraphIncrementalSemanticStamps
+): boolean {
+  for (const shard of manifest.shardDependencies) {
+    const expected = semanticDependenciesForShard(stamps, shard.providerStages);
+    const have = new Set(
+      shard.semanticDependencies.map((digest) => `${digest.algorithm}:${digest.value}`)
+    );
+    if (!expected.every((digest) => have.has(`${digest.algorithm}:${digest.value}`))) {
+      return false;
+    }
+  }
+  return true;
+}
+
 function fileLocatorsFromManifest(manifest: GraphContentStateManifest): readonly string[] {
   return Object.freeze(
     manifest.nodes.filter((node) => node.kind === 'file').map((node) => node.locator)
@@ -159,13 +220,17 @@ async function inspectChangeJournal(
 export async function buildIncrementalRepoGraph(
   request: GraphIncrementalRepoBuildRequest
 ): Promise<GraphIncrementalRepoBuildResult> {
-  const stamps = await collectGraphSemanticDependencies({
-    ontology: request.ontology,
-    compositionPolicy: request.policy.composition,
-    redactionProfile: request.policy.redactionProfile,
-    providerManifests: request.providers.map((provider) => provider.manifest),
-    digest: request.ports.digest,
-  });
+  const stampStartedAt = performance.now();
+  const stamps =
+    request.semanticStamps ??
+    (await collectGraphSemanticDependencies({
+      ontology: request.ontology,
+      compositionPolicy: request.policy.composition,
+      redactionProfile: request.policy.redactionProfile,
+      providerManifests: request.providers.map((provider) => provider.manifest),
+      digest: request.ports.digest,
+    }));
+  const semanticStampsMs = Math.max(0, Math.round(performance.now() - stampStartedAt));
   const registered = request.providers.map((provider) => provider.manifest.id);
   const generatedAt = request.ports.clock.now().toISOString();
   const knownLocators = fileLocatorsFromManifest(request.baseManifest);
@@ -198,8 +263,14 @@ export async function buildIncrementalRepoGraph(
   let stampedGitBaseline: GraphIncrementalRepoBuildResult['gitBaseline'];
   let gitObservationMs = 0;
   let snapshotMs = 0;
+  let inventoryWalkMs = 0;
+  let projectedManifestMs = 0;
+  let reuseUnchangedManifest = false;
+  let unchangedPlan: ReturnType<typeof planIncrementalGraphBuild> | undefined;
 
   for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    reuseUnchangedManifest = false;
+    unchangedPlan = undefined;
     const gitStartedAt = performance.now();
     journal = await inspectChangeJournal(request);
     gitObservationMs += Math.max(0, Math.round(performance.now() - gitStartedAt));
@@ -221,11 +292,13 @@ export async function buildIncrementalRepoGraph(
 
     if (!executeAsFull) {
       try {
+        const inventoryStartedAt = performance.now();
         inventory = await request.ports.fileSource.inventory({
           ...inventoryBounds,
           onlyLocators: inventoryReread.rereadLocators,
           knownLocators,
         });
+        inventoryWalkMs += Math.max(0, Math.round(performance.now() - inventoryStartedAt));
       } catch {
         inventory = failedInventory(
           request.ports.signal?.aborted === true || request.ports.cancellation.aborted
@@ -253,16 +326,32 @@ export async function buildIncrementalRepoGraph(
           inventoried: inventory.inputs,
         });
 
-        const projectedManifest = buildContentStateManifest({
-          scope: request.scope,
-          generatedAt,
-          scanProfileDigest: request.scanProfileDigest,
-          leaves: contentStateLeavesFromProviderInputs(admittedInputs, request.scanProfileDigest),
-          shardDependencies: projectShardDependencies(request.baseManifest, admittedInputs, {
-            stamps,
-            registeredProviderIds: registered,
-          }),
-        });
+        const unchangedLeaves =
+          contentLeavesMatch(
+            request.baseManifest,
+            admittedInputs,
+            request.scope,
+            request.scanProfileDigest
+          ) &&
+          (request.manifestStampsVerified === true ||
+            manifestCarriesCurrentStamps(request.baseManifest, stamps));
+        const projectedStartedAt = performance.now();
+        const projectedManifest = unchangedLeaves
+          ? request.baseManifest
+          : buildContentStateManifest({
+              scope: request.scope,
+              generatedAt,
+              scanProfileDigest: request.scanProfileDigest,
+              leaves: contentStateLeavesFromProviderInputs(
+                admittedInputs,
+                request.scanProfileDigest
+              ),
+              shardDependencies: projectShardDependencies(request.baseManifest, admittedInputs, {
+                stamps,
+                registeredProviderIds: registered,
+              }),
+            });
+        projectedManifestMs += Math.max(0, Math.round(performance.now() - projectedStartedAt));
 
         const planned = planIncrementalGraphBuild({
           baseGeneration: request.baseGeneration,
@@ -271,7 +360,17 @@ export async function buildIncrementalRepoGraph(
           targetManifest: projectedManifest,
           requiredSemanticDependencies: stamps.required,
           semanticStamps: stamps,
+          ...(unchangedLeaves ? { trustIdenticalManifest: true } : {}),
         });
+        if (
+          unchangedLeaves &&
+          planned.status === 'complete' &&
+          planned.comparison.changedInputs.length === 0 &&
+          planned.providersToRecompute.length === 0
+        ) {
+          reuseUnchangedManifest = true;
+          unchangedPlan = planned;
+        }
 
         const reusable = new Set(request.baseSources.map((source) => source.manifest.id));
         const addedRequired = await providersRequiredForAddedInputs({
@@ -329,6 +428,7 @@ export async function buildIncrementalRepoGraph(
     }
 
     if (executeAsFull && !build) {
+      reuseUnchangedManifest = false;
       build = await buildRepoGraph({
         root: request.root,
         scope: request.scope,
@@ -418,6 +518,7 @@ export async function buildIncrementalRepoGraph(
       build.status !== 'failed' &&
       build.status !== 'cancelled'
     ) {
+      reuseUnchangedManifest = false;
       executeAsFull = true;
       build = await buildRepoGraph({
         root: request.root,
@@ -464,23 +565,28 @@ export async function buildIncrementalRepoGraph(
       : undefined;
 
   const compositionSources = build.compositionSources ?? [];
-  const shardDependencies = buildShardDependenciesFromSources(compositionSources, stamps);
-  const targetManifest = buildContentStateManifest({
-    scope: request.scope,
-    generatedAt,
-    scanProfileDigest: request.scanProfileDigest,
-    leaves: contentStateLeavesFromProviderInputs(admittedInputs, request.scanProfileDigest),
-    shardDependencies,
-  });
+  const postManifestStartedAt = performance.now();
+  const targetManifest = reuseUnchangedManifest
+    ? request.baseManifest
+    : buildContentStateManifest({
+        scope: request.scope,
+        generatedAt,
+        scanProfileDigest: request.scanProfileDigest,
+        leaves: contentStateLeavesFromProviderInputs(admittedInputs, request.scanProfileDigest),
+        shardDependencies: buildShardDependenciesFromSources(compositionSources, stamps),
+      });
 
-  const plan = planIncrementalGraphBuild({
-    baseGeneration: request.baseGeneration,
-    targetGeneration: request.targetGeneration,
-    baseManifest: request.baseManifest,
-    targetManifest,
-    requiredSemanticDependencies: stamps.required,
-    semanticStamps: stamps,
-  });
+  const plan =
+    unchangedPlan ??
+    planIncrementalGraphBuild({
+      baseGeneration: request.baseGeneration,
+      targetGeneration: request.targetGeneration,
+      baseManifest: request.baseManifest,
+      targetManifest,
+      requiredSemanticDependencies: stamps.required,
+      semanticStamps: stamps,
+    });
+  const postManifestMs = Math.max(0, Math.round(performance.now() - postManifestStartedAt));
 
   const equivalence = assessIncrementalBuildEquivalence({
     referenceDigest: request.referenceGenerationDigest,
@@ -509,7 +615,7 @@ export async function buildIncrementalRepoGraph(
     failed: build.status === 'failed' || build.status === 'cancelled',
   });
   const generationDelta =
-    request.baseGraph && build.graph
+    request.baseGraph && build.graph && request.baseGraph !== build.graph
       ? summarizeCanonicalGraphDelta(request.baseGraph, build.graph)
       : { graph: plan.delta.graph, facts: plan.delta.facts };
   const delta = Object.freeze({
@@ -611,6 +717,10 @@ export async function buildIncrementalRepoGraph(
       ...build.metrics,
       gitObservationMs,
       snapshotMs,
+      semanticStampsMs,
+      postManifestMs,
+      inventoryWalkMs,
+      projectedManifestMs,
     }),
     diagnostics: finalDiagnostics,
     quality: Object.freeze({

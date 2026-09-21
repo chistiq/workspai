@@ -26,6 +26,7 @@ import type {
   GraphWorkerTaskRequest,
   GraphWorkerTaskResult,
 } from '../../src/ports/index.js';
+import { markGraphFactAdmitted } from '../../src/domain/admitted-graph-facts.js';
 
 const digest = { algorithm: 'sha256' as const, value: 'a'.repeat(64) };
 const scope = { kind: 'project' as const, projectIds: ['project:receipt'] as [string] };
@@ -251,6 +252,7 @@ describe('composition receipt reuse', () => {
         },
       ],
     };
+    markGraphFactAdmitted(mutatedFact);
     const mutated = {
       ...cloned,
       batch: {

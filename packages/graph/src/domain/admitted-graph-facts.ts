@@ -23,6 +23,7 @@ export function markAdmittedGraphSnapshot(value: object): void {
     const current = pending.pop();
     if (!current || visited.has(current)) continue;
     visited.add(current);
+    if (current !== value && Object.isFrozen(current) && admittedFacts.has(current)) continue;
     admittedFacts.add(current);
     for (const child of Object.values(current)) {
       if (typeof child === 'object' && child !== null) pending.push(child);

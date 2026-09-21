@@ -29,20 +29,12 @@ import { buildWorkspaceKnowledgeGraph } from '../src/workspace-knowledge-graph.j
 import { WORKSPACE_INTELLIGENCE_ARTIFACTS } from '../src/contracts/workspace-intelligence-runtime-registry.js';
 import { replaceFileAtomically } from '../src/utils/atomic-file-replace.js';
 import { hashCanonicalJson } from '../src/workspace-model-hash.js';
+import { portableGraphProjectId } from '../src/graph-producer-benchmark-support.js';
+
+export { portableGraphProjectId } from '../src/graph-producer-benchmark-support.js';
 
 const PATH_LEAK = /(?:[A-Za-z]:[\\/]|\/home\/|\/Users\/|\\\\)/u;
 const FIXED_GENERATED_AT = '2026-09-12T00:00:00.000Z';
-
-export function portableGraphProjectId(id: string): string {
-  return (
-    id
-      .normalize('NFC')
-      .toLowerCase()
-      .replace(/[^a-z0-9._-]+/gu, '-')
-      .replace(/^-+|-+$/gu, '')
-      .slice(0, 128) || 'project'
-  );
-}
 
 function parseArgs(args: readonly string[]): {
   readonly referenceRoot: string;

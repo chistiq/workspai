@@ -8,6 +8,7 @@ import {
   type GraphWorkspaceFact,
   GRAPH_STANDARD_STRUCTURAL_EXTRACTOR_PROFILE,
 } from '../contracts/index.js';
+import { appendReusedLocatorFacts } from '../application/locator-fact-shards.js';
 import { graphUnsupportedObservation } from '../domain/unknown-cause.js';
 import { isHostSuppliedGraphInputLocator } from './scope-containment.js';
 
@@ -147,6 +148,22 @@ export function createRepositoryFilesProvider(): GraphProviderRuntime {
         );
       for (const [index, input] of inputs.entries()) {
         if (request.signal?.aborted) throw new Error('Repository file collection was cancelled.');
+        if (
+          appendReusedLocatorFacts(
+            {
+              providerId: REPOSITORY_FILES_PROVIDER_ID,
+              locator: input.locator,
+              inputDigest: input.digest.value,
+              inputIndex: index,
+            },
+            '',
+            facts,
+            [],
+            []
+          )
+        ) {
+          continue;
+        }
         const file = await request.resolveIdentity({
           namespace: 'workspai',
           kind: 'file',

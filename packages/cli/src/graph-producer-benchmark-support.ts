@@ -5,7 +5,23 @@ import { readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-export const GRAPH_PRODUCER_BENCHMARK_SCHEMA = 'workspai.graph-producer-benchmark.v3' as const;
+export const GRAPH_PRODUCER_BENCHMARK_SCHEMA = 'workspai.graph-producer-benchmark.v5' as const;
+
+/** Host abort if the whole corpus run exceeds this wall time. */
+export const GRAPH_PRODUCER_BENCHMARK_DEFAULT_DEADLINE_MS = 900_000;
+
+/** Kill one isolated child that has not exited. OpenBot full spawn is ~8s. */
+export const GRAPH_PRODUCER_BENCHMARK_DEFAULT_CHILD_TIMEOUT_MS = 60_000;
+
+export const GRAPH_BENCHMARK_INCREMENTAL_KINDS = Object.freeze([
+  'no-change',
+  'one-file-edit',
+  'file-create',
+  'file-delete',
+  'module-invalidation',
+  'framework-binding',
+  'configuration-change',
+] as const);
 
 /**
  * Measurement groups. Held-out repositories are not inspected during
@@ -17,14 +33,31 @@ export const GRAPH_REFERENCE_CORPUS_PROTOCOL = Object.freeze({
   heldOut: Object.freeze(['bun', 'istio']),
 });
 
-export type GraphBenchmarkIncrementalKind =
-  | 'no-change'
-  | 'one-file-edit'
-  | 'file-create'
-  | 'file-delete'
-  | 'module-invalidation'
-  | 'framework-binding'
-  | 'configuration-change';
+export type GraphBenchmarkIncrementalKind = (typeof GRAPH_BENCHMARK_INCREMENTAL_KINDS)[number];
+
+export function parseGraphBenchmarkIncrementalKinds(
+  value: string
+): readonly GraphBenchmarkIncrementalKind[] {
+  const allowed = new Set<string>(GRAPH_BENCHMARK_INCREMENTAL_KINDS);
+  const kinds = value
+    .split(',')
+    .map((item) => item.trim())
+    .filter((item) => item.length > 0);
+  if (kinds.length === 0) {
+    throw new Error('--incremental-kinds requires at least one kind.');
+  }
+  const seen = new Set<string>();
+  for (const kind of kinds) {
+    if (!allowed.has(kind)) {
+      throw new Error(`Unsupported incremental kind: ${kind}`);
+    }
+    if (seen.has(kind)) {
+      throw new Error(`--incremental-kinds cannot repeat ${kind}.`);
+    }
+    seen.add(kind);
+  }
+  return kinds as GraphBenchmarkIncrementalKind[];
+}
 
 const SOURCE_EXTENSION = /\.(?:cjs|cts|go|js|jsx|mjs|mts|py|ts|tsx)$/u;
 const CREATED_LOCATOR = '.__workspai_graph_bench_created.ts';
@@ -88,6 +121,17 @@ export function implementationSourceDigest(repoRoot: string): {
     head: /^[0-9a-f]{40}$/u.test(head) ? head : 'unspecified',
     workingTreeDigest: hash.digest('hex'),
   };
+}
+
+export function portableGraphProjectId(id: string): string {
+  return (
+    id
+      .normalize('NFC')
+      .toLowerCase()
+      .replace(/[^a-z0-9._-]+/gu, '-')
+      .replace(/^-+|-+$/gu, '')
+      .slice(0, 128) || 'project'
+  );
 }
 
 export async function createPinnedCommitWorktree(repoRoot: string): Promise<{

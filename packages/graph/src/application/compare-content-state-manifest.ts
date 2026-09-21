@@ -296,6 +296,23 @@ function resolveRenameCandidates(
 export function compareContentStateManifests(
   request: GraphContentStateComparisonRequest
 ): GraphContentStateComparisonResult {
+  if (request.base === request.target) {
+    let directories = 0;
+    for (const node of request.base.nodes) {
+      if (node.kind === 'directory') directories += 1;
+    }
+    return Object.freeze({
+      baseRoot: request.base.merkleRoot,
+      targetRoot: request.target.merkleRoot,
+      comparedBranches: 0,
+      skippedBranches: directories,
+      changedInputs: Object.freeze([]),
+      causes: Object.freeze([]),
+      diagnostics: Object.freeze([]),
+      status: 'complete',
+    });
+  }
+
   const budget: GraphContentStateComparisonBudget = Object.freeze({
     ...DEFAULT_BUDGET,
     ...request.budget,
