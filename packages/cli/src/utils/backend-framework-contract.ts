@@ -28,6 +28,7 @@ export type BackendRuntimeFamily =
 export type BackendPlatformKey =
   | 'microsoft-agent-framework'
   | 'openai-agents'
+  | 'openrouter'
   | 'fastapi'
   | 'django'
   | 'flask'
@@ -141,6 +142,15 @@ const BACKEND_CONTRACTS: Record<BackendPlatformKey, BackendContractDescriptor> =
     importStack: 'unknown',
     aliases: ['openai-agents', 'openai agents', 'openai agents sdk'],
     kitPrefixes: ['agent.openai'],
+  },
+  openrouter: {
+    key: 'openrouter',
+    runtime: 'node',
+    displayName: 'OpenRouter',
+    supportTier: 'extended',
+    importStack: 'unknown',
+    aliases: ['openrouter'],
+    kitPrefixes: ['gateway.openrouter'],
   },
   fastapi: {
     key: 'fastapi',
@@ -787,6 +797,10 @@ export function isAgentFrameworkPlatformKey(key: BackendPlatformKey): boolean {
   return key === 'microsoft-agent-framework' || key === 'openai-agents';
 }
 
+function preservesAuthoredRuntime(key: BackendPlatformKey): boolean {
+  return isAgentFrameworkPlatformKey(key) || key === 'openrouter';
+}
+
 export function detectBackendFrameworkFromHints(input: {
   framework?: string;
   runtime?: string;
@@ -795,7 +809,7 @@ export function detectBackendFrameworkFromHints(input: {
   const byKit = findByKitName(input.kitName);
   if (byKit !== 'unknown') {
     const detected = buildDetection(byKit, 'high', 'kit');
-    return isAgentFrameworkPlatformKey(byKit) && input.runtime
+    return preservesAuthoredRuntime(byKit) && input.runtime
       ? { ...detected, runtime: normalizeBackendRuntimeFamily(input.runtime) }
       : detected;
   }
@@ -803,7 +817,7 @@ export function detectBackendFrameworkFromHints(input: {
   const byFramework = normalizeBackendPlatformKey(input.framework);
   if (byFramework !== 'unknown') {
     const detected = buildDetection(byFramework, 'high', 'framework');
-    return isAgentFrameworkPlatformKey(byFramework) && input.runtime
+    return preservesAuthoredRuntime(byFramework) && input.runtime
       ? { ...detected, runtime: normalizeBackendRuntimeFamily(input.runtime) }
       : detected;
   }

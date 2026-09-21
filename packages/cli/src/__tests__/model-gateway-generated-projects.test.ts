@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import { rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import fsExtra from 'fs-extra';
 
 import * as create from '../create.js';
@@ -223,10 +223,79 @@ describe('generated OpenRouter gateway projects', () => {
       expect(model.projects.every((project: { kind?: string }) => project.kind === 'gateway')).toBe(
         true
       );
+      expect(
+        model.projects.map(
+          (project: {
+            name?: string;
+            framework?: string;
+            frameworkDisplayName?: string;
+            runtime?: string;
+          }) => ({
+            name: project.name,
+            framework: project.framework,
+            frameworkDisplayName: project.frameworkDisplayName,
+            runtime: project.runtime,
+          })
+        )
+      ).toEqual(
+        expect.arrayContaining([
+          {
+            name: 'first-gateway',
+            framework: 'openrouter',
+            frameworkDisplayName: 'OpenRouter',
+            runtime: 'node',
+          },
+          {
+            name: 'second-gateway',
+            framework: 'openrouter',
+            frameworkDisplayName: 'OpenRouter',
+            runtime: 'python',
+          },
+        ])
+      );
+
+      const logs: string[] = [];
+      const logSpy = vi.spyOn(console, 'log').mockImplementation((...args: unknown[]) => {
+        logs.push(args.map((value) => String(value)).join(' '));
+      });
+      try {
+        const { runDoctor } = await import('../doctor.js');
+        await runDoctor({ workspace: true, json: true });
+      } finally {
+        logSpy.mockRestore();
+      }
+      const doctorLine = logs.find((line) => line.trim().startsWith('{'));
+      expect(doctorLine).toBeTruthy();
+      const doctor = JSON.parse(doctorLine ?? '{}') as {
+        projects?: Array<{
+          name?: string;
+          framework?: string;
+          projectKind?: string;
+          projectArchetype?: string;
+          runtimeFamily?: string;
+          issues?: string[];
+        }>;
+      };
+      const byName = new Map((doctor.projects ?? []).map((project) => [project.name, project]));
+      expect(byName.get('first-gateway')).toMatchObject({
+        framework: 'OpenRouter',
+        projectKind: 'gateway',
+        projectArchetype: 'service',
+        runtimeFamily: 'node',
+      });
+      expect(byName.get('second-gateway')).toMatchObject({
+        framework: 'OpenRouter',
+        projectKind: 'gateway',
+        projectArchetype: 'service',
+        runtimeFamily: 'python',
+      });
+      expect(byName.get('second-gateway')?.issues ?? []).not.toEqual(
+        expect.arrayContaining([expect.stringMatching(/src\/__init__\.py/)])
+      );
     } finally {
       process.chdir(previousCwd);
     }
-  }, 90_000);
+  }, 180_000);
 
   it('creates and verifies a TypeScript gateway in a path that contains spaces', async () => {
     const kit = listModelGatewayProjectKits().find(

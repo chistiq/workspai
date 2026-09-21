@@ -105,6 +105,30 @@ describe('backend-framework-contract', () => {
       confidence: 'high',
       source: 'kit',
     });
+    expect(
+      detectBackendFrameworkFromHints({
+        kitName: 'gateway.openrouter.typescript',
+        runtime: 'node',
+        framework: 'openrouter',
+      })
+    ).toMatchObject({
+      key: 'openrouter',
+      displayName: 'OpenRouter',
+      runtime: 'node',
+      confidence: 'high',
+      source: 'kit',
+    });
+    expect(
+      detectBackendFrameworkFromHints({
+        kitName: 'gateway.openrouter.python',
+        runtime: 'python',
+      })
+    ).toMatchObject({
+      key: 'openrouter',
+      runtime: 'python',
+      confidence: 'high',
+      source: 'kit',
+    });
   });
 
   it('detects backend frameworks from project manifests and markers', async () => {

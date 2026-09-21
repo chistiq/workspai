@@ -49,8 +49,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Qualification treats sparse workspace-run init receipts (`errorCategory:
   unknown` and `Stage failed with exit code 1`, including missing npm/pip
   excerpts) as registry infrastructure, not product failure, and retries once.
-- Generated `.workspai/project.json` `contracts.consumes` is derived from the
-  kit `gatewayId` instead of a hardcoded OpenRouter value.
+- Doctor and the workspace model keep an OpenRouter gateway as framework
+  `openrouter` and kind `gateway`, instead of collapsing it to generic Python
+  or Node.js. Python src-layout packages are no longer blocked for a missing
+  `src/__init__.py` when a nested package already has one.
 
 ## [0.76.0] - 2026-09-20
 

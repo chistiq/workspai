@@ -290,6 +290,7 @@ function contextualizeDoctorSystemChecks(
 type DetectedFramework =
   | 'Microsoft Agent Framework'
   | 'OpenAI Agents SDK'
+  | 'OpenRouter'
   | 'FastAPI'
   | 'Django'
   | 'Flask'
@@ -358,6 +359,7 @@ type ProjectRuntimeFamily =
 type ProjectKind =
   | 'backend'
   | 'agent'
+  | 'gateway'
   | 'frontend'
   | 'desktop'
   | 'extension'
@@ -1506,6 +1508,10 @@ function kindForFramework(framework: DetectedFramework): ProjectKind {
     return 'agent';
   }
 
+  if (framework === 'OpenRouter') {
+    return 'gateway';
+  }
+
   if (framework === 'Tauri' || framework === 'Electron') {
     return 'desktop';
   }
@@ -1692,6 +1698,8 @@ function toDoctorFramework(detection: BackendFrameworkDetection): DetectedFramew
       return 'Microsoft Agent Framework';
     case 'openai-agents':
       return 'OpenAI Agents SDK';
+    case 'openrouter':
+      return 'OpenRouter';
     case 'fastapi':
       return 'FastAPI';
     case 'django':
@@ -1838,13 +1846,15 @@ function applyBackendFrameworkDetection(
   health.projectKind =
     detection.key === 'microsoft-agent-framework' || detection.key === 'openai-agents'
       ? 'agent'
-      : detection.key === 'tauri' || detection.key === 'electron'
-        ? 'desktop'
-        : detection.key === 'vscode-extension'
-          ? 'extension'
-          : isGenericBackendDetection(detection)
-            ? 'generic'
-            : 'backend';
+      : detection.key === 'openrouter'
+        ? 'gateway'
+        : detection.key === 'tauri' || detection.key === 'electron'
+          ? 'desktop'
+          : detection.key === 'vscode-extension'
+            ? 'extension'
+            : isGenericBackendDetection(detection)
+              ? 'generic'
+              : 'backend';
   health.runtimeFamily = toDoctorRuntimeFamily(detection.runtime);
 }
 
@@ -3257,6 +3267,7 @@ async function appendRuntimeAdapterProbes(
   const supportsRuntimeAdapterProbe =
     health.projectKind === 'backend' ||
     health.projectKind === 'generic' ||
+    health.projectKind === 'gateway' ||
     health.projectKind === 'desktop' ||
     health.projectKind === 'extension';
   if (!supportsRuntimeAdapterProbe) {
@@ -3728,7 +3739,10 @@ async function appendBuiltInBackendProbes(
   projectPath: string,
   health: ProjectHealth
 ): Promise<void> {
-  const isBackend = health.projectKind === 'backend' || health.projectKind === 'generic';
+  const isBackend =
+    health.projectKind === 'backend' ||
+    health.projectKind === 'generic' ||
+    health.projectKind === 'gateway';
   if (!isBackend) {
     return;
   }
@@ -4680,7 +4694,8 @@ async function checkProjectUnnormalized(
   if (primaryRuntime === 'python') {
     if (
       primaryBackendDetection.key === 'microsoft-agent-framework' ||
-      primaryBackendDetection.key === 'openai-agents'
+      primaryBackendDetection.key === 'openai-agents' ||
+      primaryBackendDetection.key === 'openrouter'
     ) {
       applyBackendFrameworkDetection(health, primaryBackendDetection);
     } else {
@@ -4696,6 +4711,8 @@ async function checkProjectUnnormalized(
       frameworkImport = 'agent-framework-core';
     } else if (health.framework === 'OpenAI Agents SDK') {
       frameworkImport = 'openai-agents';
+    } else if (health.framework === 'OpenRouter') {
+      frameworkImport = '';
     }
 
     const agentRuntimeRoot = health.projectKind === 'agent' ? 'agents/primary' : undefined;
@@ -4815,7 +4832,9 @@ async function checkProjectUnnormalized(
 
     if (await fsExtra.pathExists(srcPath)) {
       const srcInit = path.join(srcPath, '__init__.py');
-      if (!(await fsExtra.pathExists(srcInit))) {
+      const hasPackageRoot = await fsExtra.pathExists(srcInit);
+      const hasNestedPackage = hasPackageRoot ? false : await srcContainsPackage(srcPath);
+      if (!hasPackageRoot && !hasNestedPackage) {
         health.modulesHealthy = false;
         health.missingModules.push('src/__init__.py');
       }
@@ -5067,6 +5086,7 @@ async function detectProjectArchetype(
 ): Promise<ProjectArchetype> {
   if (health.projectKind === 'extension') return 'plugin';
   if (health.projectKind === 'agent') return 'application';
+  if (health.projectKind === 'gateway') return 'service';
   if (health.projectKind === 'platform') {
     const packageJson = await fsExtra
       .readJson(path.join(projectPath, 'package.json'))
@@ -5219,7 +5239,9 @@ async function checkProject(
     });
   }
   const canonicalKind = await inferWorkspaceProjectKind(projectPath);
-  if (canonicalKind === 'agent') {
+  if (canonicalKind === 'gateway') {
+    health.projectKind = 'gateway';
+  } else if (canonicalKind === 'agent') {
     health.projectKind = 'agent';
   } else if (
     canonicalKind === 'backend' ||
@@ -5250,6 +5272,14 @@ async function checkProject(
   applyArchetypeApplicability(health);
   finalizeUniversalDoctorDiagnosis(health);
   return health;
+}
+
+async function srcContainsPackage(srcPath: string): Promise<boolean> {
+  for (const name of await listDirectories(srcPath)) {
+    if (name === '__pycache__' || name.startsWith('.')) continue;
+    if (await fsExtra.pathExists(path.join(srcPath, name, '__init__.py'))) return true;
+  }
+  return false;
 }
 
 async function listDirectories(basePath: string): Promise<string[]> {
