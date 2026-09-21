@@ -120,6 +120,8 @@
     "verify:agent-framework:matrix": "tsx scripts/verify-agent-framework-conformance.ts --reports test-results/agent-framework-conformance",
     "discover:agent-framework:versions": "tsx scripts/discover-agent-framework-versions.ts",
     "propose:agent-framework:versions": "tsx scripts/propose-agent-framework-version-update.ts",
+    "discover:model-gateway:versions": "tsx scripts/propose-model-gateway-version-update.ts",
+    "propose:model-gateway:versions": "tsx scripts/propose-model-gateway-version-update.ts",
     "promote:agent-framework:admission": "tsx scripts/promote-agent-framework-release-admission.ts",
     "prepush:test:runtime-contract": "node scripts/run-cached-prepush-gate.mjs runtime-contract",
     "test:runtime-matrix:full": "node scripts/runtime-acceptance-matrix.mjs --full",

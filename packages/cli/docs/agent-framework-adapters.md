@@ -27,6 +27,10 @@ complete cross-platform matrix is reviewed into that inventory. Public
 commands fail closed rather than silently substituting Microsoft, OpenAI, or
 another runtime.
 
+OpenRouter Client SDK access belongs to the [AI Gateway](./model-gateways.md)
+category. Do not add OpenRouter under Agent Frameworks, and do not use
+`@openrouter/agent` to implement a gateway kit.
+
 ## Published contracts
 
 | Contract                                                                       | Purpose                                                                                  |

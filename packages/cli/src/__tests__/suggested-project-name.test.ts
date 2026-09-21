@@ -8,7 +8,8 @@ describe('suggested-project-name', () => {
     expect(suggestProjectNameForKit('fastapi.standard')).toMatch(/^[a-z]+-api$/);
     expect(suggestProjectNameForKit('frontend.nextjs')).toMatch(/^[a-z]+-web$/);
     expect(suggestProjectNameForKit('springboot.standard')).toMatch(/^[a-z]+-service$/);
-    expect(suggestProjectNameForKit('frontend.astro')).toMatch(/^[a-z]+-site$/);
+    expect(suggestProjectNameForKit('gateway.openrouter.typescript')).toMatch(/^[a-z]+-gateway$/);
+    expect(suggestProjectNameForKit('gateway.openrouter.python')).toMatch(/^[a-z]+-gateway$/);
   });
 });
 

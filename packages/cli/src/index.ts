@@ -58,6 +58,11 @@ import {
   resolveAgentFrameworkProjectKit,
 } from './agent-frameworks/index.js';
 import {
+  generateModelGatewayProject,
+  isModelGatewayProjectKit,
+  lookupModelGatewayProjectKit,
+} from './model-gateways/index.js';
+import {
   WORKSPACE_REPAIR_DECISIONS,
   type WorkspaceRepairDecision,
 } from './contracts/workspace-repair-transaction-contract.js';
@@ -406,7 +411,6 @@ async function enforceWorkspaceProfileForRequestedKit(kitName: string): Promise<
   if (isAgentFrameworkProjectKit(normalizedKitName)) {
     return true;
   }
-
   try {
     const [profile, mode] = await Promise.all([
       readWorkspaceManifestProfile(workspacePath),
@@ -415,9 +419,10 @@ async function enforceWorkspaceProfileForRequestedKit(kitName: string): Promise<
     const kitDefinition = resolveKitDefinition(normalizedKitName);
     const frontendDefinition = resolveFrontendGenerator(normalizedKitName);
     const officialDefinition = resolveOfficialProjectGenerator(normalizedKitName);
+    const gatewayKit = lookupModelGatewayProjectKit(normalizedKitName);
     const runtime = frontendDefinition
       ? 'node'
-      : (officialDefinition?.runtime ?? kitDefinition?.runtime ?? 'python');
+      : (officialDefinition?.runtime ?? kitDefinition?.runtime ?? gatewayKit?.runtime ?? 'python');
     const projectCompatibility = resolveWorkspaceProfileProjectCompatibility({
       profile,
       runtime,
@@ -1337,6 +1342,98 @@ async function runAgentFrameworkProjectCreate(args: string[]): Promise<number> {
   }
 }
 
+async function runModelGatewayProjectCreate(args: string[]): Promise<number> {
+  if (args[0] !== 'create' || args[1] !== 'project') return 1;
+  const kit = lookupModelGatewayProjectKit(args[2]);
+  if (!kit) return 1;
+  const projectName = args[3];
+  const hasJson = args.includes('--json');
+  if (!projectName) {
+    process.stderr.write(
+      `Usage: workspai create project ${kit.id} <name> [--output <dir>] [--dry-run] [--skip-git] [--json]\n`
+    );
+    return 1;
+  }
+  try {
+    validateProjectName(projectName);
+  } catch (error) {
+    process.stderr.write(`${error instanceof Error ? error.message : String(error)}\n`);
+    return 1;
+  }
+  const outputDir = readFlagValue(args, '--output') || process.cwd();
+  const projectPath = path.resolve(outputDir, projectName);
+  if (args.includes('--dry-run')) {
+    if (hasJson) {
+      console.log(
+        JSON.stringify(
+          cliOperationSuccess('create project', {
+            kit: kit.id,
+            name: projectName,
+            projectPath,
+            dryRun: true,
+          }),
+          null,
+          2
+        )
+      );
+    } else {
+      console.log(chalk.bold(`\nAI Gateway · ${kit.label}`));
+      console.log(chalk.gray(`   Runtime: ${kit.runtime}`));
+      console.log(chalk.gray(`   Target: ${projectPath}`));
+      console.log(chalk.gray('   Plan: write the OpenRouter Client SDK starter and register it'));
+      console.log(chalk.gray('   Dry run: no files or workspace evidence will be changed.'));
+    }
+    return 0;
+  }
+  if (await fsExtra.pathExists(projectPath)) {
+    process.stderr.write(`❌ Directory "${projectPath}" already exists\n`);
+    return 1;
+  }
+  let ownsProjectPath = false;
+  try {
+    await fsExtra.ensureDir(path.dirname(projectPath));
+    await generateModelGatewayProject({ projectPath, projectName, kit });
+    ownsProjectPath = true;
+    if (!args.includes('--skip-git') && !args.includes('--no-git')) {
+      const { initializeStandaloneGitRepository } = await import('./create.js');
+      await initializeStandaloneGitRepository(
+        projectPath,
+        createUiSpinner('Preparing git repository', {
+          component: 'create.model-gateway',
+          phase: 'git-init',
+          metadata: { projectName, kit: kit.id },
+        }),
+        'chore: initialize Workspai AI Gateway project'
+      );
+    }
+    await finalizeCreatedProjectWorkspace(args, projectPath, projectName);
+    if (hasJson) {
+      console.log(
+        JSON.stringify(
+          cliOperationSuccess('create project', {
+            kit: kit.id,
+            name: projectName,
+            projectPath,
+            dryRun: false,
+          }),
+          null,
+          2
+        )
+      );
+    } else {
+      console.log(chalk.green(`✔ ${kit.label} project created at ${projectPath}`));
+      console.log(chalk.gray('   Dependencies were not installed and no model was called.'));
+    }
+    return 0;
+  } catch (error) {
+    if (ownsProjectPath) await fsExtra.remove(projectPath).catch(() => undefined);
+    process.stderr.write(
+      `Workspai ${kit.id} generator failed: ${error instanceof Error ? error.message : String(error)}\n`
+    );
+    return 1;
+  }
+}
+
 async function runNpmBackedKitCreate(args: string[]): Promise<number> {
   if (args[0] !== 'create' || args[1] !== 'project') return 1;
 
@@ -1609,6 +1706,8 @@ Examples:
   npx workspai create project desktop.tauri desktop-app
   npx workspai create project extension.vscode editor-tools --skip-install
   npx workspai create project agent.microsoft.python support-agent --skip-git
+  npx workspai create project gateway.openrouter.typescript model-gateway
+  npx workspai create project gateway.openrouter.python model-gateway
 
 Common kits:
   fastapi.standard      Python API via RapidKit Core bridge
@@ -1625,11 +1724,13 @@ Common kits:
   extension.vscode      VS Code extension
   agent.microsoft.python Microsoft Agent Framework · Python
   agent.microsoft.dotnet Microsoft Agent Framework · .NET
+  gateway.openrouter.typescript AI Gateway · OpenRouter · TypeScript
+  gateway.openrouter.python AI Gateway · OpenRouter · Python
   php.laravel           Backend Laravel application
 
 Interactive selection:
   Workspai first asks what you are building, then shows only kits in that category.
-  Backend, Frontend, Desktop, AI Agent, Extension, and Gaming are stable category ids;
+  Backend, Frontend, Desktop, AI Agent, AI Gateway, Extension, and Gaming are stable category ids;
   categories without an admitted kit are hidden until a compatible kit is available.
 
 Options:
@@ -2044,6 +2145,7 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
 
         if (
           isAgentFrameworkProjectKit(kitChoice) ||
+          isModelGatewayProjectKit(kitChoice) ||
           isNpmBackedKit(kitChoice) ||
           isFrontendProjectKit(kitChoice) ||
           isOfficialProjectKit(kitChoice)
@@ -2066,11 +2168,13 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
           await prepareOutsideWorkspaceCreate(normalizedArgs);
           const code = isAgentFrameworkProjectKit(kitChoice)
             ? await runAgentFrameworkProjectCreate(normalizedArgs)
-            : isFrontendProjectKit(kitChoice)
-              ? await runFrontendProjectCreate(normalizedArgs)
-              : isOfficialProjectKit(kitChoice)
-                ? await runOfficialProjectCreate(normalizedArgs)
-                : await runNpmBackedKitCreate(normalizedArgs);
+            : isModelGatewayProjectKit(kitChoice)
+              ? await runModelGatewayProjectCreate(normalizedArgs)
+              : isFrontendProjectKit(kitChoice)
+                ? await runFrontendProjectCreate(normalizedArgs)
+                : isOfficialProjectKit(kitChoice)
+                  ? await runOfficialProjectCreate(normalizedArgs)
+                  : await runNpmBackedKitCreate(normalizedArgs);
           return code;
         }
 
@@ -2093,6 +2197,13 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
       if (isAgentFrameworkProjectKit(requestedKit)) {
         await prepareOutsideWorkspaceCreate(args, { requireWorkspace: true });
         return await runAgentFrameworkProjectCreate(args);
+      }
+      if (isModelGatewayProjectKit(requestedKit)) {
+        if (!(await enforceWorkspaceProfileForRequestedKit(requestedKit))) {
+          return 1;
+        }
+        await prepareOutsideWorkspaceCreate(args);
+        return await runModelGatewayProjectCreate(args);
       }
       const capability = resolveCreatePlannerCapability({
         kitId: requestedKit,

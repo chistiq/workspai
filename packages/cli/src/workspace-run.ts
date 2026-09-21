@@ -390,6 +390,32 @@ async function readProjectDeclaredName(projectPath: string): Promise<string | nu
   return null;
 }
 
+async function projectDeclaresGatewayCategory(projectPath: string): Promise<boolean> {
+  for (const relativeConfigPath of [
+    path.join('.workspai', 'project.json'),
+    path.join('.workspai', 'context.json'),
+    path.join('.rapidkit', 'project.json'),
+    path.join('.rapidkit', 'context.json'),
+  ]) {
+    const configPath = path.join(projectPath, relativeConfigPath);
+    if (!(await pathExists(configPath))) {
+      continue;
+    }
+    try {
+      const payload = await readJsonFile<Record<string, unknown>>(configPath);
+      for (const key of ['kind', 'category', 'project_type'] as const) {
+        const value = payload[key];
+        if (typeof value === 'string' && value.trim().toLowerCase() === 'gateway') {
+          return true;
+        }
+      }
+    } catch {
+      // Keep lifecycle selection resilient for malformed metadata.
+    }
+  }
+  return false;
+}
+
 async function filterProjectsByScope(
   workspacePath: string,
   projects: string[],
@@ -859,6 +885,7 @@ async function runStartupSmoke(input: {
   runtime: RuntimeFamily;
   framework?: string;
   timeoutMs: number;
+  argv?: LifecycleArgvStep;
 }): Promise<{
   exitCode: number;
   stdout: string;
@@ -886,12 +913,18 @@ async function runStartupSmoke(input: {
           RAPIDKIT_WORKSPACE_RUN_CHILD: '1',
         },
       })
-    : execa(input.finalCommand, [], {
-        cwd: input.projectPath,
-        reject: false,
-        shell: true,
-        timeout: input.timeoutMs,
-      })) as unknown as StartupSubprocess;
+    : input.argv
+      ? execa(input.argv.executable, input.argv.args, {
+          cwd: input.projectPath,
+          reject: false,
+          timeout: input.timeoutMs,
+        })
+      : execa(input.finalCommand, [], {
+          cwd: input.projectPath,
+          reject: false,
+          shell: true,
+          timeout: input.timeoutMs,
+        })) as unknown as StartupSubprocess;
 
   const completion = Promise.resolve(subprocess).then(
     (result) => ({ kind: 'exit' as const, result }),
@@ -1061,6 +1094,8 @@ async function runRapidkitSelfCommand(
       stderr: commandTimedOut
         ? `${result.stderr ?? ''}${result.stderr ? '\n' : ''}Stage timed out after ${timeoutMs}ms`
         : result.stderr,
+      shortMessage: result.shortMessage,
+      message: result.message,
     };
   } catch (error) {
     const timedOut =
@@ -1105,6 +1140,29 @@ function isVitestRuntime(): boolean {
   return (
     process.env.VITEST === 'true' || process.env.VITEST === '1' || process.env.NODE_ENV === 'test'
   );
+}
+
+function stringifyCommandStream(value: unknown): string {
+  if (typeof value === 'string') return value;
+  if (Buffer.isBuffer(value)) return value.toString('utf8');
+  if (value == null) return '';
+  return String(value);
+}
+
+function collectCommandOutput(result: {
+  stdout?: unknown;
+  stderr?: unknown;
+  shortMessage?: unknown;
+  message?: unknown;
+}): { stdout: string; stderr: string } {
+  const stdout = stringifyCommandStream(result.stdout);
+  const stderr = stringifyCommandStream(result.stderr);
+  if (stdout.trim() || stderr.trim()) {
+    return { stdout, stderr };
+  }
+  const message = stringifyCommandStream(result.message).trim();
+  const shortMessage = stringifyCommandStream(result.shortMessage).trim();
+  return { stdout, stderr: message || shortMessage };
 }
 
 function boundedFailureOutput(lines: string[], limit = 8): string {
@@ -1408,6 +1466,7 @@ async function executeStageCommand(
             runtime,
             framework,
             timeoutMs,
+            argv: materializedArgv?.length === 1 ? materializedArgv[0] : undefined,
           })
         : useRapidkitWrapper
           ? stage === 'init' && isVitestRuntime()
@@ -1419,6 +1478,7 @@ async function executeStageCommand(
                 let combinedStderr = '';
                 let lastExit = 0;
                 let timedOut = false;
+                let lastProcessMessage = '';
                 for (const step of materializedArgv) {
                   const stepResult = await execa(step.executable, step.args, {
                     cwd: projectPath,
@@ -1452,13 +1512,21 @@ async function executeStageCommand(
                       '\nMissing admitted lock tool `uv`. Install uv and retry; Workspai does not fall back to an unlocked pip freeze.';
                   }
                   if (lastExit !== 0) {
+                    lastProcessMessage = [stepResult.message, stepResult.shortMessage]
+                      .filter((value): value is string => typeof value === 'string')
+                      .join('\n');
                     break;
                   }
                 }
+                const captured = collectCommandOutput({
+                  stdout: combinedStdout,
+                  stderr: combinedStderr,
+                  shortMessage: lastProcessMessage,
+                });
                 return {
                   exitCode: lastExit,
-                  stdout: combinedStdout.trim(),
-                  stderr: combinedStderr.trim(),
+                  stdout: captured.stdout,
+                  stderr: captured.stderr,
                   timedOut,
                 };
               })()
@@ -1487,8 +1555,9 @@ async function executeStageCommand(
       (result as { timedOut?: unknown }).timedOut
     );
     exitCode = commandTimedOut ? 124 : Number(result.exitCode ?? 0);
-    stdout = result.stdout;
-    stderr = result.stderr;
+    const captured = collectCommandOutput(result);
+    stdout = captured.stdout;
+    stderr = captured.stderr;
     healthStatus =
       stage === 'start'
         ? (result as { healthStatus?: { healthy: boolean; reason?: string } }).healthStatus
@@ -1511,15 +1580,25 @@ async function executeStageCommand(
       error !== null &&
       'timedOut' in error &&
       Boolean((error as { timedOut?: unknown }).timedOut);
+    const message = timedOut
+      ? `Stage timed out after ${timeoutMs}ms`
+      : error instanceof Error
+        ? error.message
+        : 'Command execution failed';
+    const category = timedOut ? 'timeout' : 'runtime';
     return {
       exitCode: timedOut ? 124 : 1,
       command: resolvedCommand,
-      message: timedOut
-        ? `Stage timed out after ${timeoutMs}ms`
-        : error instanceof Error
-          ? error.message
-          : 'Command execution failed',
-      errorCategory: timedOut ? 'timeout' : 'runtime',
+      message,
+      errorCategory: category,
+      failureDiagnostic: {
+        category,
+        exitCode: timedOut ? 124 : 1,
+        command: resolvedCommand,
+        timedOut,
+        timeoutMs,
+        outputExcerpt: message,
+      },
     };
   }
 
@@ -1563,15 +1642,15 @@ async function executeStageCommand(
     (exitCode === 143 && durationMs >= Math.floor(timeoutMs * 0.8));
   const normalizedCategory = exitCode === 0 ? undefined : timedOut ? 'timeout' : errorCategory;
   const failureDiagnostic =
-    exitCode === 0 || !normalizedCategory
+    exitCode === 0
       ? undefined
       : {
-          category: normalizedCategory,
+          category: (normalizedCategory ?? 'unknown') as ErrorCategory,
           exitCode,
           command: resolvedCommand,
           timedOut,
           timeoutMs,
-          ...(outputExcerpt ? { outputExcerpt } : {}),
+          outputExcerpt: outputExcerpt || `Stage failed with exit code ${exitCode}`,
         };
 
   return {
@@ -1946,16 +2025,19 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
         }));
       row.runtimeExecutions = runtimeExecutions;
 
+      const useDeclaredLifecycleUnits =
+        lifecyclePlan.polyglot ||
+        Boolean(runtimeFilter) ||
+        plannedUnits.length > 1 ||
+        (plannedUnits.length === 1 && plannedUnits[0]?.unit.root !== '.') ||
+        (await projectDeclaresGatewayCategory(projectPath));
+
       // The project shortcut is safe only for one concrete runtime unit. Two
       // independent manifests can use the same language; collapsing those to
       // one root wrapper silently skips work just as surely as collapsing a
-      // polyglot project would.
-      if (
-        !lifecyclePlan.polyglot &&
-        !runtimeFilter &&
-        runtimeExecutions.length === 1 &&
-        plannedUnits[0]?.unit.root === '.'
-      ) {
+      // polyglot project would. Gateway kits stay on the declared polyglot
+      // unit commands because they are not Rapidkit wrapper-owned adapters.
+      if (!useDeclaredLifecycleUnits && runtimeExecutions.length === 1) {
         const detected = await detectProjectFramework(projectPath);
         row.framework = detected.framework;
         row.runtimeDetected = detected.runtime;
@@ -1998,12 +2080,7 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
         return;
       }
 
-      if (
-        lifecyclePlan.polyglot ||
-        runtimeFilter ||
-        plannedUnits.length > 1 ||
-        (plannedUnits.length === 1 && plannedUnits[0]?.unit.root !== '.')
-      ) {
+      if (useDeclaredLifecycleUnits) {
         if (plannedUnits.length === 0) {
           row.status = 'failed';
           row.reason = runtimeFilter

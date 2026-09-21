@@ -1,6 +1,7 @@
 import { resolveFrontendGenerator } from '../frontend-project.js';
 import { resolveOfficialProjectGenerator } from '../official-project.js';
 import { resolveKitDefinition } from './kit-registry.js';
+import { lookupModelGatewayProjectKit } from '../model-gateways/project-kits.js';
 
 const NAME_THEMES = [
   'catalog',
@@ -91,6 +92,11 @@ export function suggestProjectNameForKit(kitId: string): string {
   const official = resolveOfficialProjectGenerator(kitId);
   if (official) {
     return `${theme}-${OFFICIAL_SUFFIX[official.id] ?? 'app'}`;
+  }
+
+  const gateway = lookupModelGatewayProjectKit(kitId);
+  if (gateway) {
+    return `${theme}-gateway`;
   }
 
   const kit = resolveKitDefinition(kitId);

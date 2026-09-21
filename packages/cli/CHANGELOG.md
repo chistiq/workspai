@@ -7,6 +7,53 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Introduced the first-class **AI Gateway** Create category (`Unified model
+  access and routing`) with OpenRouter Client SDK kits
+  `gateway.openrouter.typescript` (`@openrouter/sdk` `1.3.11`) and
+  `gateway.openrouter.python` (`openrouter` `1.2.11`). Generated projects are
+  server-owned, pin reviewed SDK baselines, keep the model as runtime
+  configuration, and do not call a model during Create. The official Go SDK
+  remains beta and is not included on the Create surface. Attach is unsupported
+  for this surface. Version discovery and three-OS qualification workflows are
+  read-only and do not admit a Workspai release by themselves.
+
+### Changed
+
+- Workspace Model kind/category enums, Create planner native kits, interactive
+  Create, Workspace Run/Verify polyglot lifecycle, and doctor runtime adapters
+  now recognize `gateway` as a first-class project category distinct from
+  Agent Framework.
+- Model Gateway qualification CI runs one job per OS that qualifies both
+  TypeScript and Python adapters, instead of an unused kit axis that duplicated
+  the same suites. Job-level cache env no longer uses `runner.temp` or a
+  duplicate `NPM_CONFIG_CACHE`; `setup-node` owns the npm cache.
+
+### Fixed
+
+- Generated Python `max_price` validation now rejects overflow-to-infinity
+  strings, NaN, and non-finite values while preserving accepted numeric strings
+  for the SDK. Stream cleanup in both generated gateways is once-only and
+  prefers iterator `return()`/`close()` over a second SDK close/cancel.
+- Workspace Run `start` executes a single materialized argv step without a
+  shell, so Python gateway projects whose install path contains spaces fail
+  closed on missing credentials instead of being split by `/bin/sh`.
+- `validateCommand` accepts a space-containing executable path only when that
+  path exists, then falls back to the first token so commands such as
+  `go build ./...` still resolve through `which`.
+- Model Gateway version discovery is a read-only `discover → propose → review
+  → qualify → merge` path. Registry and GitHub must agree before a baseline
+  proposal can be written. Workspace lifecycle qualification no longer returns
+  green when package installation fails.
+- Qualification treats sparse workspace-run init receipts (`errorCategory:
+  unknown` and `Stage failed with exit code 1`, including missing npm/pip
+  excerpts) as registry infrastructure, not product failure, and retries once.
+- Doctor and the workspace model keep an OpenRouter gateway as framework
+  `openrouter` and kind `gateway`, instead of collapsing it to generic Python
+  or Node.js. Python src-layout packages are no longer blocked for a missing
+  `src/__init__.py` when a nested package already has one.
+
 ## [0.76.0] - 2026-09-20
 
 ### Added

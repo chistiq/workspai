@@ -66,6 +66,14 @@ describe('kit picker choices', () => {
           value: 'agent.openai.typescript',
           label: 'AI Agent · OpenAI Agents SDK · TypeScript',
         }),
+        expect.objectContaining({
+          value: 'gateway.openrouter.typescript',
+          label: 'AI Gateway · OpenRouter · TypeScript',
+        }),
+        expect.objectContaining({
+          value: 'gateway.openrouter.python',
+          label: 'AI Gateway · OpenRouter · Python',
+        }),
       ])
     );
   });
@@ -76,6 +84,11 @@ describe('kit picker choices', () => {
       expect.objectContaining({ value: 'frontend', label: 'Frontend' }),
       expect.objectContaining({ value: 'desktop', label: 'Desktop' }),
       expect.objectContaining({ value: 'agent', label: 'AI Agent' }),
+      expect.objectContaining({
+        value: 'gateway',
+        label: 'AI Gateway',
+        hint: 'Unified model access and routing',
+      }),
       expect.objectContaining({ value: 'extension', label: 'Extension' }),
     ]);
   });
@@ -100,6 +113,11 @@ describe('kit picker choices', () => {
     expect(buildKitPickerChoices('agent').every((choice) => choice.category === 'agent')).toBe(
       true
     );
+    expect(buildKitPickerChoices('gateway')).toHaveLength(2);
+    expect(buildKitPickerChoices('gateway').map((choice) => choice.value)).toEqual([
+      'gateway.openrouter.python',
+      'gateway.openrouter.typescript',
+    ]);
     expect(buildKitPickerChoices('gaming')).toEqual([]);
   });
 });

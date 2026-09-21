@@ -781,6 +781,9 @@ These fields are designed for release gates and extension timeline cards that mu
   dependency manifests under `agents/primary` and aims Python/`uv`, Node
   `npm --prefix`, or .NET repair commands at that runtime, not at a phantom
   project-root manifest.
+- OpenRouter AI Gateway projects keep `kind` as `gateway` and `framework` as
+  `openrouter`. Doctor uses the project-root Node or Python runtime, not the
+  Agent Framework nested layout.
 
 ## Project JSON fields (AI/automation)
 

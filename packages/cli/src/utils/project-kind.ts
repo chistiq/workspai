@@ -18,6 +18,7 @@ export type WorkspaceProjectKind =
   | 'service'
   | 'worker'
   | 'agent'
+  | 'gateway'
   | 'platform'
   | 'library'
   | 'infra'
@@ -31,6 +32,7 @@ export type WorkspaceProjectCategory =
   | 'desktop'
   | 'extension'
   | 'agent'
+  | 'gateway'
   | 'platform'
   | 'library'
   | 'infrastructure'
@@ -52,6 +54,7 @@ const PROJECT_KIND_VALUES = new Set<WorkspaceProjectKind>([
   'frontend',
   'worker',
   'agent',
+  'gateway',
   'platform',
   'library',
   'infra',
@@ -303,6 +306,8 @@ export function categorizeWorkspaceProjectKind(
       return 'backend';
     case 'agent':
       return 'agent';
+    case 'gateway':
+      return 'gateway';
     case 'frontend':
     case 'desktop':
     case 'extension':
@@ -381,6 +386,13 @@ export async function inferWorkspaceProjectKind(
     )
   ) {
     return 'extension';
+  }
+
+  if (
+    (typeof kit === 'string' && kit.trim().toLowerCase().startsWith('gateway.')) ||
+    (typeof framework === 'string' && framework.trim().toLowerCase() === 'openrouter')
+  ) {
+    return 'gateway';
   }
 
   // Repository topology is stronger evidence than an inferred application

@@ -46,6 +46,7 @@ export type DoctorSurfaceRuntimeFamily = (typeof DOCTOR_SURFACE_RUNTIME_FAMILIES
 export type DoctorSurfaceProjectKind =
   | 'backend'
   | 'agent'
+  | 'gateway'
   | 'frontend'
   | 'desktop'
   | 'extension'
@@ -1322,6 +1323,7 @@ async function buildEnvContractProbe(input: SurfaceInput): Promise<DoctorSurface
   const envFileConventionSupported =
     envExists ||
     input.projectKind === 'backend' ||
+    input.projectKind === 'gateway' ||
     input.projectKind === 'agent' ||
     input.projectKind === 'frontend' ||
     input.projectKind === 'fullstack';

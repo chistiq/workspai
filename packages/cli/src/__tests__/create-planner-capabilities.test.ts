@@ -10,6 +10,7 @@ import { listInteractiveKits, resolveKitDefinition } from '../utils/kit-registry
 import { buildCreatePlannerCapabilitiesContract } from '../contracts/create-planner-capabilities-contract';
 import { WORKSPACE_PROFILES } from '../workspace-profile-compatibility';
 import { listAgentFrameworkProjectKits } from '../agent-frameworks/project-kits';
+import { listModelGatewayProjectKits } from '../model-gateways/project-kits';
 
 describe('create planner capabilities', () => {
   it('keeps Workspai-owned backend kits in the native lane', () => {
@@ -25,6 +26,23 @@ describe('create planner capabilities', () => {
         resolved: kitId,
       });
     }
+  });
+
+  it('keeps OpenRouter gateway kits in the native lane and off the agent surface', () => {
+    for (const kit of listModelGatewayProjectKits()) {
+      expect(resolveCreatePlannerCapability({ kitId: kit.id })).toMatchObject({
+        lane: 'native',
+        status: 'available',
+        canExecuteCreate: true,
+        resolved: kit.id,
+      });
+    }
+    expect(resolveCreatePlannerCapability({ kitId: 'openrouter.typescript' }).resolved).toBe(
+      'gateway.openrouter.typescript'
+    );
+    expect(resolveCreatePlannerCapability({ kitId: 'agent.openrouter.typescript' })).toMatchObject({
+      canExecuteCreate: false,
+    });
   });
 
   it('keeps admitted agent-framework kits in the governed native lane', () => {
@@ -104,8 +122,17 @@ describe('create planner capabilities', () => {
 
     expect(contract.workspaceProfiles.map((profile) => profile.id)).toEqual(WORKSPACE_PROFILES);
     expect(contract.nativeCreate).toHaveLength(
-      listInteractiveKits().length + listAgentFrameworkProjectKits().length
+      listInteractiveKits().length +
+        listAgentFrameworkProjectKits().length +
+        listModelGatewayProjectKits().length
     );
+    expect(
+      contract.nativeCreate.find((kit) => kit.id === 'gateway.openrouter.typescript')
+    ).toMatchObject({
+      framework: 'openrouter',
+      category: 'gateway',
+      versionPolicy: 'tested-baseline',
+    });
     expect(contract.nativeCreate.find((kit) => kit.id === 'agent.microsoft.python')).toMatchObject({
       framework: 'microsoft-agent-framework',
       category: 'agent',

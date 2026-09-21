@@ -1,0 +1,17 @@
+{
+  "schemaVersion": "workspai.model-gateway-qualification.v1",
+  "workspaiReleaseAuthority": "source-ready",
+  "attach": "unsupported",
+  "adapters": [
+    {
+      "adapterId": "openrouter-typescript",
+      "status": "source-ready",
+      "platforms": []
+    },
+    {
+      "adapterId": "openrouter-python",
+      "status": "source-ready",
+      "platforms": []
+    }
+  ]
+}

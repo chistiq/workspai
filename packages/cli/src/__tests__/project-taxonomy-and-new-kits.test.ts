@@ -37,6 +37,8 @@ describe('project taxonomy and expanded kit families', () => {
     expect(categorizeWorkspaceProjectKind('frontend')).toBe('frontend');
     expect(categorizeWorkspaceProjectKind('desktop')).toBe('desktop');
     expect(categorizeWorkspaceProjectKind('extension')).toBe('extension');
+    expect(categorizeWorkspaceProjectKind('agent')).toBe('agent');
+    expect(categorizeWorkspaceProjectKind('gateway')).toBe('gateway');
     expect(categorizeWorkspaceProjectKind('platform')).toBe('platform');
     expect(categorizeWorkspaceProjectKind('service')).toBe('backend');
   });
@@ -56,6 +58,20 @@ describe('project taxonomy and expanded kit families', () => {
       contributes: { commands: [] },
     });
     expect(await inferWorkspaceProjectKind(extension)).toBe('extension');
+  });
+
+  it('classifies OpenRouter gateway metadata as gateway, not agent or backend', async () => {
+    const project = await tempRoot('workspai-gateway-kind-');
+    expect(
+      await inferWorkspaceProjectKind(
+        project,
+        { kit: 'gateway.openrouter.typescript', framework: 'openrouter' },
+        { kit: 'gateway.openrouter.typescript', framework: 'openrouter' }
+      )
+    ).toBe('gateway');
+    expect(
+      await inferWorkspaceProjectKind(project, { kind: 'gateway', framework: 'openrouter' })
+    ).toBe('gateway');
   });
 
   it('does not classify a runtime-neutral package workspace as a backend service', async () => {

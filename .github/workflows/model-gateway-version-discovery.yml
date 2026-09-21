@@ -1,0 +1,77 @@
+name: Model Gateway Version Discovery
+
+on:
+  schedule:
+    - cron: "41 7 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: model-gateway-version-discovery
+  cancel-in-progress: true
+
+jobs:
+  discover:
+    name: Discover upstream SDK candidates
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+          ref: ${{ github.event.repository.default_branch }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20.19.0"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Discover upstream version candidates
+        id: discover
+        working-directory: packages/cli
+        shell: bash
+        run: |
+          set +e
+          npm exec tsx -- scripts/propose-model-gateway-version-update.ts \
+            --baseline src/model-gateways/version-baselines.v1.json \
+            --report test-results/model-gateway-version-discovery/report.json
+          status=$?
+          set -e
+          echo "status=$status" >> "$GITHUB_OUTPUT"
+          if [ "$status" -eq 0 ] || [ "$status" -eq 10 ]; then
+            exit 0
+          fi
+          exit "$status"
+
+      - name: Upload reviewable candidates
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: model-gateway-version-discovery-${{ github.sha }}
+          path: packages/cli/test-results/model-gateway-version-discovery/report.json
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Publish run summary
+        if: always()
+        shell: bash
+        env:
+          DISCOVERY_STATUS: ${{ steps.discover.outputs.status }}
+        run: |
+          echo "### Model Gateway version discovery" >> "$GITHUB_STEP_SUMMARY"
+          echo "This workflow does not write the baseline, commit, open a pull request, or admit a Workspai release." >> "$GITHUB_STEP_SUMMARY"
+          echo "Exit status: ${DISCOVERY_STATUS:-unknown} (0 current, 10 update available)." >> "$GITHUB_STEP_SUMMARY"
+          REPORT=packages/cli/test-results/model-gateway-version-discovery/report.json
+          if [ -f "$REPORT" ]; then
+            echo "" >> "$GITHUB_STEP_SUMMARY"
+            echo '```json' >> "$GITHUB_STEP_SUMMARY"
+            python3 -c "import json,pathlib; d=json.loads(pathlib.Path('$REPORT').read_text()); print(json.dumps({'outcome': d.get('outcome'), 'summary': d.get('summary')}, indent=2))" >> "$GITHUB_STEP_SUMMARY"
+            echo '```' >> "$GITHUB_STEP_SUMMARY"
+          fi

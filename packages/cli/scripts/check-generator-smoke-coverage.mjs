@@ -25,11 +25,15 @@ assertSameSet('available official generators', expectedOfficial, actualOfficial)
 
 const nativeCreate = contract.nativeCreate ?? [];
 const expectedNative = nativeCreate
-  .filter((entry) => entry.category !== 'agent')
+  .filter((entry) => entry.category !== 'agent' && entry.category !== 'gateway')
   .map((entry) => entry.id)
   .sort();
 const expectedGovernedAgent = nativeCreate
   .filter((entry) => entry.category === 'agent')
+  .map((entry) => entry.id)
+  .sort();
+const expectedGovernedGateway = nativeCreate
+  .filter((entry) => entry.category === 'gateway')
   .map((entry) => entry.id)
   .sort();
 const nativeProbe = spawnSync(
@@ -50,7 +54,7 @@ const enterpriseSmokeSource = readFileSync(
 if (!/\bkit:\s*['"]rust\.axum['"]/.test(enterpriseSmokeSource)) {
   fail('Rust Axum must have an enterprise package create smoke scenario');
 }
-for (const kit of expectedGovernedAgent) {
+for (const kit of [...expectedGovernedAgent, ...expectedGovernedGateway]) {
   const escapedKit = kit.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&');
   if (!new RegExp(`\\bkit:\\s*['"]${escapedKit}['"]`, 'u').test(enterpriseSmokeSource)) {
     fail(`${kit} must have a governed enterprise package create smoke scenario`);
@@ -58,7 +62,7 @@ for (const kit of expectedGovernedAgent) {
 }
 
 console.log(
-  `Generator smoke coverage aligned: ${expectedOfficial.length} official + ${expectedNative.length} native runtime + ${expectedGovernedAgent.length} governed agent generator(s).`
+  `Generator smoke coverage aligned: ${expectedOfficial.length} official + ${expectedNative.length} native runtime + ${expectedGovernedAgent.length} governed agent + ${expectedGovernedGateway.length} model gateway generator(s).`
 );
 
 function assertSameSet(label, expected, actual) {

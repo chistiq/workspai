@@ -1,0 +1,106 @@
+name: Model Gateway Qualification
+
+on:
+  pull_request:
+    paths:
+      - "packages/cli/src/model-gateways/**"
+      - "packages/cli/src/__tests__/model-gateway-*.test.ts"
+      - "packages/cli/src/workspace-run.ts"
+      - "packages/cli/src/framework-registry.ts"
+      - "packages/cli/src/cli-ui/kit-picker-choices.ts"
+      - "packages/cli/docs/model-gateways.md"
+      - "packages/cli/scripts/propose-model-gateway-version-update.ts"
+      - "packages/cli/scripts/emit-model-gateway-qualification-report.ts"
+      - ".github/workflows/model-gateway-qualification.yml"
+      - ".github/workflows/model-gateway-version-discovery.yml"
+  workflow_dispatch:
+    inputs:
+      qualification_mode:
+        description: "Fast Linux validation or complete three-OS qualification"
+        required: true
+        default: full
+        type: choice
+        options:
+          - fast
+          - full
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: model-gateway-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  qualify:
+    name: OpenRouter gateways · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 35
+    env:
+      CI: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+    strategy:
+      fail-fast: false
+      matrix:
+        # One job per OS qualifies both OpenRouter adapters. A kit axis would
+        # duplicate the same TypeScript and Python suites without filtering.
+        os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.qualification_mode == 'full' && '["ubuntu-latest","macos-latest","windows-latest"]' || '["ubuntu-latest"]') }}
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20.19.0"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.10.11"
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Fail if a live OpenRouter key is present
+        shell: bash
+        run: |
+          if [ -n "${OPENROUTER_API_KEY:-}" ]; then
+            echo "OPENROUTER_API_KEY must not be set during gateway qualification."
+            exit 1
+          fi
+
+      - name: Run Model Gateway qualification tests
+        working-directory: packages/cli
+        shell: bash
+        run: |
+          npm exec vitest -- run \
+            src/__tests__/model-gateway-generated-projects.test.ts \
+            src/__tests__/model-gateway-workspace-lifecycle.test.ts \
+            src/__tests__/model-gateway-policy-parity.test.ts \
+            src/__tests__/model-gateway-project-kits.test.ts \
+            src/__tests__/model-gateway-registry.test.ts \
+            src/__tests__/model-gateway-qualification.test.ts \
+            --reporter=default \
+            --reporter=json \
+            --outputFile.json=test-results/model-gateway-qualification/${{ matrix.os }}.vitest.json
+
+      - name: Emit machine-readable qualification report
+        working-directory: packages/cli
+        run: >-
+          npm exec tsx -- scripts/emit-model-gateway-qualification-report.ts
+          --os ${{ matrix.os }}
+          --vitest-json test-results/model-gateway-qualification/${{ matrix.os }}.vitest.json
+          --out test-results/model-gateway-qualification/${{ matrix.os }}.json
+
+      - name: Upload qualification report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: model-gateway-qualification-${{ matrix.os }}-${{ github.sha }}
+          path: packages/cli/test-results/model-gateway-qualification/
+          if-no-files-found: error
+          retention-days: 30

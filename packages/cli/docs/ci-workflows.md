@@ -13,6 +13,8 @@ Map of GitHub Actions workflows in this repository. Use this when editing CI to 
 | Official generator smoke  | `.github/workflows/frontend-generator-smoke.yml`          | Contract-driven official-generator drift gate                                             |
 | Agent Framework matrix    | `.github/workflows/agent-framework-conformance.yml`       | Affected-family Linux PR gate plus manual twelve-lane release qualification and admission |
 | Agent Framework discovery | `.github/workflows/agent-framework-version-discovery.yml` | Weekly PyPI/NuGet candidate report; no commit, PR, or contract rewrite                    |
+| Model Gateway matrix      | `.github/workflows/model-gateway-qualification.yml`       | Linux PR gate plus manual three-OS generated-project and lifecycle qualification          |
+| Model Gateway discovery   | `.github/workflows/model-gateway-version-discovery.yml`   | Weekly npm/PyPI/GitHub candidate report; no baseline write, commit, or PR                 |
 | Security                  | `.github/workflows/security.yml`                          | Path-aware scanning plus the always-resolved `Security Gate`                              |
 | Manual npm release        | `.github/workflows/release-npm-manual.yml`                | Maintainer-only release gate and publish workflow                                         |
 | Discord announcement      | `.github/workflows/discord-release-announcement.yml`      | Preview and publish one idempotent product-aware release announcement                     |
@@ -37,6 +39,13 @@ implementation digest is audit evidence, not a runtime lock and not a manual
 maintenance requirement after every routine adapter edit.
 It never sets Foundry or OpenAI credentials. Only a reviewed admission on the protected
 version-update branch can promote a green candidate.
+
+OpenRouter AI Gateway kits are not part of the Agent Framework conformance
+matrix. They use a dedicated qualification workflow for generated-project
+install, tests, smoke, missing-key startup, Workspace Run, and Workspace
+Verify on Linux, macOS, and Windows. Weekly discovery reports newer stable SDK
+versions without writing the baseline or opening a pull request. See
+[AI Gateway](./model-gateways.md).
 
 The PR template at `.github/agent-framework-version-update.md` is for that
 human pin update. It is not opened by the weekly discovery workflow.

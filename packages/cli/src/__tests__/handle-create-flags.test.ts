@@ -298,6 +298,155 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
     );
   }, 60_000);
 
+  it('creates OpenRouter gateway projects without installing dependencies or calling a model', async () => {
+    await create.createProject('gateway-workspace', {
+      parentDirectory: tmpDir,
+      profile: 'minimal',
+      skipPythonEngine: true,
+      skipGit: true,
+      yes: true,
+    });
+    const workspacePath = path.join(tmpDir, 'gateway-workspace');
+    process.chdir(workspacePath);
+    const stdoutSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+
+    const typescriptCode = await index.handleCreateOrFallback([
+      'create',
+      'project',
+      'gateway.openrouter.typescript',
+      'ts-gateway',
+      '--skip-git',
+      '--yes',
+    ]);
+    const pythonCode = await index.handleCreateOrFallback([
+      'create',
+      'project',
+      'gateway.openrouter.python',
+      'py-gateway',
+      '--skip-git',
+      '--yes',
+    ]);
+
+    expect(typescriptCode).toBe(0);
+    expect(pythonCode).toBe(0);
+    expect(await fsExtra.pathExists(path.join(workspacePath, 'ts-gateway', 'src', 'main.ts'))).toBe(
+      true
+    );
+    expect(await fsExtra.pathExists(path.join(workspacePath, 'py-gateway', 'main.py'))).toBe(true);
+    expect(await fsExtra.pathExists(path.join(workspacePath, 'ts-gateway', 'node_modules'))).toBe(
+      false
+    );
+    expect(await fsExtra.pathExists(path.join(workspacePath, 'py-gateway', '.venv'))).toBe(false);
+    const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join('\n');
+    expect(output.toLowerCase()).not.toContain('authorization: bearer');
+    const contract = await fsExtra.readJson(
+      path.join(workspacePath, '.workspai', 'workspace.contract.json')
+    );
+    expect(contract.projects).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ slug: 'ts-gateway', kit: 'gateway.openrouter.typescript' }),
+        expect.objectContaining({ slug: 'py-gateway', kit: 'gateway.openrouter.python' }),
+      ])
+    );
+    const model = await fsExtra.readJson(
+      path.join(workspacePath, '.workspai', 'reports', 'workspace-model.json')
+    );
+    expect(
+      model.projects.find((project: { name?: string }) => project.name === 'ts-gateway')
+    ).toMatchObject({
+      kind: 'gateway',
+      category: 'gateway',
+      kit: 'gateway.openrouter.typescript',
+    });
+    expect(model.identity.categories).toEqual(expect.arrayContaining(['gateway']));
+  }, 90_000);
+
+  it('supports dry-run, JSON, duplicate, and invalid-name contracts for gateway create', async () => {
+    await create.createProject('gateway-flags', {
+      parentDirectory: tmpDir,
+      profile: 'minimal',
+      skipPythonEngine: true,
+      skipGit: true,
+      yes: true,
+    });
+    const workspacePath = path.join(tmpDir, 'gateway-flags');
+    process.chdir(workspacePath);
+    const stdoutSpy = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    const dryRun = await index.handleCreateOrFallback([
+      'create',
+      'project',
+      'gateway.openrouter.typescript',
+      'preview-gateway',
+      '--dry-run',
+      '--json',
+    ]);
+    expect(dryRun).toBe(0);
+    expect(await fsExtra.pathExists(path.join(workspacePath, 'preview-gateway'))).toBe(false);
+    const jsonText = stdoutSpy.mock.calls.map((call) => String(call[0])).join('\n');
+    expect(jsonText).toContain('"dryRun": true');
+    expect(jsonText).toContain('gateway.openrouter.typescript');
+
+    const invalid = await index.handleCreateOrFallback([
+      'create',
+      'project',
+      'gateway.openrouter.python',
+      'Not Valid',
+      '--skip-git',
+    ]);
+    expect(invalid).toBe(1);
+
+    const created = await index.handleCreateOrFallback([
+      'create',
+      'project',
+      'gateway.openrouter.python',
+      'once-gateway',
+      '--skip-git',
+      '--yes',
+    ]);
+    expect(created).toBe(0);
+    const duplicate = await index.handleCreateOrFallback([
+      'create',
+      'project',
+      'gateway.openrouter.python',
+      'once-gateway',
+      '--skip-git',
+      '--yes',
+    ]);
+    expect(duplicate).toBe(1);
+    const stderr = stderrSpy.mock.calls.map((call) => String(call[0])).join('');
+    expect(stderr).toMatch(/already exists|invalid|must/i);
+  }, 90_000);
+
+  it('creates a gateway project under a path that contains spaces', async () => {
+    await create.createProject('gateway-spaces', {
+      parentDirectory: tmpDir,
+      profile: 'minimal',
+      skipPythonEngine: true,
+      skipGit: true,
+      yes: true,
+    });
+    const workspacePath = path.join(tmpDir, 'gateway-spaces');
+    const outputDir = path.join(workspacePath, 'nested kits');
+    await fsExtra.ensureDir(outputDir);
+    process.chdir(workspacePath);
+    const code = await index.handleCreateOrFallback([
+      'create',
+      'project',
+      'gateway.openrouter.typescript',
+      'space-gateway',
+      '--output',
+      outputDir,
+      '--skip-git',
+      '--yes',
+    ]);
+    expect(code).toBe(0);
+    expect(await fsExtra.pathExists(path.join(outputDir, 'space-gateway', 'package.json'))).toBe(
+      true
+    );
+  }, 90_000);
+
   it('maps explicit --skip-install to the core scaffold-only contract', async () => {
     vi.spyOn(coreExec, 'resolveRapidkitPython').mockResolvedValue();
     const runSpy = vi.spyOn(coreExec, 'runCoreRapidkit').mockResolvedValue(1 as any);

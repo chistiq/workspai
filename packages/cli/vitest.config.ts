@@ -39,6 +39,7 @@ export default defineConfig({
         'src/core-bridge/**/*.ts',
         'src/generators/**/*.ts',
         'src/agent-frameworks/adapters/openai-agents/**/*.ts',
+        'src/model-gateways/**/*.ts',
         'src/observability/**/*.ts',
         'src/runtime-adapters/**/*.ts',
         'src/utils/**/*.ts',
