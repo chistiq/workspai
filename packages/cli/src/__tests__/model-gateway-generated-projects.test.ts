@@ -1,5 +1,6 @@
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import { rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
@@ -17,7 +18,14 @@ import { buildCleanGitEnv } from '../utils/git-worktree.js';
 const roots: string[] = [];
 
 afterEach(async () => {
-  await Promise.all(roots.splice(0).map((root) => fsExtra.remove(root)));
+  for (const root of roots.splice(0)) {
+    await rm(path.resolve(root), {
+      recursive: true,
+      force: true,
+      maxRetries: process.platform === 'win32' ? 10 : 0,
+      retryDelay: 100,
+    });
+  }
 });
 
 function isolatedRegistryEnv(cacheRoot: string): NodeJS.ProcessEnv {

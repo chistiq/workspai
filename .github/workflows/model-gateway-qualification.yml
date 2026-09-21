@@ -39,9 +39,6 @@ jobs:
     timeout-minutes: 35
     env:
       CI: "1"
-      npm_config_cache: ${{ runner.temp }}/workspai-npm-cache
-      NPM_CONFIG_CACHE: ${{ runner.temp }}/workspai-npm-cache
-      PIP_CACHE_DIR: ${{ runner.temp }}/workspai-pip-cache
       PIP_DISABLE_PIP_VERSION_CHECK: "1"
     strategy:
       fail-fast: false

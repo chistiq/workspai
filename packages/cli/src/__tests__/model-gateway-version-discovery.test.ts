@@ -215,6 +215,8 @@ describe('model gateway workflows', () => {
     expect(qualification).toContain('OpenRouter gateways');
     expect(qualification).not.toContain('kit: [typescript, python]');
     expect(qualification).not.toContain('matrix.kit');
+    expect(qualification).not.toContain('NPM_CONFIG_CACHE');
+    expect(qualification).not.toMatch(/^\s{6}(?:npm_config_cache|PIP_CACHE_DIR):/m);
     expect(qualification).toContain('model-gateway-generated-projects.test.ts');
     expect(qualification).toContain('model-gateway-workspace-lifecycle.test.ts');
     expect(qualification).toContain('model-gateway-policy-parity.test.ts');

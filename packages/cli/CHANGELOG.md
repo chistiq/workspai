@@ -27,7 +27,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Agent Framework.
 - Model Gateway qualification CI runs one job per OS that qualifies both
   TypeScript and Python adapters, instead of an unused kit axis that duplicated
-  the same suites.
+  the same suites. Job-level cache env no longer uses `runner.temp` or a
+  duplicate `NPM_CONFIG_CACHE`; `setup-node` owns the npm cache.
 
 ### Fixed
 

@@ -1,3 +1,4 @@
+import { rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -22,9 +23,25 @@ import {
 
 const roots: string[] = [];
 
+async function removeTempRoot(root: string): Promise<void> {
+  const resolvedRoot = path.resolve(root);
+  const cwd = process.cwd();
+  if (cwd === resolvedRoot || cwd.startsWith(`${resolvedRoot}${path.sep}`)) {
+    process.chdir(os.tmpdir());
+  }
+  await rm(resolvedRoot, {
+    recursive: true,
+    force: true,
+    maxRetries: process.platform === 'win32' ? 10 : 0,
+    retryDelay: 100,
+  });
+}
+
 afterEach(async () => {
   vi.restoreAllMocks();
-  await Promise.all(roots.splice(0).map((root) => fsExtra.remove(root)));
+  for (const root of roots.splice(0)) {
+    await removeTempRoot(root);
+  }
 });
 
 describe('OpenRouter gateway Workspai lifecycle', () => {
