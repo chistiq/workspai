@@ -113,7 +113,10 @@ cross-platform qualification is needed. npm and Composer download caches reduce
 repeated network work without treating an earlier commit or calendar-day result
 as proof for a new SHA.
 
-The Windows coverage lane intentionally uses bounded Vitest worker concurrency
+Linux is the only matrix job that collects V8 coverage, and that report is
+text plus `coverage-final.json`. macOS and Windows run the same suite without
+coverage instrumentation and without a second `tsup`, because the job build
+already produced `dist`. The Windows test lane intentionally uses bounded Vitest worker concurrency
 and platform-aware transaction timeouts. Filesystem-heavy workspace tests must
 finish their transaction before teardown; cleanup retries transient Windows
 `EBUSY`, `ENOTEMPTY`, and `EPERM` states instead of converting one slow operation into a

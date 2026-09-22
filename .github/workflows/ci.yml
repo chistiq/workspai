@@ -342,9 +342,15 @@ jobs:
         if: runner.os == 'Linux'
         run: npm --workspace workspai run smoke:enterprise-package
 
-      # Tests + coverage
+      # The job already built dist. macOS and Windows exercise platform behavior
+      # without V8 coverage; Linux is the only consumer of the coverage report.
+      - name: Run tests
+        if: runner.os != 'Linux'
+        run: npm --workspace workspai run test:no-build
+
       - name: Run tests with coverage
-        run: npm --workspace workspai run test:coverage
+        if: runner.os == 'Linux'
+        run: npm --workspace workspai run test:coverage:ci
 
       # Metrics (Linux only)
       - name: Run metrics collection

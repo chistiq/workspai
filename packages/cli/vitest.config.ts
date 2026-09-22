@@ -18,7 +18,9 @@ export default defineConfig({
     teardownTimeout: isWindows ? 60_000 : 30_000,
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'json', 'html'],
+      // HTML is a local report. CI keeps text plus coverage-final.json; Codecov
+      // reads that JSON, and writing the HTML tree on a runner is wasted I/O.
+      reporter: process.env.CI ? ['text', 'json'] : ['text', 'json', 'html'],
       include: [
         'src/index.ts',
         'src/workspace.ts',
