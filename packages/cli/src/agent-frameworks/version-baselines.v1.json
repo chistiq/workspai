@@ -152,6 +152,78 @@
       ],
       "automaticUpgrade": false,
       "admissionRequired": true
+    },
+    {
+      "adapterId": "google-adk-python",
+      "frameworkId": "google-adk",
+      "runtime": "python",
+      "policy": "latest-admitted",
+      "releaseChannel": "stable",
+      "frameworkVersion": "2.9.2",
+      "packages": [
+        {
+          "ecosystem": "pypi",
+          "name": "google-adk",
+          "version": "2.9.2",
+          "channel": "stable",
+          "role": "framework-core",
+          "registryUrl": "https://pypi.org/pypi/google-adk/json"
+        }
+      ],
+      "automaticUpgrade": false,
+      "admissionRequired": true,
+      "upstream": {
+        "githubRepository": "google/adk-python",
+        "releaseTagPrefixes": ["v"]
+      }
+    },
+    {
+      "adapterId": "google-adk-typescript",
+      "frameworkId": "google-adk",
+      "runtime": "node",
+      "policy": "latest-admitted",
+      "releaseChannel": "stable",
+      "frameworkVersion": "2.1.0",
+      "packages": [
+        {
+          "ecosystem": "npm",
+          "name": "@google/adk",
+          "version": "2.1.0",
+          "channel": "stable",
+          "role": "framework-core",
+          "registryUrl": "https://registry.npmjs.org/@google/adk"
+        },
+        {
+          "ecosystem": "npm",
+          "name": "zod",
+          "version": "4.6.5",
+          "channel": "stable",
+          "role": "runtime-support",
+          "registryUrl": "https://registry.npmjs.org/zod"
+        },
+        {
+          "ecosystem": "npm",
+          "name": "typescript",
+          "version": "5.9.3",
+          "channel": "stable",
+          "role": "runtime-support",
+          "registryUrl": "https://registry.npmjs.org/typescript"
+        },
+        {
+          "ecosystem": "npm",
+          "name": "@types/node",
+          "version": "22.20.3",
+          "channel": "stable",
+          "role": "runtime-support",
+          "registryUrl": "https://registry.npmjs.org/@types/node"
+        }
+      ],
+      "automaticUpgrade": false,
+      "admissionRequired": true,
+      "upstream": {
+        "githubRepository": "google/adk-js",
+        "releaseTagPrefixes": ["adk-v", "main-v"]
+      }
     }
   ]
 }

@@ -67,6 +67,14 @@ describe('kit picker choices', () => {
           label: 'AI Agent · OpenAI Agents SDK · TypeScript',
         }),
         expect.objectContaining({
+          value: 'agent.google-adk.python',
+          label: 'AI Agent · Google Agent Development Kit · Python',
+        }),
+        expect.objectContaining({
+          value: 'agent.google-adk.typescript',
+          label: 'AI Agent · Google Agent Development Kit · TypeScript',
+        }),
+        expect.objectContaining({
           value: 'gateway.openrouter.typescript',
           label: 'AI Gateway · OpenRouter · TypeScript',
         }),
@@ -101,13 +109,15 @@ describe('kit picker choices', () => {
     expect(backend.every((choice) => choice.category === 'backend')).toBe(true);
     expect(frontend.length).toBeGreaterThan(5);
     expect(frontend.every((choice) => choice.category === 'frontend')).toBe(true);
-    expect(buildKitPickerChoices('agent')).toHaveLength(4);
+    expect(buildKitPickerChoices('agent')).toHaveLength(6);
     expect(buildKitPickerChoices('agent').map((choice) => choice.value)).toEqual(
       expect.arrayContaining([
         'agent.microsoft.dotnet',
         'agent.microsoft.python',
         'agent.openai.python',
         'agent.openai.typescript',
+        'agent.google-adk.python',
+        'agent.google-adk.typescript',
       ])
     );
     expect(buildKitPickerChoices('agent').every((choice) => choice.category === 'agent')).toBe(

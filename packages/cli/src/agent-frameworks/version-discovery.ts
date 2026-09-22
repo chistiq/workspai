@@ -1,6 +1,7 @@
 import {
   BUILTIN_AGENT_FRAMEWORK_VERSION_BASELINES,
   compareRegistryVersions,
+  isStableRegistryVersion,
   selectLatestRegistryVersion,
   type AgentFrameworkPackageBaseline,
   type AgentFrameworkVersionBaseline,
@@ -19,6 +20,15 @@ export type AgentFrameworkPackageDiscovery = {
   registryUrl: string;
 };
 
+export type AgentFrameworkGithubAgreement = {
+  required: boolean;
+  repository: string | null;
+  latestStableVersion: string | null;
+  matchingTag: string | null;
+  status: 'agreed' | 'disagreement' | 'not-required' | 'unavailable';
+  detail: string;
+};
+
 export type AgentFrameworkVersionDiscovery = {
   schemaVersion: typeof AGENT_FRAMEWORK_VERSION_DISCOVERY_SCHEMA_VERSION;
   generatedAt: string;
@@ -32,6 +42,7 @@ export type AgentFrameworkVersionDiscovery = {
     admittedFrameworkVersion: string;
     status: 'current' | 'candidate-available' | 'blocked';
     packages: AgentFrameworkPackageDiscovery[];
+    github: AgentFrameworkGithubAgreement;
   }>;
   summary: {
     adapters: number;
@@ -79,6 +90,110 @@ function registryVersions(payload: unknown, dependency: AgentFrameworkPackageBas
   return versions;
 }
 
+function githubVersionFromTag(tag: string, prefixes: readonly string[]): string | null {
+  const normalized = tag.trim();
+  for (const prefix of prefixes) {
+    if (normalized.startsWith(prefix)) {
+      const version = normalized.slice(prefix.length);
+      return isStableRegistryVersion(version) ? version : null;
+    }
+  }
+  return isStableRegistryVersion(normalized) ? normalized : null;
+}
+
+function latestGithubStable(
+  payload: unknown,
+  prefixes: readonly string[]
+): { version: string; tag: string } | null {
+  if (!Array.isArray(payload)) return null;
+  const matches: Array<{ version: string; tag: string }> = [];
+  for (const release of payload) {
+    if (!release || typeof release !== 'object') continue;
+    const record = release as { tag_name?: unknown; prerelease?: unknown; draft?: unknown };
+    if (record.prerelease === true || record.draft === true) continue;
+    if (typeof record.tag_name !== 'string') continue;
+    const version = githubVersionFromTag(record.tag_name, prefixes);
+    if (!version) continue;
+    matches.push({ version, tag: record.tag_name });
+  }
+  const latest = selectLatestRegistryVersion(
+    matches.map((item) => item.version),
+    'stable'
+  );
+  if (!latest) return null;
+  const match = matches.find((item) => item.version === latest);
+  return match ?? null;
+}
+
+async function discoverGithubAgreement(
+  baseline: AgentFrameworkVersionBaseline,
+  registryCoreVersion: string,
+  fetcher: FetchLike
+): Promise<AgentFrameworkGithubAgreement> {
+  const upstream = baseline.upstream;
+  if (!upstream) {
+    return {
+      required: false,
+      repository: null,
+      latestStableVersion: null,
+      matchingTag: null,
+      status: 'not-required',
+      detail: 'This adapter does not require GitHub release agreement.',
+    };
+  }
+  const url = `https://api.github.com/repos/${upstream.githubRepository}/releases?per_page=30`;
+  try {
+    const response = await fetcher(url, {
+      headers: { accept: 'application/json', 'user-agent': 'workspai-version-discovery' },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      throw new Error(
+        `GitHub lookup failed for ${upstream.githubRepository} with HTTP ${response.status}.`
+      );
+    }
+    const latest = latestGithubStable(await response.json(), upstream.releaseTagPrefixes);
+    if (!latest) {
+      return {
+        required: true,
+        repository: upstream.githubRepository,
+        latestStableVersion: null,
+        matchingTag: null,
+        status: 'disagreement',
+        detail: `GitHub has no non-prerelease ${upstream.releaseTagPrefixes.join('|')} tag for ${upstream.githubRepository}.`,
+      };
+    }
+    if (latest.version !== registryCoreVersion) {
+      return {
+        required: true,
+        repository: upstream.githubRepository,
+        latestStableVersion: latest.version,
+        matchingTag: latest.tag,
+        status: 'disagreement',
+        detail: `Registry ${registryCoreVersion} disagrees with GitHub ${latest.tag}.`,
+      };
+    }
+    return {
+      required: true,
+      repository: upstream.githubRepository,
+      latestStableVersion: latest.version,
+      matchingTag: latest.tag,
+      status: 'agreed',
+      detail: `Registry ${registryCoreVersion} agrees with GitHub ${latest.tag}.`,
+    };
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    return {
+      required: true,
+      repository: upstream.githubRepository,
+      latestStableVersion: null,
+      matchingTag: null,
+      status: 'unavailable',
+      detail: message,
+    };
+  }
+}
+
 async function discoverPackage(
   dependency: AgentFrameworkPackageBaseline,
   fetcher: FetchLike
@@ -122,17 +237,28 @@ export async function discoverAgentFrameworkVersions(input?: {
       const packages = await Promise.all(
         baseline.packages.map((dependency) => discoverPackage(dependency, fetcher))
       );
+      const core = packages.find((_, index) => baseline.packages[index]?.role === 'framework-core');
+      const github = await discoverGithubAgreement(
+        baseline,
+        core?.latestRegistryVersion ?? baseline.frameworkVersion,
+        fetcher
+      );
+      const status =
+        packages.some((dependency) => dependency.status === 'registry-regression') ||
+        github.status === 'disagreement' ||
+        github.status === 'unavailable'
+          ? ('blocked' as const)
+          : packages.some((dependency) => dependency.status === 'update-available')
+            ? ('candidate-available' as const)
+            : ('current' as const);
       return {
         adapterId: baseline.adapterId,
         runtime: baseline.runtime,
         releaseChannel: baseline.releaseChannel,
         admittedFrameworkVersion: baseline.frameworkVersion,
-        status: packages.some((dependency) => dependency.status === 'registry-regression')
-          ? ('blocked' as const)
-          : packages.some((dependency) => dependency.status === 'update-available')
-            ? ('candidate-available' as const)
-            : ('current' as const),
+        status,
         packages,
+        github,
       };
     })
   );

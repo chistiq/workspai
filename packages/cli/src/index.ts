@@ -54,6 +54,7 @@ import {
   initializeAgentFrameworkProjectRoot,
   isAgentFrameworkProjectKit,
   lookupAgentFrameworkProjectKit,
+  describeAgentFrameworkProjectKits,
   prepareAgentFrameworkAttachment,
   resolveAgentFrameworkProjectKit,
 } from './agent-frameworks/index.js';
@@ -1693,6 +1694,15 @@ function printUnsupportedNativeCreate(capability: CreatePlannerCapability): void
 }
 
 function printCreateProjectHelp(): void {
+  const agentKits = describeAgentFrameworkProjectKits();
+  const agentExamples = agentKits
+    .slice(0, 2)
+    .map(
+      (kit) =>
+        `  npx workspai create project ${kit.id} ${kit.runtime === 'python' ? 'support-agent' : kit.runtime === 'dotnet' ? 'operations-agent' : 'research-agent'} --skip-git`
+    )
+    .join('\n');
+  const agentKitLines = agentKits.map((kit) => `  ${kit.id.padEnd(23)} ${kit.label}`).join('\n');
   console.log(`Usage: npx workspai create project <kit> <name> [options]
 
 Scaffold a project and register it with Workspace Intelligence.
@@ -1705,7 +1715,7 @@ Examples:
   npx workspai create project rust.axum api --skip-install
   npx workspai create project desktop.tauri desktop-app
   npx workspai create project extension.vscode editor-tools --skip-install
-  npx workspai create project agent.microsoft.python support-agent --skip-git
+${agentExamples}
   npx workspai create project gateway.openrouter.typescript model-gateway
   npx workspai create project gateway.openrouter.python model-gateway
 
@@ -1722,8 +1732,7 @@ Common kits:
   desktop.tauri         Desktop Tauri app
   desktop.electron      Desktop Electron Forge app
   extension.vscode      VS Code extension
-  agent.microsoft.python Microsoft Agent Framework · Python
-  agent.microsoft.dotnet Microsoft Agent Framework · .NET
+${agentKitLines}
   gateway.openrouter.typescript AI Gateway · OpenRouter · TypeScript
   gateway.openrouter.python AI Gateway · OpenRouter · Python
   php.laravel           Backend Laravel application

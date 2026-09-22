@@ -16,6 +16,11 @@ export type AgentFrameworkPackageBaseline = {
   registryUrl: string;
 };
 
+export type AgentFrameworkUpstreamRelease = {
+  githubRepository: string;
+  releaseTagPrefixes: readonly string[];
+};
+
 export type AgentFrameworkVersionBaseline = {
   adapterId: string;
   frameworkId: string;
@@ -26,6 +31,7 @@ export type AgentFrameworkVersionBaseline = {
   packages: readonly AgentFrameworkPackageBaseline[];
   automaticUpgrade: false;
   admissionRequired: true;
+  upstream?: AgentFrameworkUpstreamRelease;
 };
 
 export type AgentFrameworkVersionBaselineDocument = {
@@ -73,6 +79,19 @@ function assertBaselineDocument(
       throw new Error(`Duplicate agent framework version baseline: ${baseline.adapterId}`);
     }
     adapterIds.add(baseline.adapterId);
+    if (baseline.upstream !== undefined) {
+      if (
+        typeof baseline.upstream.githubRepository !== 'string' ||
+        !/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(baseline.upstream.githubRepository) ||
+        !Array.isArray(baseline.upstream.releaseTagPrefixes) ||
+        baseline.upstream.releaseTagPrefixes.length === 0 ||
+        baseline.upstream.releaseTagPrefixes.some(
+          (prefix) => typeof prefix !== 'string' || prefix.trim() === ''
+        )
+      ) {
+        throw new Error(`Invalid upstream release metadata in ${baseline.adapterId}.`);
+      }
+    }
     const packageNames = new Set<string>();
     let frameworkCoreVersion: string | null = null;
     for (const dependency of baseline.packages) {
@@ -116,6 +135,14 @@ export const BUILTIN_AGENT_FRAMEWORK_VERSION_BASELINES: readonly AgentFrameworkV
     structuredClone(validatedVersionBaselineDocument.baselines).map((baseline) =>
       Object.freeze({
         ...baseline,
+        ...(baseline.upstream
+          ? {
+              upstream: Object.freeze({
+                ...baseline.upstream,
+                releaseTagPrefixes: Object.freeze([...baseline.upstream.releaseTagPrefixes]),
+              }),
+            }
+          : {}),
         packages: Object.freeze(baseline.packages.map((dependency) => Object.freeze(dependency))),
       })
     )
@@ -140,6 +167,10 @@ export const MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE = requiredBaseline(
 export const OPENAI_AGENTS_PYTHON_BASELINE = requiredBaseline('openai-agents-python');
 
 export const OPENAI_AGENTS_TYPESCRIPT_BASELINE = requiredBaseline('openai-agents-typescript');
+
+export const GOOGLE_ADK_PYTHON_BASELINE = requiredBaseline('google-adk-python');
+
+export const GOOGLE_ADK_TYPESCRIPT_BASELINE = requiredBaseline('google-adk-typescript');
 
 export function packageVersion(
   baseline: AgentFrameworkVersionBaseline,

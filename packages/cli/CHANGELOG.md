@@ -7,6 +7,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Implemented Google Agent Development Kit adapters for Python (`google-adk`)
+  and TypeScript (`@google/adk`) as independent runtimes in the existing Agent
+  Framework registry. Create kit ids are `agent.google-adk.python` and
+  `agent.google-adk.typescript`. Adapters are labeled `preview`. Gemini
+  Developer API (`gemini-api`) and Vertex AI (`vertex-ai`) are provider
+  profiles, not gateway kits. OpenRouter remains a separate Gateway category.
+  Create and Attach stay fail-closed until the reviewed v2 inventory is
+  promoted from Linux, macOS, and Windows evidence for this SHA. Sequential,
+  parallel, loop, graph Workflow Runtime, A2A, MCP, Agent Engine, and hosted
+  Google tools stay unsupported.
+
 ## [0.77.0] - 2026-09-21
 
 ### Added

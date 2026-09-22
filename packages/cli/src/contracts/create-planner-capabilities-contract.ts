@@ -90,7 +90,7 @@ export function buildCreatePlannerCapabilitiesContract(): CreatePlannerCapabilit
     plannerFramework: kit.frameworkId,
     category: 'agent',
     owner: 'workspai',
-    stability: 'stable',
+    stability: kit.stability,
     versionPolicy: 'tested-baseline' as const,
     moduleSupport: false,
     workspacePythonEngine: 'none' as const,

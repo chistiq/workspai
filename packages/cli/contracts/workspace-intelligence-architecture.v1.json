@@ -684,6 +684,8 @@
       "agent.microsoft.dotnet",
       "agent.openai.python",
       "agent.openai.typescript",
+      "agent.google-adk.python",
+      "agent.google-adk.typescript",
       "gateway.openrouter.typescript",
       "gateway.openrouter.python"
     ],

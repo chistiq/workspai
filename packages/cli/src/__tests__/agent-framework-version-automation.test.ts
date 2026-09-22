@@ -75,6 +75,9 @@ describe('agent framework version automation', () => {
     expect(conformance).toContain('runtime: [python, dotnet]');
     expect(conformance).toContain('runtime: [python, typescript]');
     expect(conformance).toContain('smoke-openai-agents-adapter.ts');
+    expect(conformance).toContain('smoke-google-adk-adapter.ts');
+    expect(conformance).toContain("- '!packages/cli/src/agent-frameworks/adapters/google-adk/**'");
+    expect(conformance).toContain('Google ADK ·');
     expect(conformance).toContain('node-version: "22.20.0"');
     expect(conformance).not.toMatch(/FOUNDRY_PROJECT_ENDPOINT:\s*\$\{\{/);
     expect(conformance).not.toMatch(/OPENAI_API_KEY:\s*\$\{\{/);
@@ -113,6 +116,15 @@ describe('agent framework version automation', () => {
     expect(openaiSmoke).not.toContain("process.platform === 'win32' ? 'npm.cmd' : 'npm'");
     expect(openaiSmoke).not.toContain('OPENAI_API_KEY=sk-');
 
+    const googleSmoke = read('packages/cli/scripts/smoke-google-adk-adapter.ts');
+    expect(googleSmoke).toContain('WORKSPAI_AGENT_LIFECYCLE_OK');
+    expect(googleSmoke).toContain('ScriptedLlm');
+    expect(googleSmoke).toContain('livePaidApiCall: false');
+    expect(googleSmoke).toContain('from google.adk.models.base_llm import BaseLlm');
+    expect(googleSmoke).toContain("from '@google/adk'");
+    expect(googleSmoke).not.toContain('OPENAI_API_KEY=sk-');
+    expect(googleSmoke).toContain('isolatedCaches');
+
     const promotion = read('packages/cli/scripts/promote-agent-framework-release-admission.ts');
     expect(promotion).toContain('AGENT_FRAMEWORK_ADMISSION_CANDIDATE_CONTRACT_PATH');
     expect(promotion).toContain('digestBuiltinAgentFrameworkManifest');
@@ -132,5 +144,6 @@ describe('agent framework version automation', () => {
     const config = read('packages/cli/vitest.config.ts');
     expect(config).toContain("'src/generators/**/*.ts'");
     expect(config).toContain("'src/agent-frameworks/adapters/openai-agents/**/*.ts'");
+    expect(config).toContain("'src/agent-frameworks/adapters/google-adk/**/*.ts'");
   });
 });

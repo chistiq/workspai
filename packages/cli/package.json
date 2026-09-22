@@ -118,6 +118,8 @@
     "test:agent-framework:dotnet": "tsx scripts/smoke-microsoft-agent-framework-adapter.ts --runtime dotnet",
     "test:agent-framework:openai:python": "tsx scripts/smoke-openai-agents-adapter.ts --runtime python",
     "test:agent-framework:openai:typescript": "tsx scripts/smoke-openai-agents-adapter.ts --runtime typescript",
+    "test:agent-framework:google-adk:python": "tsx scripts/smoke-google-adk-adapter.ts --runtime python",
+    "test:agent-framework:google-adk:typescript": "tsx scripts/smoke-google-adk-adapter.ts --runtime typescript",
     "verify:agent-framework:matrix": "tsx scripts/verify-agent-framework-conformance.ts --reports test-results/agent-framework-conformance",
     "discover:agent-framework:versions": "tsx scripts/discover-agent-framework-versions.ts",
     "propose:agent-framework:versions": "tsx scripts/propose-agent-framework-version-update.ts",

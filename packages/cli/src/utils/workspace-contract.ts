@@ -296,8 +296,7 @@ function isNonServiceKit(kit?: string): boolean {
     value.includes('desktop.electron') ||
     value.startsWith('extension.') ||
     (value.startsWith('desktop.') && !value.includes('tauri')) ||
-    value.includes('agent.microsoft') ||
-    value.includes('agent.openai')
+    value.startsWith('agent.')
   );
 }
 

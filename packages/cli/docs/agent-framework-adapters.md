@@ -238,12 +238,43 @@ remains blocked until the exact v2 cross-platform candidate is promoted.
 Handoffs, MCP, sessions, voice, sandbox, and approval loops stay unsupported.
 Microsoft adapters remain `preview`.
 
-A path-filtered PR gate compiles only the affected Microsoft or OpenAI adapter
-family on Linux. Shared lifecycle, security, registry, admission, and contract
-changes select both families; documentation-only edits do not run adapter
-conformance. The complete twelve-lane matrix is an explicit release-
-qualification operation: it compiles Microsoft Python/.NET and OpenAI
-Python/TypeScript on Linux, macOS, and Windows. Every full-qualification lane
+## Google Agent Development Kit baseline
+
+Google ADK is an agent runtime and orchestration framework. It is not an AI
+Gateway, not OpenRouter, and not a Gemini/Vertex model-provider product.
+Provider profiles in the generated starter are `gemini-api` (Gemini Developer
+API) and `vertex-ai`. OpenRouter stays in the separate Gateway category.
+
+Python `google-adk` and TypeScript `@google/adk` are independent runtimes.
+Exact pins live in `src/agent-frameworks/version-baselines.v1.json`. Discovery
+must re-prove registry and GitHub agreement on the day it runs; TypeScript 2.0
+graph Workflow Runtime is not generalized to Python.
+
+| Adapter                 | Runtime           | Authored detection            |
+| ----------------------- | ----------------- | ----------------------------- |
+| `google-adk-python`     | Python `>=3.10`   | exact PyPI package `google-adk` |
+| `google-adk-typescript` | Node.js `>=20.19` | exact npm package `@google/adk` |
+
+The TypeScript starter also pins `zod`, TypeScript, and `@types/node` from the
+same baseline document. `@google/adk-devtools` is not a v1 dependency. Do not
+run unqualified `npx adk`.
+
+Adapters are labeled `preview`. Create kits are `agent.google-adk.python` and
+`agent.google-adk.typescript`. Create and Attach stay fail-closed until the
+reviewed v2 inventory includes these adapters from Linux, macOS, and Windows
+evidence. Sequential, parallel, loop, graph workflow, A2A, MCP, Agent Engine,
+Cloud Run, GKE, Google Search, voice, browser agents, and remote agents are
+unsupported. In-memory sessions are process-local, not durable persistence.
+
+Credentialless conformance subclasses the public `BaseLlm` surface. It does not
+monkey-patch private SDK internals and does not call Gemini or Vertex.
+
+A path-filtered PR gate compiles only the affected Microsoft, OpenAI, or Google
+adapter family on Linux. Shared lifecycle, security, registry, admission, and
+contract changes select the affected families; documentation-only edits do not
+run adapter conformance. The complete matrix is an explicit release-
+qualification operation: it compiles every built-in adapter runtime on Linux,
+macOS, and Windows. Every full-qualification lane
 records all 18 mandatory checks, the exact runtime and framework baseline,
 digests of the adapter manifest and semantic implementation, and one bounded
 evidence file per check. Reports are retained as CI artifacts for review. A
@@ -291,10 +322,11 @@ npx workspai agent framework plan \
   --name support-agent
 ```
 
-When more than one admitted framework shares a runtime, pass `--framework`
+When more than one published framework shares a runtime, pass `--framework`
 explicitly. Workspai does not guess or fall back. `--runtime python` without
-`--framework` now requires an explicit choice because Microsoft Agent Framework
-and OpenAI Agents SDK are both admitted.
+`--framework` requires an explicit choice because Microsoft Agent Framework,
+OpenAI Agents SDK, and Google ADK are all published. Google ADK remains
+Create/Attach blocked until release admission.
 
 The interactive attach command displays the same plan and asks before granting
 its filesystem effect. Automation must opt in with `--yes` and records the

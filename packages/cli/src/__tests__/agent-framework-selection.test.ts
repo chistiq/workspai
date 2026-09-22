@@ -90,4 +90,33 @@ describe('agent framework selection', () => {
       admitted: releaseAdmitted,
     });
   });
+
+  it('selects Google ADK by framework id without guessing or admitting it', () => {
+    const registry = createBuiltinAgentFrameworkRegistry(
+      {},
+      { trustReviewedReleaseAdmissions: true }
+    );
+    expect(
+      resolveAgentFrameworkSelection({
+        registry,
+        runtime: 'python',
+        framework: 'google-adk',
+      })
+    ).toMatchObject({
+      adapterId: 'google-adk-python',
+      frameworkId: 'google-adk',
+      admitted: false,
+    });
+    expect(
+      resolveAgentFrameworkSelection({
+        registry,
+        runtime: 'node',
+        framework: 'google-adk',
+      })
+    ).toMatchObject({
+      adapterId: 'google-adk-typescript',
+      frameworkId: 'google-adk',
+      admitted: false,
+    });
+  });
 });

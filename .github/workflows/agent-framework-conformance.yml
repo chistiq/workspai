@@ -17,10 +17,13 @@ on:
       - "packages/cli/src/__tests__/openai-agents-adapter.test.ts"
       - "packages/cli/src/__tests__/openai-agents-context-loader.test.ts"
       - "packages/cli/src/__tests__/openai-agents-lifecycle.test.ts"
+      - "packages/cli/src/__tests__/google-adk-adapter.test.ts"
+      - "packages/cli/src/__tests__/google-adk-lifecycle.test.ts"
       - "packages/cli/src/__tests__/agent-framework-selection.test.ts"
       - "packages/cli/src/__tests__/contracts/agent-framework-contract.test.ts"
       - "packages/cli/scripts/smoke-microsoft-agent-framework-adapter.ts"
       - "packages/cli/scripts/smoke-openai-agents-adapter.ts"
+      - "packages/cli/scripts/smoke-google-adk-adapter.ts"
       - "packages/cli/scripts/verify-agent-framework-conformance.ts"
       - "packages/cli/scripts/discover-agent-framework-versions.ts"
       - "packages/cli/scripts/propose-agent-framework-version-update.ts"
@@ -60,6 +63,7 @@ jobs:
     outputs:
       microsoft: ${{ steps.filter.outputs.microsoft }}
       openai: ${{ steps.filter.outputs.openai }}
+      google: ${{ steps.filter.outputs.google }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
@@ -72,6 +76,7 @@ jobs:
             microsoft:
               - 'packages/cli/src/agent-frameworks/**'
               - '!packages/cli/src/agent-frameworks/adapters/openai-agents/**'
+              - '!packages/cli/src/agent-frameworks/adapters/google-adk/**'
               - 'packages/cli/src/__tests__/microsoft-agent-framework-adapter.test.ts'
               - 'packages/cli/src/__tests__/agent-framework-*.test.ts'
               - 'packages/cli/scripts/smoke-microsoft-agent-framework-adapter.ts'
@@ -87,9 +92,26 @@ jobs:
             openai:
               - 'packages/cli/src/agent-frameworks/**'
               - '!packages/cli/src/agent-frameworks/adapters/microsoft-agent-framework/**'
+              - '!packages/cli/src/agent-frameworks/adapters/google-adk/**'
               - 'packages/cli/src/__tests__/openai-agents-*.test.ts'
               - 'packages/cli/src/__tests__/agent-framework-*.test.ts'
               - 'packages/cli/scripts/smoke-openai-agents-adapter.ts'
+              - 'packages/cli/src/contracts/agent-framework-contract.ts'
+              - 'packages/cli/src/proof-carrying-change.ts'
+              - 'packages/cli/src/utils/json-schema-contract.ts'
+              - 'packages/cli/src/utils/workspace-paths.ts'
+              - 'packages/cli/scripts/verify-agent-framework-conformance.ts'
+              - 'packages/cli/scripts/promote-agent-framework-release-admission.ts'
+              - 'packages/cli/package.json'
+              - 'package-lock.json'
+              - '.github/workflows/agent-framework-conformance.yml'
+            google:
+              - 'packages/cli/src/agent-frameworks/**'
+              - '!packages/cli/src/agent-frameworks/adapters/microsoft-agent-framework/**'
+              - '!packages/cli/src/agent-frameworks/adapters/openai-agents/**'
+              - 'packages/cli/src/__tests__/google-adk-*.test.ts'
+              - 'packages/cli/src/__tests__/agent-framework-*.test.ts'
+              - 'packages/cli/scripts/smoke-google-adk-adapter.ts'
               - 'packages/cli/src/contracts/agent-framework-contract.ts'
               - 'packages/cli/src/proof-carrying-change.ts'
               - 'packages/cli/src/utils/json-schema-contract.ts'
@@ -211,10 +233,62 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
+  google-adk:
+    name: Google ADK · ${{ matrix.runtime }} · ${{ matrix.os }}
+    needs: detect-changes
+    if: github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.google == 'true'
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.qualification_mode == 'full' && '["ubuntu-latest","macos-latest","windows-latest"]' || '["ubuntu-latest"]') }}
+        runtime: [python, typescript]
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20.19.0"
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        if: matrix.runtime == 'python'
+        with:
+          python-version: "3.10.11"
+
+      - name: Install JavaScript dependencies
+        run: npm ci
+
+      - name: Install pinned uv runtime
+        if: matrix.runtime == 'python'
+        run: python -m pip install uv==0.12.6
+
+      - name: Validate contracts and adapter behavior
+        run: npm --workspace workspai exec vitest -- run src/__tests__/contracts/agent-framework-contract.test.ts src/__tests__/agent-framework-registry.test.ts src/__tests__/google-adk-adapter.test.ts src/__tests__/google-adk-lifecycle.test.ts src/__tests__/agent-framework-selection.test.ts src/__tests__/agent-framework-release-admission.test.ts
+
+      - name: Compile generated adapter project
+        id: conformance
+        working-directory: packages/cli
+        run: npm exec tsx -- scripts/smoke-google-adk-adapter.ts --runtime ${{ matrix.runtime }} --report-dir test-results/agent-framework-conformance
+
+      - name: Upload lane evidence
+        if: always() && steps.conformance.outcome != 'skipped'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: agent-framework-google-adk-${{ matrix.runtime }}-${{ runner.os }}
+          path: packages/cli/test-results/agent-framework-conformance
+          if-no-files-found: error
+          retention-days: 14
+
   admit-matrix:
     name: Admit complete adapter matrix
-    if: always() && github.event_name == 'workflow_dispatch' && inputs.qualification_mode == 'full' && needs['microsoft-agent-framework'].result == 'success' && needs['openai-agents'].result == 'success'
-    needs: [microsoft-agent-framework, openai-agents]
+    if: always() && github.event_name == 'workflow_dispatch' && inputs.qualification_mode == 'full' && needs['microsoft-agent-framework'].result == 'success' && needs['openai-agents'].result == 'success' && needs['google-adk'].result == 'success'
+    needs: [microsoft-agent-framework, openai-agents, google-adk]
     runs-on: ubuntu-latest
     timeout-minutes: 10
 

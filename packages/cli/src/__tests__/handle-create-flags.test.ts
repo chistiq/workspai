@@ -147,6 +147,34 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
     60_000
   );
 
+  it('refuses Google ADK kits until their adapters are release-admitted', async () => {
+    await create.createProject('agent-workspace', {
+      parentDirectory: tmpDir,
+      profile: 'minimal',
+      skipPythonEngine: true,
+      skipGit: true,
+      yes: true,
+    });
+    const workspacePath = path.join(tmpDir, 'agent-workspace');
+    process.chdir(workspacePath);
+    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+
+    const code = await index.handleCreateOrFallback([
+      'create',
+      'project',
+      'agent.google-adk.python',
+      'google-python-agent',
+      '--skip-git',
+      '--yes',
+    ]);
+
+    expect(code).toBe(1);
+    expect(await fsExtra.pathExists(path.join(workspacePath, 'google-python-agent'))).toBe(false);
+    expect(stderrSpy.mock.calls.map((call) => String(call[0])).join('')).toMatch(
+      /not release-admitted/i
+    );
+  }, 60_000);
+
   it.skipIf(!releaseAdmitted)(
     'creates a governed agent project through the admitted scaffold lifecycle',
     async () => {

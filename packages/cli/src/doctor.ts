@@ -290,6 +290,7 @@ function contextualizeDoctorSystemChecks(
 type DetectedFramework =
   | 'Microsoft Agent Framework'
   | 'OpenAI Agents SDK'
+  | 'Google Agent Development Kit'
   | 'OpenRouter'
   | 'FastAPI'
   | 'Django'
@@ -1504,7 +1505,11 @@ function supportTierForFramework(framework: DetectedFramework): FrameworkSupport
 }
 
 function kindForFramework(framework: DetectedFramework): ProjectKind {
-  if (framework === 'Microsoft Agent Framework' || framework === 'OpenAI Agents SDK') {
+  if (
+    framework === 'Microsoft Agent Framework' ||
+    framework === 'OpenAI Agents SDK' ||
+    framework === 'Google Agent Development Kit'
+  ) {
     return 'agent';
   }
 
@@ -1698,6 +1703,8 @@ function toDoctorFramework(detection: BackendFrameworkDetection): DetectedFramew
       return 'Microsoft Agent Framework';
     case 'openai-agents':
       return 'OpenAI Agents SDK';
+    case 'google-adk':
+      return 'Google Agent Development Kit';
     case 'openrouter':
       return 'OpenRouter';
     case 'fastapi':
@@ -1844,7 +1851,9 @@ function applyBackendFrameworkDetection(
   health.frameworkConfidence = detection.confidence;
   health.supportTier = detection.supportTier;
   health.projectKind =
-    detection.key === 'microsoft-agent-framework' || detection.key === 'openai-agents'
+    detection.key === 'microsoft-agent-framework' ||
+    detection.key === 'openai-agents' ||
+    detection.key === 'google-adk'
       ? 'agent'
       : detection.key === 'openrouter'
         ? 'gateway'
@@ -1884,6 +1893,13 @@ function detectNodeFrameworkFromManifest(input: {
   }
   if (hasDep('@openai/agents') || kitName.startsWith('agent.openai.')) {
     return { framework: 'OpenAI Agents SDK', confidence: 'high' };
+  }
+  if (
+    hasDep('@google/adk') ||
+    kitName.startsWith('agent.google-adk.') ||
+    kitName.startsWith('agent.google.')
+  ) {
+    return { framework: 'Google Agent Development Kit', confidence: 'high' };
   }
   if (hasDep('express')) {
     return { framework: 'Express', confidence: 'high' };
@@ -4695,6 +4711,7 @@ async function checkProjectUnnormalized(
     if (
       primaryBackendDetection.key === 'microsoft-agent-framework' ||
       primaryBackendDetection.key === 'openai-agents' ||
+      primaryBackendDetection.key === 'google-adk' ||
       primaryBackendDetection.key === 'openrouter'
     ) {
       applyBackendFrameworkDetection(health, primaryBackendDetection);
@@ -4711,6 +4728,8 @@ async function checkProjectUnnormalized(
       frameworkImport = 'agent-framework-core';
     } else if (health.framework === 'OpenAI Agents SDK') {
       frameworkImport = 'openai-agents';
+    } else if (health.framework === 'Google Agent Development Kit') {
+      frameworkImport = 'google-adk';
     } else if (health.framework === 'OpenRouter') {
       frameworkImport = '';
     }
