@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Hosted Windows scale checks judge the existing Linux latency ceilings at 2x.
+  The manifest budgets themselves are unchanged.
 - Reframed SH7 around private internal consumption: Graph is the registered
   consumer, workspace and packed-artifact integrity replace npm release gates,
   and publication remains prohibited even after internal admission.

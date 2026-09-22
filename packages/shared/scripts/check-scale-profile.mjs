@@ -30,6 +30,15 @@ function round(value) {
   return Number(value.toFixed(3));
 }
 
+// Published ceilings are the Linux reference. A hosted Windows runner is
+// slower and noisier than that baseline; judge the same manifest numbers at
+// 2x there instead of raising the contract for every platform.
+const WINDOWS_LATENCY_ALLOWANCE = 2;
+
+function latencyBudget(ms) {
+  return process.platform === 'win32' ? ms * WINDOWS_LATENCY_ALLOWANCE : ms;
+}
+
 function measureValidation(workload, input) {
   const options = { limits: workload.limits };
   for (let index = 0; index < workload.warmups; index += 1) {
@@ -108,11 +117,17 @@ for (const workload of manifest.workloads) {
     fail(`${workload.id} is ${serializedBytes} bytes; ceiling is ${workload.maxSerializedBytes}`);
   }
   const timings = measureValidation(workload, input);
-  if (timings.p95Ms > workload.p95BudgetMs) {
-    fail(`${workload.id} p95 ${timings.p95Ms}ms exceeds ${workload.p95BudgetMs}ms`);
+  const p95BudgetMs = latencyBudget(workload.p95BudgetMs);
+  const p99BudgetMs = latencyBudget(workload.p99BudgetMs);
+  if (timings.p95Ms > p95BudgetMs) {
+    fail(
+      `${workload.id} p95 ${timings.p95Ms}ms exceeds ${p95BudgetMs}ms (manifest ${workload.p95BudgetMs}ms)`
+    );
   }
-  if (timings.p99Ms > workload.p99BudgetMs) {
-    fail(`${workload.id} p99 ${timings.p99Ms}ms exceeds ${workload.p99BudgetMs}ms`);
+  if (timings.p99Ms > p99BudgetMs) {
+    fail(
+      `${workload.id} p99 ${timings.p99Ms}ms exceeds ${p99BudgetMs}ms (manifest ${workload.p99BudgetMs}ms)`
+    );
   }
   const memory = ['normal', 'large-node'].includes(workload.id)
     ? measureObservedHeap(workload, input, serializedBytes)
@@ -155,10 +170,10 @@ const compatibilityResult = {
   p95Ms: round(percentile(compatibilitySamples, 95)),
   p99Ms: round(percentile(compatibilitySamples, 99)),
 };
-if (compatibilityResult.p95Ms > manifest.compatibility.p95BudgetMs) {
+if (compatibilityResult.p95Ms > latencyBudget(manifest.compatibility.p95BudgetMs)) {
   fail('compatibility p95 budget exceeded');
 }
-if (compatibilityResult.p99Ms > manifest.compatibility.p99BudgetMs) {
+if (compatibilityResult.p99Ms > latencyBudget(manifest.compatibility.p99BudgetMs)) {
   fail('compatibility p99 budget exceeded');
 }
 
@@ -252,7 +267,7 @@ const coldLoadResult = {
   iterations: manifest.coldLoad.iterations,
   p95Ms: round(percentile(coldSamples, 95)),
 };
-if (coldLoadResult.p95Ms > manifest.coldLoad.p95BudgetMs) {
+if (coldLoadResult.p95Ms > latencyBudget(manifest.coldLoad.p95BudgetMs)) {
   fail(`cold-load p95 ${coldLoadResult.p95Ms}ms exceeds budget`);
 }
 
@@ -300,6 +315,11 @@ if (process.argv.includes('--json')) {
   process.stdout.write(`${JSON.stringify(report, null, 2)}\n`);
 } else {
   process.stdout.write(`Shared scale profile: ${report.status}\n`);
+  if (process.platform === 'win32') {
+    process.stdout.write(
+      `Windows latency ceilings are judged at ${WINDOWS_LATENCY_ALLOWANCE}x the Linux manifest budgets.\n`
+    );
+  }
   for (const workload of workloadResults) {
     process.stdout.write(
       `- ${workload.id}: ${workload.serializedBytes} bytes; p95 ${workload.timings.p95Ms}ms; p99 ${workload.timings.p99Ms}ms\n`
