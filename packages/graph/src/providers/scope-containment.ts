@@ -175,6 +175,7 @@ export function createScopeContainmentProvider(): GraphProviderRuntime {
           freshness: { status: 'current' },
           truthLifecycle: { invalidatedBy: ['input-change', 'deletion'] },
           observedAt: request.observedAt,
+          partitionOwner: { locator: identityInput.locator, observationOrigin: 'build-clock' },
           inputDigest: identityInput.digest,
           unknownZones: [],
         },

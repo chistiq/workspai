@@ -10,6 +10,7 @@ import {
   type GraphWorkspaceFact,
 } from '../contracts/index.js';
 import { admitDeclaredGraphLocator } from '../domain/locator-identity.js';
+import { collectRustUseImports } from '../domain/rust-use.js';
 import { appendReusedLocatorFacts } from '../application/locator-fact-shards.js';
 import {
   decodeMatrixSource,
@@ -154,6 +155,9 @@ function extractImports(source: string, language: Language): string[] {
       if (match[1]) imports.push(match[1]);
     return imports;
   }
+  if (language === 'rust') {
+    return collectRustUseImports(syntax).map((item) => item.path);
+  }
   const patterns: readonly RegExp[] =
     language === 'python'
       ? [/^\s*import\s+([A-Za-z_][\w.]*)/gmu, /^\s*from\s+([.A-Za-z_][\w.]*)\s+import\s+/gmu]
@@ -165,7 +169,7 @@ function extractImports(source: string, language: Language): string[] {
             ? [
                 /^\s*(?:global\s+)?using\s+(?:[A-Za-z_]\w*\s*=\s*)?([A-Za-z_]\w*(?:\.[A-Za-z_]\w*)*)\s*;/gmu,
               ]
-            : [/^\s*use\s+([^;\r\n]+)\s*;/gmu];
+            : [];
   for (const pattern of patterns) {
     for (const match of syntax.matchAll(pattern)) if (match[1]) imports.push(match[1].trim());
   }
@@ -193,6 +197,43 @@ function unsupportedDynamicSyntax(source: string, language: Language): boolean {
 
 function importedModuleLocator(imported: string): string {
   return admitDeclaredGraphLocator(imported, 'encoded');
+}
+
+function joinPortableLocator(directory: string, relative: string): string | undefined {
+  const parts = [...(directory === '.' ? [] : directory.split('/')), ...relative.split('/')];
+  const out: string[] = [];
+  for (const part of parts) {
+    if (part === '' || part === '.') continue;
+    if (part === '..') return undefined;
+    out.push(part);
+  }
+  return out.join('/');
+}
+
+/**
+ * Bind a path-shaped declared import to an admitted repository file.
+ * Bare module names stay modules. Missing files stay modules. `..` is refused.
+ */
+export function resolveDeclaredImportLocator(
+  importer: string,
+  specifier: string,
+  locators: ReadonlySet<string>
+): string | undefined {
+  if (
+    !specifier ||
+    specifier.startsWith('/') ||
+    specifier.includes('\\') ||
+    specifier.includes('..') ||
+    !(specifier.startsWith('.') || specifier.includes('/') || specifier.includes('.'))
+  ) {
+    return undefined;
+  }
+  const directory = importer.includes('/') ? importer.slice(0, importer.lastIndexOf('/')) : '.';
+  const normalized = specifier.replace(/^\.\//u, '');
+  const relative = joinPortableLocator(directory, normalized);
+  if (relative && locators.has(relative)) return relative;
+  if (locators.has(normalized)) return normalized;
+  return undefined;
 }
 
 function warning(code: string, path: string, message: string): GraphDiagnostic {
@@ -266,6 +307,7 @@ export function createLanguageImportsProvider(): GraphProviderRuntime {
         )
       );
       const inputs = eligible.filter((input) => selectedLocators.has(input.locator));
+      const admittedLocators = new Set(request.inputs.map((input) => input.locator));
       const facts: GraphWorkspaceFact[] = [];
       const diagnostics: GraphDiagnostic[] = [];
       const unknownZones: GraphFactBatch['unknownZones'][number][] = [];
@@ -337,13 +379,28 @@ export function createLanguageImportsProvider(): GraphProviderRuntime {
               });
               break;
             }
-            const target = await request.resolveIdentity({
-              namespace: `${language}-module`,
-              kind: 'module',
-              relativeLocator: importedModuleLocator(imported),
-              caseSensitivity: language === 'dotnet' ? 'insensitive' : 'sensitive',
-              scope: request.scope,
-            });
+            const resolvedFile = resolveDeclaredImportLocator(
+              input.locator,
+              imported,
+              admittedLocators
+            );
+            const target = await request.resolveIdentity(
+              resolvedFile
+                ? {
+                    namespace: 'workspai',
+                    kind: 'file',
+                    relativeLocator: resolvedFile,
+                    caseSensitivity: 'sensitive',
+                    scope: request.scope,
+                  }
+                : {
+                    namespace: `${language}-module`,
+                    kind: 'module',
+                    relativeLocator: importedModuleLocator(imported),
+                    caseSensitivity: language === 'dotnet' ? 'insensitive' : 'sensitive',
+                    scope: request.scope,
+                  }
+            );
             if (!target.accepted)
               throw new Error('Imported module identity could not be resolved.');
             facts.push({
@@ -368,6 +425,7 @@ export function createLanguageImportsProvider(): GraphProviderRuntime {
               freshness: { status: 'current' },
               truthLifecycle: { invalidatedBy: ['input-change', 'deletion'] },
               observedAt: request.observedAt,
+              partitionOwner: { locator: input.locator, observationOrigin: 'build-clock' },
               inputDigest: input.digest,
               unknownZones: [],
               extensions: Object.freeze({ moduleSpecifier: imported }),

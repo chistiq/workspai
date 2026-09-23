@@ -384,6 +384,24 @@ function validateFact(
     );
     valid = false;
   }
+  if (value.partitionOwner !== undefined) {
+    const owner = value.partitionOwner;
+    if (
+      !record(owner) ||
+      typeof owner.locator !== 'string' ||
+      owner.locator.length === 0 ||
+      owner.locator.includes('\0') ||
+      !['source', 'provider', 'build-clock'].includes(String(owner.observationOrigin))
+    ) {
+      issue(
+        issues,
+        'GRAPH_FACT_PARTITION_OWNER_INVALID',
+        `${path}/partitionOwner`,
+        'Partition ownership requires an explicit locator and observation origin.'
+      );
+      valid = false;
+    }
+  }
   if (!validDigest(value.inputDigest)) {
     issue(
       issues,

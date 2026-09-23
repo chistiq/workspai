@@ -129,6 +129,7 @@ function fact(
     freshness: { status: 'current' },
     truthLifecycle: { invalidatedBy: ['input-change', 'deletion', 'provider-change'] },
     observedAt,
+    partitionOwner: { locator: input.locator, observationOrigin: 'build-clock' },
     inputDigest: input.digest,
     unknownZones: [],
   };

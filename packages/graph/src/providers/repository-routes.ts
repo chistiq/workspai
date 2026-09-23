@@ -907,6 +907,7 @@ export function createRepositoryRoutesProvider(): GraphProviderRuntime {
                 freshness: { status: 'current' },
                 truthLifecycle: { invalidatedBy: ['input-change', 'deletion'] },
                 observedAt: request.observedAt,
+                partitionOwner: { locator: input.locator, observationOrigin: 'build-clock' },
                 inputDigest: input.digest,
                 unknownZones: [],
                 extensions: Object.freeze({

@@ -125,7 +125,7 @@ function source(id: string, facts: readonly GraphWorkspaceFact[]): GraphComposit
 }
 
 describe('locator fact shards', () => {
-  it('reuses frozen facts only inside the active membership and session', () => {
+  it('restores partition ownership only inside the active membership and session', () => {
     const store = createLocatorFactShardStore();
     const first = fact('fact:1', 'a.ts');
     runWithLocatorFactShardStore(store, () => {
@@ -138,6 +138,7 @@ describe('locator fact shards', () => {
         inputDigest: 'a'.repeat(64),
         inputIndex: 0,
         facts: [first],
+        observationOrigins: [['fact:1', 'build-clock']],
         unknownZones: [],
         processing: source('workspai.graph.provider.fixture', [first]).batch.processing[0]!,
         callEnvironmentDigest: '',
@@ -160,7 +161,11 @@ describe('locator fact shards', () => {
           unknownZones
         )
       ).toBe(true);
-      expect(facts[0]).toBe(first);
+      expect(facts[0]).not.toBe(first);
+      expect(facts[0]).toMatchObject({
+        factId: first.factId,
+        partitionOwner: { locator: 'a.ts', observationOrigin: 'build-clock' },
+      });
       setLocatorFactShardMembership(['a.ts', 'b.ts']);
       expect(
         lookupLocatorFactShard({
@@ -225,6 +230,7 @@ describe('locator fact shards', () => {
         inputDigest: 'a'.repeat(64),
         inputIndex: 0,
         facts: [first],
+        observationOrigins: [['fact:1', 'build-clock']],
         unknownZones: [],
         processing: source('workspai.graph.provider.fixture', [first]).batch.processing[0]!,
         callEnvironmentDigest: '',
@@ -272,6 +278,7 @@ describe('locator fact shards', () => {
           inputDigest: 'a'.repeat(64),
           inputIndex: 0,
           facts: [fact(`fact:${cycle}`, `tmp-${cycle}.ts`)],
+          observationOrigins: [[`fact:${cycle}`, 'build-clock']],
           unknownZones: [],
           processing: source('workspai.graph.provider.fixture', [
             fact(`fact:${cycle}`, `tmp-${cycle}.ts`),
@@ -308,6 +315,7 @@ describe('locator fact shards', () => {
           inputDigest: 'a'.repeat(64),
           inputIndex: 0,
           facts: [fact(`fact:${locator}`, locator)],
+          observationOrigins: [[`fact:${locator}`, 'build-clock']],
           unknownZones: [],
           processing: source('workspai.graph.provider.fixture', [fact(`fact:${locator}`, locator)])
             .batch.processing[0]!,

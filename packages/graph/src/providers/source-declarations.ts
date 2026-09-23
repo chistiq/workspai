@@ -47,6 +47,7 @@ import {
   appendReusedLocatorFacts,
   locatorCallEnvironmentDigest,
   lookupLocatorFactShard,
+  materializeLocatorFactShardFacts,
   rememberLocatorFactShard,
   type GraphLocatorFactShard,
 } from '../application/locator-fact-shards.js';
@@ -1201,7 +1202,11 @@ export function createSourceDeclarationsProvider(
         if (restored) {
           processing.push(restored.processing);
           if (isSourceDeclarationExtras(restored.extras)) {
-            facts.push(...restored.facts.filter((fact) => fact.factType !== 'source.call'));
+            facts.push(
+              ...materializeLocatorFactShardFacts(restored).filter(
+                (fact) => fact.factType !== 'source.call'
+              )
+            );
           }
         }
         if (!source || !codeView) {
@@ -1432,6 +1437,12 @@ export function createSourceDeclarationsProvider(
           inputDigest: input.digest.value,
           inputIndex,
           facts: Object.freeze(factsByLocator.get(input.locator) ?? []),
+          observationOrigins: Object.freeze(
+            (factsByLocator.get(input.locator) ?? []).map(
+              (fact) =>
+                [fact.factId, fact.partitionOwner?.observationOrigin ?? 'build-clock'] as const
+            )
+          ),
           unknownZones: Object.freeze(unknownZones.filter((zone) => zone.scope === input.locator)),
           processing: processingRecord,
           callEnvironmentDigest: locatorCallEnvironmentDigest(

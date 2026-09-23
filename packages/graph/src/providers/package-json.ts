@@ -156,6 +156,7 @@ export function createPackageJsonProvider(): GraphProviderRuntime {
             freshness: { status: 'current' },
             truthLifecycle: { invalidatedBy: ['input-change', 'deletion'] },
             observedAt: request.observedAt,
+            partitionOwner: { locator: input.locator, observationOrigin: 'build-clock' },
             inputDigest: input.digest,
             unknownZones: declaredName
               ? []
@@ -231,6 +232,7 @@ export function createPackageJsonProvider(): GraphProviderRuntime {
               freshness: { status: 'current' },
               truthLifecycle: { invalidatedBy: ['input-change', 'deletion'] },
               observedAt: request.observedAt,
+              partitionOwner: { locator: input.locator, observationOrigin: 'build-clock' },
               inputDigest: input.digest,
               unknownZones: [],
             });
@@ -289,6 +291,7 @@ export function createPackageJsonProvider(): GraphProviderRuntime {
               freshness: { status: 'current' },
               truthLifecycle: { invalidatedBy: ['input-change', 'deletion'] },
               observedAt: request.observedAt,
+              partitionOwner: { locator: input.locator, observationOrigin: 'build-clock' },
               inputDigest: input.digest,
               unknownZones: [],
             });

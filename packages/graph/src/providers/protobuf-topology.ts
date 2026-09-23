@@ -249,6 +249,7 @@ export function createProtobufTopologyProvider(): GraphProviderRuntime {
               freshness: { status: 'current' },
               truthLifecycle: { invalidatedBy: ['input-change', 'deletion', 'provider-change'] },
               observedAt: request.observedAt,
+              partitionOwner: { locator: input.locator, observationOrigin: 'build-clock' },
               inputDigest: input.digest,
               unknownZones: [],
             });
@@ -289,6 +290,12 @@ export function createProtobufTopologyProvider(): GraphProviderRuntime {
             append(
               contract.value.reference,
               'declares',
+              schema.value.reference,
+              'contract.protobuf-schema'
+            );
+            append(
+              repository.value.reference,
+              'contains',
               schema.value.reference,
               'contract.protobuf-schema'
             );

@@ -209,6 +209,223 @@ describe('Graph package shadow parity', () => {
     expect(result.differences.filter((item) => item.area === 'node')).toEqual([]);
   });
 
+  it('binds a legacy relative module import to the package file it resolves to', async () => {
+    const legacyCandidate = legacy();
+    legacyCandidate.entities = [
+      {
+        id: 'legacy:source',
+        kind: 'file',
+        identity: { key: 'file:app:src/index.ts' },
+        proofIds: ['p1'],
+      },
+      {
+        id: 'legacy:target',
+        kind: 'file',
+        identity: { key: 'file:app:src/lib.ts' },
+        proofIds: ['p1'],
+      },
+      {
+        id: 'legacy:specifier',
+        kind: 'module',
+        identity: { key: 'module:app:./lib.js' },
+        proofIds: ['p1'],
+      },
+      {
+        id: 'legacy:bare',
+        kind: 'module',
+        identity: { key: 'module:app:@scope/left' },
+        proofIds: ['p1'],
+      },
+    ];
+    legacyCandidate.relations = [
+      {
+        id: 'legacy:relative',
+        from: 'legacy:source',
+        to: 'legacy:specifier',
+        kind: 'imports',
+        proofIds: ['p1'],
+      },
+      {
+        id: 'legacy:package-import',
+        from: 'legacy:source',
+        to: 'legacy:bare',
+        kind: 'imports',
+        proofIds: ['p1'],
+      },
+    ];
+    const candidate = packageGraph();
+    candidate.graph.nodes = [
+      { id: 'file:src/index.ts', kind: 'file' },
+      { id: 'file:src/lib.ts', kind: 'file' },
+      { id: 'module:@scope/left', kind: 'module' },
+    ];
+    candidate.graph.edges = [
+      {
+        id: 'edge:relative',
+        from: 'file:src/index.ts',
+        to: 'file:src/lib.ts',
+        relation: 'imports',
+        proof: { evidence: [{ relativeLocator: 'src/index.ts' }] },
+      },
+      {
+        id: 'edge:package',
+        from: 'file:src/index.ts',
+        to: 'module:@scope/left',
+        relation: 'imports',
+        proof: { evidence: [{ relativeLocator: 'src/index.ts' }] },
+      },
+    ];
+    const result = await runGraphShadowComparison({
+      profile: 'g8-relative-import-binding',
+      binding,
+      limits: GRAPH_SHADOW_DEFAULT_LIMITS,
+      legacy: async () => legacyCandidate,
+      package: async () => candidate,
+    });
+    expect(
+      result.differences.filter((item) => item.area === 'relation' && item.key === 'imports')
+    ).toEqual([]);
+  });
+
+  it('does not score an unresolved relative import the package already marked unknown', async () => {
+    const legacyCandidate = legacy();
+    legacyCandidate.entities = [
+      {
+        id: 'legacy:source',
+        kind: 'file',
+        identity: { key: 'file:app:.meta-updater/main.mjs' },
+        proofIds: ['p1'],
+      },
+      {
+        id: 'legacy:built',
+        kind: 'module',
+        identity: { key: 'module:app:./lib/index.js' },
+        proofIds: ['p1'],
+      },
+    ];
+    legacyCandidate.relations = [
+      {
+        id: 'legacy:built-import',
+        from: 'legacy:source',
+        to: 'legacy:built',
+        kind: 'imports',
+        proofIds: ['p1'],
+      },
+    ];
+    const candidate = packageGraph();
+    candidate.graph.nodes = [{ id: 'file:.meta-updater/main.mjs', kind: 'file' }];
+    candidate.graph.edges = [];
+    candidate.quality.unknownZones = [
+      {
+        code: 'graph.ecmascript-local-import-unresolved',
+        scope: '.meta-updater/main.mjs',
+      },
+    ];
+    const explained = await runGraphShadowComparison({
+      profile: 'g8-unresolved-relative-import',
+      binding,
+      limits: GRAPH_SHADOW_DEFAULT_LIMITS,
+      legacy: async () => legacyCandidate,
+      package: async () => candidate,
+    });
+    expect(
+      explained.differences.filter((item) => item.area === 'relation' && item.key === 'imports')
+    ).toEqual([]);
+
+    candidate.quality.unknownZones = [];
+    const unexplained = await runGraphShadowComparison({
+      profile: 'g8-unresolved-relative-import',
+      binding,
+      limits: GRAPH_SHADOW_DEFAULT_LIMITS,
+      legacy: async () => legacyCandidate,
+      package: async () => candidate,
+    });
+    expect(
+      unexplained.differences.some(
+        (item) => item.code === 'GRAPH_SHADOW_RELATION_LEGACY_ONLY' && item.key === 'imports'
+      )
+    ).toBe(true);
+  });
+
+  it('treats a declared package import and the same module specifier as one edge', async () => {
+    const legacyCandidate = legacy();
+    legacyCandidate.entities = [
+      {
+        id: 'legacy:source',
+        kind: 'file',
+        identity: { key: 'file:app:.meta-updater/src/index.ts' },
+        proofIds: ['p1'],
+      },
+      {
+        id: 'legacy:declared',
+        kind: 'module',
+        identity: { key: 'dependency:npm:@pnpm/lockfile.fs' },
+        proofIds: ['p1'],
+      },
+      {
+        id: 'legacy:subpath',
+        kind: 'module',
+        identity: { key: 'dependency:npm:lodash' },
+        proofIds: ['p1'],
+      },
+    ];
+    legacyCandidate.relations = [
+      {
+        id: 'legacy:declared-import',
+        from: 'legacy:source',
+        to: 'legacy:declared',
+        kind: 'imports',
+        proofIds: ['p1'],
+      },
+      {
+        id: 'legacy:subpath-import',
+        from: 'legacy:source',
+        to: 'legacy:subpath',
+        kind: 'imports',
+        proofIds: ['p1'],
+      },
+    ];
+    const candidate = packageGraph();
+    candidate.graph.nodes = [
+      { id: 'file:.meta-updater/src/index.ts', kind: 'file' },
+      { id: 'module:@pnpm/lockfile.fs', kind: 'module' },
+      { id: 'module:lodash/get', kind: 'module' },
+    ];
+    candidate.graph.edges = [
+      {
+        id: 'edge:declared',
+        from: 'file:.meta-updater/src/index.ts',
+        to: 'module:@pnpm/lockfile.fs',
+        relation: 'imports',
+        proof: { evidence: [{ relativeLocator: '.meta-updater/src/index.ts' }] },
+      },
+      {
+        id: 'edge:subpath',
+        from: 'file:.meta-updater/src/index.ts',
+        to: 'module:lodash/get',
+        relation: 'imports',
+        proof: { evidence: [{ relativeLocator: '.meta-updater/src/index.ts' }] },
+      },
+    ];
+    const result = await runGraphShadowComparison({
+      profile: 'g8-declared-package-import',
+      binding,
+      limits: GRAPH_SHADOW_DEFAULT_LIMITS,
+      legacy: async () => legacyCandidate,
+      package: async () => candidate,
+    });
+    const importDifferences = result.differences.filter(
+      (item) => item.area === 'relation' && item.key === 'imports'
+    );
+    expect(importDifferences.map((item) => item.code).sort()).toEqual([
+      'GRAPH_SHADOW_RELATION_LEGACY_ONLY',
+      'GRAPH_SHADOW_RELATION_PACKAGE_ONLY',
+    ]);
+    expect(importDifferences.every((item) => item.legacy?.count === 1 || item.package?.count === 1)).toBe(
+      true
+    );
+  });
+
   it('does not treat binding-precision call coverage as truncation completeness', async () => {
     const candidate = packageGraph();
     candidate.quality.coverage = [

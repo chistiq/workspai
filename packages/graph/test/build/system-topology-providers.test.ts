@@ -155,6 +155,11 @@ describe('system topology repository providers', () => {
     expect(result.graph.edges.some((edge) => edge.relation === 'owned-by')).toBe(true);
     expect(result.graph.edges.filter((edge) => edge.relation === 'deployed-as')).toHaveLength(2);
     expect(result.graph.nodes.some((node) => node.kind === 'endpoint')).toBe(true);
+    const schema = result.graph.nodes.find((node) => node.kind === 'schema');
+    expect(schema).toBeDefined();
+    expect(
+      result.graph.edges.some((edge) => edge.relation === 'contains' && edge.to === schema?.id)
+    ).toBe(true);
     expect(result.graph.edges.every((edge) => edge.proof.evidence.length > 0)).toBe(true);
     expect(result.providers).toEqual(
       expect.arrayContaining([

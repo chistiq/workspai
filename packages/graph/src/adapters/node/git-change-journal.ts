@@ -394,6 +394,16 @@ function cachedGitSnapshot(
     return undefined;
   }
   if (stamp.mtimeMs !== cached.indexMtimeMs || stamp.size !== cached.indexSize) return undefined;
+  const symbolic = spawnGit(root, ['symbolic-ref', '--quiet', 'HEAD'], signal);
+  const detached = symbolic.status !== 0;
+  const branch =
+    symbolic.status === 0 ? utf8Trim(symbolic.stdout).replace(/^refs\/heads\//u, '') : '';
+  if (
+    detached !== cached.snapshot.baseline.detached ||
+    branch !== cached.snapshot.baseline.branch
+  ) {
+    return undefined;
+  }
   return { snapshot: cached.snapshot, cache: cached };
 }
 

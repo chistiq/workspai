@@ -96,6 +96,11 @@ export {
   routeGraphNativeTraversal,
   type GraphNativeTraversalRoute,
 } from '../../application/route-native-traversal.js';
+export {
+  drainNativeQuery,
+  NativeGraphQuerySession,
+} from '../../application/native-query-session.js';
+export { disposeResidentSessions } from '../../application/native-partition-session.js';
 
 let bundledNativePort: Promise<GraphNativePort | undefined> | undefined;
 const semanticStampsByManifest = new WeakMap<
@@ -477,11 +482,15 @@ export async function buildNodeRepoGraph(
   request: NodeRepoGraphBuildRequest
 ): Promise<GraphRepoBuildResult> {
   return runWithOwnedGraphProductBuildSession(request.session, async (session) => {
-    const ports = createNodeGraphProductHostPorts({
-      signal: request.signal,
-      workerUrl: request.workerUrl,
-      hashedContent: session.hashedContent,
-    });
+    const native = await loadNodeBundledGraphNativePort();
+    const ports = {
+      ...createNodeGraphProductHostPorts({
+        signal: request.signal,
+        workerUrl: request.workerUrl,
+        hashedContent: session.hashedContent,
+      }),
+      ...(native ? { native } : {}),
+    };
     const scope = request.scope ?? {
       kind: 'project' as const,
       projectIds: ['project:implicit-single-repository'],
@@ -576,12 +585,16 @@ export async function buildNodeIncrementalRepoGraph(
       request.providers ??
       createStandardRepositoryProviders({ loadNative: loadNodeBundledGraphNativePort });
     const policy = request.policy ?? GRAPH_STANDARD_REPO_BUILD_POLICY;
-    const ports = createNodeGraphProductHostPorts({
-      signal: request.signal,
-      workerUrl: request.workerUrl,
-      hashedContent: session.hashedContent,
-      ...(request.snapshotProbe ? { snapshotProbe: request.snapshotProbe } : {}),
-    });
+    const native = await loadNodeBundledGraphNativePort();
+    const ports = {
+      ...createNodeGraphProductHostPorts({
+        signal: request.signal,
+        workerUrl: request.workerUrl,
+        hashedContent: session.hashedContent,
+        ...(request.snapshotProbe ? { snapshotProbe: request.snapshotProbe } : {}),
+      }),
+      ...(native ? { native } : {}),
+    };
     const capturedManifest = request.base.contentStateManifest;
     const capturedStamps = capturedManifest
       ? semanticStampsByManifest.get(capturedManifest)

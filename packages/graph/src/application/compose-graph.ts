@@ -39,7 +39,16 @@ import {
   rememberAdmittedFactCanonical,
 } from '../domain/admitted-graph-facts.js';
 import { structurizeUnknownZone } from '../domain/unknown-cause.js';
+import { canonicalFactKeysFromNative } from './compact-fact-ir.js';
+import { digestOwnedFactSet } from './owned-fact-set.js';
+import {
+  composeThroughResidentSession,
+  discardStreamedPartitionSpill,
+  rehydrateStreamedPartitionSpill,
+} from './native-partition-session.js';
+import { composeOwnedGraph, type OwnedCompositionComplete } from './owned-composition.js';
 import type { GraphExecutionPorts, GraphWorkerTaskResult } from '../ports/index.js';
+import { snapshotGraphBuildMemory } from './build-memory.js';
 import { recordGraphDataMovement } from './data-movement.js';
 import { digestCanonicalGraphInput } from './digest-canonical-graph-input.js';
 import {
@@ -104,6 +113,23 @@ function issue(code: string, path: string, message: string): GraphValidationIssu
 
 const utf8 = new TextEncoder();
 const COMPACT_GRAPH_VALUE_LIMIT = 64;
+let lastFactCanonicalKeyChars = 0;
+let lastFactCodeUnitInversions = 0;
+let lastFactNonAsciiKeys = 0;
+let lastOwnedFactDigestMode: 'off' | 'complete' | 'fallback' = 'off';
+let lastOwnedCanonicalBytes = 0;
+let lastOwnedRustRssBytes = 0;
+let lastOwnedBoundaryBytes = 0;
+let lastOwnedFallbackReason = '';
+let suppressOwnedFactDigest = false;
+let lastOwnedPublicationBytes = 0;
+let lastOwnedNodeCount = 0;
+let lastOwnedEdgeCount = 0;
+let lastOwnedRustFacts = 0;
+let lastOwnedTypescriptFacts = 0;
+let lastOwnedRssKnown = false;
+let lastOwnedRetainedCanonicalBytes = 0;
+let lastOwnedSimultaneousRssBytes = 0;
 const CANONICAL_DIGEST = 'workspai.graph.canonical-json.v1' as const;
 
 interface ComposeCanonicalIntern {
@@ -111,6 +137,7 @@ interface ComposeCanonicalIntern {
   readonly objects: Map<object, string>;
   readonly facts: Map<GraphWorkspaceFact, string>;
   readonly proofs: Map<GraphWorkspaceFact, string>;
+  readonly bySignature: Map<string, string>;
 }
 
 const composeCanonicalIntern = new AsyncLocalStorage<ComposeCanonicalIntern>();
@@ -123,6 +150,7 @@ function createComposeCanonicalIntern(): ComposeCanonicalIntern {
     objects: new Map(),
     facts: new Map(),
     proofs: new Map(),
+    bySignature: new Map(),
   };
 }
 
@@ -169,6 +197,7 @@ export function snapshotAdmittedGraphCompositionSource(
   const detached = structuredClone({
     manifest: source.manifest,
     batch: { ...source.batch, facts: [] as GraphWorkspaceFact[] },
+    ...(source.partitionOwnership ? { partitionOwnership: source.partitionOwnership } : {}),
   });
   detached.batch.facts = source.batch.facts.map((fact) => {
     if (isGraphFactAdmitted(fact)) return fact;
@@ -217,17 +246,18 @@ function canonical(input: unknown): string {
     const owned = admittedFactCanonicalOf(input);
     if (owned !== undefined) return owned;
     const intern = composeCanonicalIntern.getStore();
-    if (intern?.admitted.has(input) || isGraphFactAdmitted(input)) {
-      const cached = intern?.objects.get(input);
-      if (cached !== undefined) return cached;
-      recordGraphDataMovement('canonicalized');
-      const result = canonicalizeGraphValue(input);
-      if (!result.accepted)
-        throw new Error(result.issues[0]?.message ?? 'Canonicalization failed.');
-      intern?.objects.set(input, result.value);
-      rememberAdmittedFactCanonical(input, result.value);
-      return result.value;
+    const cached = intern?.objects.get(input);
+    if (cached !== undefined) return cached;
+    recordGraphDataMovement('canonicalized');
+    const result = canonicalizeGraphValue(input);
+    if (!result.accepted) throw new Error(result.issues[0]?.message ?? 'Canonicalization failed.');
+    if (intern) {
+      intern.objects.set(input, result.value);
+      if (intern.admitted.has(input) || isGraphFactAdmitted(input)) {
+        rememberAdmittedFactCanonical(input, result.value);
+      }
     }
+    return result.value;
   }
   recordGraphDataMovement('canonicalized');
   const result = canonicalizeGraphValue(input);
@@ -287,15 +317,16 @@ function proofSliceCanonical(fact: GraphWorkspaceFact): string {
   const intern = composeCanonicalIntern.getStore();
   const cached = intern?.proofs.get(fact);
   if (cached !== undefined) return cached;
+  const evidenceSignature = evidenceListSignature(fact.evidence);
+  const evidenceText = evidenceSignature
+    ? internedCanonical(fact.evidence, evidenceSignature)
+    : canonical(fact.evidence);
   const projected: Record<string, unknown> = {
     evidence: fact.evidence,
     factId: fact.factId,
     inputDigest: fact.inputDigest,
   };
-  const value = `{${Object.keys(projected)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${canonical(projected[key])}`)
-    .join(',')}}`;
+  const value = `{"evidence":${evidenceText},"factId":${canonical(fact.factId)},"inputDigest":${canonical(projected.inputDigest)}}`;
   if (intern && intern.admitted.has(fact)) intern.proofs.set(fact, value);
   return value;
 }
@@ -358,6 +389,24 @@ function uniqueCanonical<T>(values: readonly T[]): T[] {
   return [...new Map(rankCanonical(values).map((item) => [item.key, item.value])).values()];
 }
 
+function hashCanonicalSequence(
+  streamer: { update(chunk: Uint8Array): void },
+  keys: readonly { readonly key: string }[]
+): void {
+  let pending = '[';
+  for (let index = 0; index < keys.length; index += 1) {
+    const key = keys[index]?.key ?? '';
+    if (pending.length > 0 && pending.length + key.length + 1 > 32_768) {
+      streamer.update(utf8.encode(pending));
+      pending = '';
+    }
+    if (index > 0) pending += ',';
+    pending += key;
+  }
+  pending += ']';
+  streamer.update(utf8.encode(pending));
+}
+
 function digestRankedMaterial(
   ranked: readonly { readonly key: string }[],
   ports: GraphExecutionPorts
@@ -374,12 +423,7 @@ async function digestSortedValues<T>(
   const ranked = rankCanonical(values);
   const streamer = ports.digest.createStreamingDigest?.();
   if (streamer) {
-    streamer.update(utf8.encode('['));
-    for (const [index, item] of ranked.entries()) {
-      if (index > 0) streamer.update(utf8.encode(','));
-      streamer.update(utf8.encode(item.key));
-    }
-    streamer.update(utf8.encode(']'));
+    hashCanonicalSequence(streamer, ranked);
     recordGraphDataMovement('hashed');
     return digestReference(await streamer.digest());
   }
@@ -399,12 +443,7 @@ async function streamSortedCanonicalKeys(
 ): Promise<WisDigestReference> {
   const streamer = ports.digest.createStreamingDigest?.();
   if (streamer) {
-    streamer.update(utf8.encode('['));
-    for (const [index, item] of ranked.entries()) {
-      if (index > 0) streamer.update(utf8.encode(','));
-      streamer.update(utf8.encode(item.key));
-    }
-    streamer.update(utf8.encode(']'));
+    hashCanonicalSequence(streamer, ranked);
     recordGraphDataMovement('hashed');
     return digestReference(await streamer.digest());
   }
@@ -463,11 +502,33 @@ async function digestFactSet(
   ) {
     return previous.digest;
   }
-  const keys = factCanonicalKeys(sources);
+  if (process.env.WORKSPAI_GRAPH_COMPOSE_KERNEL === '1' && !suppressOwnedFactDigest) {
+    const owned = await digestOwnedFactSet(facts, semanticFactCanonical);
+    if (owned.status === 'complete') {
+      lastOwnedFactDigestMode = 'complete';
+      lastOwnedCanonicalBytes = owned.canonicalBytes;
+      lastOwnedRustRssBytes = owned.rustRssBytes;
+      lastOwnedBoundaryBytes = owned.boundaryBytes;
+      lastOwnedFallbackReason = '';
+      lastFactCanonicalKeyChars = owned.canonicalBytes;
+      recordGraphDataMovement('nativeBoundary');
+      recordGraphDataMovement('hashed');
+      rememberSessionFactDigestAnchor({
+        facts: Object.freeze([...facts]),
+        sortedEntries: Object.freeze([]),
+        digest: owned.digest,
+      });
+      return owned.digest;
+    }
+    lastOwnedFactDigestMode = 'fallback';
+    lastOwnedFallbackReason = owned.reason;
+    lastOwnedBoundaryBytes = owned.boundaryBytes;
+  }
+  const keys = factCanonicalKeys(sources, nativeFactCanonicalizer(ports));
   const uniqueKeys = new Set(keys).size === keys.length;
   const indexByFact = new Map(facts.map((fact, index) => [fact, index]));
   let sortedEntries: { fact: GraphWorkspaceFact; key: string; index: number }[];
-  if (previous && uniqueKeys) {
+  if (previous && previous.sortedEntries.length > 0 && uniqueKeys) {
     const kept = previous.sortedEntries.flatMap((entry) => {
       const index = indexByFact.get(entry.fact);
       return index === undefined ? [] : [{ fact: entry.fact, key: entry.key, index }];
@@ -485,6 +546,26 @@ async function digestFactSet(
   }
   const digest = await streamSortedCanonicalKeys(sortedEntries, ports);
   recordGraphDataMovement('sorted');
+  let canonicalKeyChars = 0;
+  let codeUnitInversions = 0;
+  let nonAsciiKeys = 0;
+  const profileCanonicalOrder = process.env.WORKSPAI_GRAPH_PROFILE === '1';
+  for (let index = 0; index < sortedEntries.length; index += 1) {
+    const key = sortedEntries[index]?.key ?? '';
+    canonicalKeyChars += key.length;
+    if (!profileCanonicalOrder) continue;
+    if (index > 0 && (sortedEntries[index - 1]?.key ?? '') > key) codeUnitInversions += 1;
+    for (let charIndex = 0; charIndex < key.length; charIndex += 1) {
+      const code = key.charCodeAt(charIndex);
+      if (code > 127) {
+        nonAsciiKeys += 1;
+        break;
+      }
+    }
+  }
+  lastFactCanonicalKeyChars = canonicalKeyChars;
+  lastFactCodeUnitInversions = codeUnitInversions;
+  lastFactNonAsciiKeys = nonAsciiKeys;
   rememberSessionFactDigestAnchor({
     facts: Object.freeze([...facts]),
     sortedEntries: Object.freeze(sortedEntries),
@@ -526,7 +607,30 @@ function rememberSnapshotFactCanonicals(
   }
 }
 
-function factCanonicalKeys(sources: readonly GraphCompositionSource[]): string[] {
+function nativeFactCanonicalizer(
+  ports: GraphExecutionPorts
+): ((bytes: Uint8Array) => readonly string[] | undefined) | undefined {
+  // Measured on pnpm: digest-identical to TypeScript, but not faster, because the
+  // canonical strings still have to return to JavaScript for localeCompare.
+  // The kernel stays opt-in until it can hash without that round trip.
+  if (process.env.WORKSPAI_GRAPH_FACT_KERNEL !== '1') return undefined;
+  const canonicalize = ports.native?.canonicalizeFactBatch;
+  const native = ports.native;
+  if (!canonicalize || !native) return undefined;
+  return (bytes) => {
+    try {
+      const result = canonicalize.call(native, bytes);
+      return result.status === 'complete' ? result.canonical : undefined;
+    } catch {
+      return undefined;
+    }
+  };
+}
+
+function factCanonicalKeys(
+  sources: readonly GraphCompositionSource[],
+  canonicalizeNative?: (bytes: Uint8Array) => readonly string[] | undefined
+): string[] {
   const cached: string[] = [];
   let complete = true;
   for (const source of sources) {
@@ -535,10 +639,21 @@ function factCanonicalKeys(sources: readonly GraphCompositionSource[]): string[]
       complete = false;
       break;
     }
-    cached.push(...stored);
+    // Argument spread overflows once one provider batch is larger than the engine limit.
+    for (const key of stored) cached.push(key);
   }
   if (complete) return cached;
-  const keys = sources.flatMap((source) => source.batch.facts.map(semanticFactCanonical));
+  const facts = sources.flatMap((source) => source.batch.facts);
+  const keys = canonicalizeNative
+    ? [...canonicalFactKeysFromNative(facts, canonicalizeNative, semanticFactCanonical)]
+    : facts.map(semanticFactCanonical);
+  if (canonicalizeNative) {
+    for (let index = 0; index < facts.length; index += 1) {
+      const fact = facts[index];
+      const key = keys[index];
+      if (fact && key) rememberAdmittedFactCanonical(fact, key);
+    }
+  }
   rememberSnapshotFactCanonicals(sources, keys);
   return keys;
 }
@@ -789,6 +904,19 @@ function aggregateCoverage(
   );
 }
 
+function projectedFreshness(
+  freshness: GraphWorkspaceFact['freshness']
+): GraphWorkspaceFact['freshness'] {
+  if (freshness.validUntil === undefined && freshness.renewal === undefined) {
+    const keys = Object.keys(freshness);
+    if (keys.length === 1 && keys[0] === 'status') return freshness;
+  }
+  return {
+    status: freshness.status,
+    ...(freshness.renewal ? { renewal: freshness.renewal } : {}),
+  };
+}
+
 function semanticFact(fact: GraphWorkspaceFact): unknown {
   return {
     factId: fact.factId,
@@ -802,10 +930,7 @@ function semanticFact(fact: GraphWorkspaceFact): unknown {
     derivation: fact.derivation,
     authority: fact.authority,
     confidence: fact.confidence,
-    freshness: {
-      status: fact.freshness.status,
-      ...(fact.freshness.renewal ? { renewal: fact.freshness.renewal } : {}),
-    },
+    freshness: projectedFreshness(fact.freshness),
     truthLifecycle: fact.truthLifecycle,
     inputDigest: fact.inputDigest,
     unknownZones: fact.unknownZones,
@@ -813,7 +938,153 @@ function semanticFact(fact: GraphWorkspaceFact): unknown {
   };
 }
 
-function semanticFactCanonical(fact: GraphWorkspaceFact): string {
+function internedCanonical(value: unknown, signature: string): string {
+  const intern = composeCanonicalIntern.getStore();
+  const cached = intern?.bySignature.get(signature);
+  if (cached !== undefined) return cached;
+  const text = canonical(value);
+  intern?.bySignature.set(signature, text);
+  return text;
+}
+
+function evidenceListSignature(evidence: readonly object[]): string | undefined {
+  let signature = `ev:${evidence.length}`;
+  for (const item of evidence) {
+    const record = item as {
+      id?: unknown;
+      sourceKind?: unknown;
+      relativeLocator?: unknown;
+      digest?: { algorithm?: unknown; value?: unknown };
+    };
+    const keys = Object.keys(item);
+    if (
+      keys.length !== 4 ||
+      typeof record.id !== 'string' ||
+      typeof record.sourceKind !== 'string' ||
+      typeof record.relativeLocator !== 'string' ||
+      !record.digest ||
+      typeof record.digest !== 'object'
+    ) {
+      return undefined;
+    }
+    const digestKeys = Object.keys(record.digest);
+    if (
+      digestKeys.length !== 2 ||
+      typeof record.digest.algorithm !== 'string' ||
+      typeof record.digest.value !== 'string'
+    ) {
+      return undefined;
+    }
+    signature += `\0${record.id}\0${record.sourceKind}\0${record.relativeLocator}\0${record.digest.algorithm}\0${record.digest.value}`;
+  }
+  return signature;
+}
+
+function repeatedStructureSignature(key: string, value: unknown): string | undefined {
+  if (
+    key === 'evidence' &&
+    Array.isArray(value) &&
+    value.every((item) => item && typeof item === 'object')
+  ) {
+    return evidenceListSignature(value);
+  }
+  if (!value || typeof value !== 'object') return undefined;
+  if (key === 'unknownZones' && Array.isArray(value) && value.length === 0) return 'uz';
+  const keys = Object.keys(value);
+  if (key === 'freshness') {
+    const freshness = value as { status?: unknown; renewal?: unknown };
+    if (keys.length === 1 && keys[0] === 'status' && typeof freshness.status === 'string') {
+      return `fr\0${freshness.status}`;
+    }
+    if (
+      keys.length === 2 &&
+      typeof freshness.status === 'string' &&
+      typeof freshness.renewal === 'string' &&
+      keys.includes('status') &&
+      keys.includes('renewal')
+    ) {
+      return `fr\0${freshness.status}\0${freshness.renewal}`;
+    }
+    return undefined;
+  }
+  if (key === 'truthLifecycle') {
+    const lifecycle = value as { invalidatedBy?: unknown };
+    if (
+      keys.length !== 1 ||
+      keys[0] !== 'invalidatedBy' ||
+      !Array.isArray(lifecycle.invalidatedBy)
+    ) {
+      return undefined;
+    }
+    if (!lifecycle.invalidatedBy.every((item) => typeof item === 'string')) return undefined;
+    return `lc\0${lifecycle.invalidatedBy.join('\0')}`;
+  }
+  if (key === 'provenance') {
+    const provenance = value as { id?: unknown; version?: unknown };
+    if (
+      keys.length === 2 &&
+      typeof provenance.id === 'string' &&
+      typeof provenance.version === 'string' &&
+      keys.includes('id') &&
+      keys.includes('version')
+    ) {
+      return `pv\0${provenance.id}\0${provenance.version}`;
+    }
+  }
+  return undefined;
+}
+
+function directEntityCanonical(value: object): string | undefined {
+  const entity = value as {
+    id?: unknown;
+    identityScheme?: unknown;
+    kind?: unknown;
+    scope?: unknown;
+    aliases?: unknown;
+  };
+  const keys = Object.keys(value);
+  if (
+    keys.length !== 4 ||
+    typeof entity.id !== 'string' ||
+    typeof entity.kind !== 'string' ||
+    !entity.identityScheme ||
+    typeof entity.identityScheme !== 'object' ||
+    !entity.scope ||
+    typeof entity.scope !== 'object'
+  ) {
+    return undefined;
+  }
+  return `{"id":${JSON.stringify(entity.id)},"identityScheme":${canonical(entity.identityScheme)},"kind":${JSON.stringify(entity.kind)},"scope":${canonical(entity.scope)}}`;
+}
+
+function directExtensionCanonical(value: object): string | undefined {
+  const record = value as { symbolName?: unknown };
+  const keys = Object.keys(value);
+  if (keys.length === 1 && keys[0] === 'symbolName' && typeof record.symbolName === 'string') {
+    return `{"symbolName":${JSON.stringify(record.symbolName)}}`;
+  }
+  return undefined;
+}
+
+function canonicalFactField(key: string, value: unknown): string {
+  if (
+    (key === 'subject' || key === 'object') &&
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value)
+  ) {
+    const entity = directEntityCanonical(value);
+    if (entity) return entity;
+  }
+  if (key === 'extensions' && value && typeof value === 'object' && !Array.isArray(value)) {
+    const extension = directExtensionCanonical(value);
+    if (extension) return extension;
+  }
+  const signature = repeatedStructureSignature(key, value);
+  return signature ? internedCanonical(value, signature) : canonical(value);
+}
+
+export function semanticFactCanonical(fact: GraphWorkspaceFact): string {
   const owned = admittedFactCanonicalOf(fact);
   if (owned !== undefined) return owned;
   const intern = composeCanonicalIntern.getStore();
@@ -822,7 +1093,7 @@ function semanticFactCanonical(fact: GraphWorkspaceFact): string {
   const projected = semanticFact(fact) as Record<string, unknown>;
   const value = `{${Object.keys(projected)
     .sort()
-    .map((key) => `${JSON.stringify(key)}:${canonical(projected[key])}`)
+    .map((key) => `${JSON.stringify(key)}:${canonicalFactField(key, projected[key])}`)
     .join(',')}}`;
   if (intern && intern.admitted.has(fact)) intern.facts.set(fact, value);
   rememberAdmittedFactCanonical(fact, value);
@@ -2081,6 +2352,504 @@ function rehydratePreparedComposition(
   };
 }
 
+function admittedPartitionClaims(
+  owned: OwnedCompositionComplete,
+  normalizedSources: readonly GraphCompositionSource[]
+): {
+  readonly hasUnknown: boolean;
+  readonly coverage: ReturnType<typeof aggregateCoverage>;
+  readonly unknownZones: readonly ReturnType<typeof structurizeUnknownZone>[];
+  readonly unsupportedZones: readonly ReturnType<typeof structurizeUnknownZone>[];
+  readonly staleZones: readonly { readonly scope: string; readonly reason: string }[];
+  readonly providerFailures: readonly { readonly providerId: string; readonly code: string }[];
+} {
+  const records = owned.partitionMetadata;
+  if (records && records.length === normalizedSources.length) {
+    const parsed = records.map((record) => {
+      const metadata = JSON.parse(record.metadata) as {
+        readonly providerId?: string;
+        readonly batchStatus?: string;
+        readonly unknownZones?: GraphCompositionSource['batch']['unknownZones'];
+        readonly unsupportedZones?: GraphCompositionSource['batch']['unsupportedZones'];
+        readonly coverage?: GraphCompositionSource['batch']['coverage'];
+        readonly staleZones?: readonly { readonly scope: string; readonly reason: string }[];
+      };
+      if (
+        !Array.isArray(metadata.unknownZones) ||
+        !Array.isArray(metadata.unsupportedZones) ||
+        !Array.isArray(metadata.coverage) ||
+        !Array.isArray(metadata.staleZones) ||
+        typeof metadata.batchStatus !== 'string'
+      ) {
+        throw new Error('session-meta');
+      }
+      return { providerId: record.providerId, metadata };
+    });
+    return {
+      hasUnknown: parsed.some((entry) => (entry.metadata.unknownZones?.length ?? 0) > 0),
+      coverage: aggregateCoverage(
+        parsed.map((entry) => ({
+          batch: { coverage: entry.metadata.coverage ?? [] },
+        })) as unknown as readonly GraphCompositionSource[]
+      ),
+      unknownZones: parsed.flatMap((entry) =>
+        (entry.metadata.unknownZones ?? []).map((zone) =>
+          structurizeUnknownZone(zone, {
+            provider: entry.providerId,
+            stage: 'provider-collect',
+          })
+        )
+      ),
+      unsupportedZones: parsed.flatMap((entry) =>
+        (entry.metadata.unsupportedZones ?? []).map((zone) =>
+          structurizeUnknownZone(zone, {
+            provider: entry.providerId,
+            stage: 'provider-collect',
+          })
+        )
+      ),
+      staleZones: parsed.flatMap((entry) => entry.metadata.staleZones ?? []),
+      providerFailures: parsed
+        .filter(
+          (entry) =>
+            entry.metadata.batchStatus === 'failed' || entry.metadata.batchStatus === 'partial'
+        )
+        .map((entry) => ({
+          providerId: entry.providerId,
+          code: 'GRAPH_PROVIDER_BATCH_FAILED',
+        })),
+    };
+  }
+  return {
+    hasUnknown: normalizedSources.some((source) => source.batch.unknownZones.length > 0),
+    coverage: aggregateCoverage(normalizedSources),
+    unknownZones: normalizedSources.flatMap((source) =>
+      source.batch.unknownZones.map((zone) =>
+        structurizeUnknownZone(zone, {
+          provider: source.manifest.id,
+          stage: 'provider-collect',
+        })
+      )
+    ),
+    unsupportedZones: normalizedSources.flatMap((source) =>
+      source.batch.unsupportedZones.map((zone) =>
+        structurizeUnknownZone(zone, {
+          provider: source.manifest.id,
+          stage: 'provider-collect',
+        })
+      )
+    ),
+    staleZones: normalizedSources.flatMap((source) =>
+      source.batch.facts
+        .filter((fact) => fact.freshness.status === 'stale')
+        .map((fact) => ({ scope: fact.factId, reason: 'fact freshness is stale' }))
+    ),
+    providerFailures: normalizedSources
+      .filter((source) => source.batch.status === 'failed' || source.batch.status === 'partial')
+      .map((source) => ({
+        providerId: source.manifest.id,
+        code: 'GRAPH_PROVIDER_BATCH_FAILED',
+      })),
+  };
+}
+
+async function publishOwnedComposition(
+  request: GraphCompositionRequest,
+  normalizedSources: readonly GraphCompositionSource[],
+  owned: OwnedCompositionComplete,
+  ports: GraphExecutionPorts,
+  admitMs: number,
+  _wallMs: number
+): Promise<GraphCompositionResult | undefined> {
+  const generationBase = {
+    graphSchema: GRAPH_CANONICAL_GRAPH_CONTRACT,
+    architectureEpoch: request.policy.architectureEpoch,
+    ontologySetDigest: owned.semantic.ontology,
+    proofPolicySetDigest: owned.semantic.proofPolicies,
+    inputsDigest: owned.semantic.inputs,
+    factSetDigest: owned.factDigest,
+    providerSetDigest: owned.semantic.providers,
+    compositionPolicyDigest: owned.semantic.compositionPolicy,
+  };
+  const generation: GraphGeneration = {
+    reference: {
+      id: `generation:${owned.contentDigest.value.slice(0, 32)}`,
+      generatedAt: owned.evaluatedAt,
+      contentDigest: owned.contentDigest,
+      ...(request.previousGeneration ? { parents: [request.previousGeneration.id] } : {}),
+    },
+    ...generationBase,
+  };
+  if (!owned.materialized) {
+    if (!owned.snapshot) return undefined;
+    const claims = admittedPartitionClaims(owned, normalizedSources);
+    const nativeQuality: GraphQualityReport = {
+      contract: GRAPH_QUALITY_CONTRACT,
+      generation: generation.reference,
+      integrity:
+        owned.snapshot.unresolvedCount > 0 ||
+        owned.orphanCount > 0 ||
+        owned.proofStates.unresolved > 0 ||
+        owned.proofStates.insufficient > 0 ||
+        owned.proofStates.disputed > 0 ||
+        claims.hasUnknown
+          ? 'attention'
+          : 'pass',
+      determinism: 'pass',
+      incrementalEquivalence: 'not-assessed',
+      coverage: Object.freeze(
+        claims.coverage.map((entry) => ({
+          dimension: entry.dimension,
+          ...(entry.expected && entry.expected > 0
+            ? { ratio: Math.min(1, entry.observed / entry.expected) }
+            : {}),
+          status: (entry.expected === undefined || entry.observed >= entry.expected
+            ? 'pass'
+            : 'attention') as GraphQualityVerdict,
+        }))
+      ),
+      proofStates: owned.proofStates,
+      unknownZones: Object.freeze(uniqueCanonical(claims.unknownZones)),
+      unsupportedZones: Object.freeze(uniqueCanonical(claims.unsupportedZones)),
+      staleZones: Object.freeze(uniqueCanonical(claims.staleZones)),
+      conflicts: Object.freeze([]),
+      orphans: Object.freeze(owned.orphans),
+      providerFailures: Object.freeze(uniqueCanonical(claims.providerFailures)),
+      releaseClaims: Object.freeze([]),
+    };
+    if (owned.orphans.length !== owned.orphanCount) {
+      lastOwnedFallbackReason = 'quality:orphans-not-listed';
+      return undefined;
+    }
+    const nativeQualityValidation = validateGraphQualityReport(nativeQuality);
+    if (!nativeQualityValidation.accepted) {
+      lastOwnedFallbackReason = `quality:${nativeQualityValidation.issues[0]?.code ?? 'invalid'}`;
+      return undefined;
+    }
+    const nativeQualityDigest = await digest(
+      {
+        integrity: nativeQuality.integrity,
+        coverage: nativeQuality.coverage,
+        proofStates: nativeQuality.proofStates,
+        unknownZones: nativeQuality.unknownZones,
+        unsupportedZones: nativeQuality.unsupportedZones,
+        staleZones: nativeQuality.staleZones,
+        conflicts: nativeQuality.conflicts,
+        orphans: nativeQuality.orphans,
+        providerFailures: nativeQuality.providerFailures,
+      },
+      ports
+    );
+    lastOwnedFactDigestMode = 'complete';
+    lastOwnedCanonicalBytes = owned.canonicalBytes;
+    lastOwnedRustRssBytes = owned.rssKnown ? owned.rustRssBytes : 0;
+    lastOwnedBoundaryBytes = owned.boundaryBytes;
+    lastOwnedFallbackReason = '';
+    lastOwnedPublicationBytes = owned.packedBytes;
+    lastOwnedNodeCount = owned.snapshot.nodeCount;
+    lastOwnedEdgeCount = owned.snapshot.edgeCount;
+    lastOwnedRustFacts = owned.rustFacts;
+    lastOwnedTypescriptFacts = 0;
+    lastOwnedRssKnown = owned.rssKnown;
+    lastOwnedRetainedCanonicalBytes = owned.retainedCanonicalBytes;
+    lastOwnedSimultaneousRssBytes = owned.simultaneousRssKnown ? owned.simultaneousRssBytes : 0;
+    lastFactCanonicalKeyChars = owned.spillBytes;
+    return {
+      accepted: true,
+      value: Object.freeze({
+        representation: 'native-snapshot' as const,
+        snapshot: owned.snapshot,
+        quality: nativeQuality,
+        semanticDigests: {
+          ontology: owned.semantic.ontology,
+          proofPolicies: owned.semantic.proofPolicies,
+          inputs: owned.semantic.inputs,
+          facts: owned.factDigest,
+          providers: owned.semantic.providers,
+          compositionPolicy: owned.semantic.compositionPolicy,
+        },
+        receipt: Object.freeze({
+          schema: GRAPH_COMPOSITION_RECEIPT_SCHEMA,
+          graphSchema: GRAPH_CANONICAL_GRAPH_CONTRACT,
+          architectureEpoch: request.policy.architectureEpoch,
+          ontologySetDigest: owned.semantic.ontology,
+          proofPolicySetDigest: owned.semantic.proofPolicies,
+          inputsDigest: owned.semantic.inputs,
+          factSetDigest: owned.factDigest,
+          providerSetDigest: owned.semantic.providers,
+          extractorSetDigest: owned.semantic.extractors,
+          compositionPolicyDigest: owned.semantic.compositionPolicy,
+          redactionPolicyDigest: owned.semantic.redaction,
+          scopeDigest: owned.semantic.scope,
+          coverageDigest: owned.semantic.coverage,
+          unknownZoneDigest: owned.semantic.unknownZones,
+          unsupportedZoneDigest: owned.semantic.unsupportedZones,
+          orderingRuleDigest: owned.semantic.ordering,
+          orderingRuleId: GRAPH_COMPOSITION_ORDERING_RULES.id,
+          contentDigest: owned.contentDigest,
+          qualityDigest: nativeQualityDigest,
+        }),
+      }),
+      issues: [],
+      timings: Object.freeze({
+        admitMs,
+        workerMs: 0,
+        workerValidationMs: 0,
+        eligibilityMs: 0,
+        semanticDigestMs: owned.digestMs,
+        edgeProofMs: owned.edgeMs,
+        contentDigestMs: owned.publishMs,
+        graphValidationMs: 0,
+        qualityDigestMs: 0,
+        freezeMs: 0,
+        canonicalKeyChars: owned.spillBytes,
+        canonicalCodeUnitInversions: 0,
+        canonicalNonAsciiKeys: 0,
+        ownedFactDigest: 'complete' as const,
+        ownedCanonicalBytes: owned.canonicalBytes,
+        ownedRustRssBytes: owned.rssKnown ? owned.rustRssBytes : 0,
+        ownedBoundaryBytes: owned.boundaryBytes,
+        ownedFallbackReason: '',
+        ownedPublicationBytes: owned.packedBytes,
+        ownedNodeCount: owned.snapshot.nodeCount,
+        ownedEdgeCount: owned.snapshot.edgeCount,
+        ownedRustFacts: owned.rustFacts,
+        ownedTypescriptFacts: 0,
+        ownedRssKnown: owned.rssKnown,
+        ownedRetainedCanonicalBytes: owned.retainedCanonicalBytes,
+        ownedSimultaneousRssBytes: owned.simultaneousRssKnown ? owned.simultaneousRssBytes : 0,
+        probes: [snapshotGraphBuildMemory('after-owned-composition')],
+      }),
+    };
+  }
+  const graphDraft = {
+    contract: GRAPH_CANONICAL_GRAPH_CONTRACT,
+    graphVersion: GRAPH_CANONICAL_GRAPH_CONTRACT.version,
+    generation,
+    ontology: [{ id: request.ontology.id, version: request.ontology.version }],
+    nodes: owned.nodes,
+    edges: owned.edges,
+    assertions: [],
+    disputes: [],
+    unresolved: owned.unresolved,
+    diagnostics: [],
+  };
+  const graphValidation = validateCanonicalGraph(graphDraft, request.ontology);
+  if (!graphValidation.accepted) {
+    lastOwnedFallbackReason = `validation:${graphValidation.issues[0]?.code ?? 'invalid'}`;
+    return undefined;
+  }
+  const proofStates: Record<GraphProofState, number> = {
+    supported: 0,
+    corroborated: 0,
+    verified: 0,
+    disputed: 0,
+    insufficient: 0,
+    unresolved: 0,
+  };
+  for (const edge of owned.edges) proofStates[edge.proof.state] += 1;
+  for (const decision of owned.decisions) {
+    if (decision.includedInGraph) continue;
+    if (decision.state === 'unresolved') proofStates.unresolved += 1;
+    else if (decision.state === 'rejected') proofStates.insufficient += 1;
+  }
+  const connected = new Set(owned.edges.flatMap((edge) => [edge.from, edge.to]));
+  const qualityDraft: GraphQualityReport = {
+    contract: GRAPH_QUALITY_CONTRACT,
+    generation: generation.reference,
+    integrity:
+      owned.unresolved.length > 0 ||
+      normalizedSources.some((source) => source.batch.unknownZones.length > 0) ||
+      owned.decisions.some((decision) => decision.state !== 'accepted')
+        ? 'attention'
+        : 'pass',
+    determinism: 'pass',
+    incrementalEquivalence: 'not-assessed',
+    coverage: Object.freeze(
+      aggregateCoverage(normalizedSources).map((entry) => ({
+        dimension: entry.dimension,
+        ...(entry.expected && entry.expected > 0
+          ? { ratio: Math.min(1, entry.observed / entry.expected) }
+          : {}),
+        status: (entry.expected === undefined || entry.observed >= entry.expected
+          ? 'pass'
+          : 'attention') as GraphQualityVerdict,
+      }))
+    ),
+    proofStates,
+    unknownZones: Object.freeze(
+      uniqueCanonical(
+        normalizedSources.flatMap((source) =>
+          source.batch.unknownZones.map((zone) =>
+            structurizeUnknownZone(zone, {
+              provider: source.manifest.id,
+              stage: 'provider-collect',
+            })
+          )
+        )
+      )
+    ),
+    unsupportedZones: Object.freeze(
+      uniqueCanonical(
+        normalizedSources.flatMap((source) =>
+          source.batch.unsupportedZones.map((zone) =>
+            structurizeUnknownZone(zone, {
+              provider: source.manifest.id,
+              stage: 'provider-collect',
+            })
+          )
+        )
+      )
+    ),
+    staleZones: Object.freeze(
+      uniqueCanonical(
+        normalizedSources.flatMap((source) =>
+          source.batch.facts
+            .filter((fact) => fact.freshness.status === 'stale')
+            .map((fact) => ({ scope: fact.factId, reason: 'fact freshness is stale' }))
+        )
+      )
+    ),
+    conflicts: Object.freeze([]),
+    orphans: Object.freeze(owned.nodes.filter((node) => !connected.has(node.id))),
+    providerFailures: Object.freeze(
+      uniqueCanonical(
+        normalizedSources
+          .filter((source) => source.batch.status === 'failed')
+          .map((source) => ({
+            providerId: source.manifest.id,
+            code: 'GRAPH_PROVIDER_BATCH_FAILED',
+          }))
+      )
+    ),
+    releaseClaims: Object.freeze([]),
+  };
+  const qualityValidation = validateGraphQualityReport(qualityDraft);
+  if (!qualityValidation.accepted) {
+    lastOwnedFallbackReason = `quality:${qualityValidation.issues[0]?.code ?? 'invalid'}`;
+    return undefined;
+  }
+  const qualityDigest = await digest(
+    {
+      integrity: qualityDraft.integrity,
+      coverage: qualityDraft.coverage,
+      proofStates: qualityDraft.proofStates,
+      unknownZones: qualityDraft.unknownZones,
+      unsupportedZones: qualityDraft.unsupportedZones,
+      staleZones: qualityDraft.staleZones,
+      conflicts: qualityDraft.conflicts,
+      orphans: qualityDraft.orphans,
+      providerFailures: qualityDraft.providerFailures,
+    },
+    ports
+  );
+  const receipt = Object.freeze({
+    schema: GRAPH_COMPOSITION_RECEIPT_SCHEMA,
+    graphSchema: GRAPH_CANONICAL_GRAPH_CONTRACT,
+    architectureEpoch: request.policy.architectureEpoch,
+    ontologySetDigest: owned.semantic.ontology,
+    proofPolicySetDigest: owned.semantic.proofPolicies,
+    inputsDigest: owned.semantic.inputs,
+    factSetDigest: owned.factDigest,
+    providerSetDigest: owned.semantic.providers,
+    extractorSetDigest: owned.semantic.extractors,
+    compositionPolicyDigest: owned.semantic.compositionPolicy,
+    redactionPolicyDigest: owned.semantic.redaction,
+    scopeDigest: owned.semantic.scope,
+    coverageDigest: owned.semantic.coverage,
+    unknownZoneDigest: owned.semantic.unknownZones,
+    unsupportedZoneDigest: owned.semantic.unsupportedZones,
+    orderingRuleDigest: owned.semantic.ordering,
+    orderingRuleId: GRAPH_COMPOSITION_ORDERING_RULES.id,
+    contentDigest: owned.contentDigest,
+    qualityDigest,
+  });
+  const probes = [snapshotGraphBuildMemory('after-owned-composition')];
+  lastOwnedFactDigestMode = 'complete';
+  lastOwnedCanonicalBytes = owned.canonicalBytes;
+  lastOwnedRustRssBytes = owned.rssKnown ? owned.rustRssBytes : 0;
+  lastOwnedBoundaryBytes = owned.boundaryBytes;
+  lastOwnedFallbackReason = '';
+  lastOwnedPublicationBytes = owned.packedBytes;
+  lastOwnedNodeCount = owned.snapshot?.nodeCount ?? owned.nodes.length;
+  lastOwnedEdgeCount = owned.snapshot?.edgeCount ?? owned.edges.length;
+  lastOwnedRustFacts = owned.rustFacts;
+  lastOwnedTypescriptFacts = 0;
+  lastOwnedRssKnown = owned.rssKnown;
+  lastOwnedRetainedCanonicalBytes = owned.retainedCanonicalBytes;
+  lastOwnedSimultaneousRssBytes = owned.simultaneousRssKnown ? owned.simultaneousRssBytes : 0;
+  lastFactCanonicalKeyChars = owned.spillBytes;
+  stageSessionCompositionPreparation({
+    prepared: {
+      nodes: owned.nodes,
+      candidates: [],
+      decisions: owned.decisions,
+      diagnostics: [
+        {
+          code: 'GRAPH_OWNED_COMPOSITION',
+          severity: 'info',
+          path: '',
+          message: 'Owned composition does not reuse a partial TypeScript preparation.',
+        },
+      ],
+      unresolved: owned.unresolved,
+    },
+    factSetDigest: owned.factDigest,
+    proofPolicyDigest: owned.semantic.proofPolicies,
+    lineageDigest: derivationLineageDigest(request.lineages),
+  });
+  recordGraphDataMovement('nativeBoundary');
+  recordGraphDataMovement('hashed');
+  return {
+    accepted: true,
+    value: Object.freeze({
+      representation: 'materialized' as const,
+      graph: graphDraft,
+      quality: qualityDraft,
+      decisions: owned.decisions,
+      semanticDigests: {
+        ontology: owned.semantic.ontology,
+        proofPolicies: owned.semantic.proofPolicies,
+        inputs: owned.semantic.inputs,
+        facts: owned.factDigest,
+        providers: owned.semantic.providers,
+        compositionPolicy: owned.semantic.compositionPolicy,
+      },
+      receipt,
+    }),
+    issues: [],
+    timings: Object.freeze({
+      admitMs,
+      workerMs: 0,
+      workerValidationMs: 0,
+      eligibilityMs: 0,
+      semanticDigestMs: owned.digestMs,
+      edgeProofMs: owned.edgeMs,
+      contentDigestMs: owned.publishMs,
+      graphValidationMs: 0,
+      qualityDigestMs: 0,
+      freezeMs: 0,
+      canonicalKeyChars: owned.spillBytes,
+      canonicalCodeUnitInversions: 0,
+      canonicalNonAsciiKeys: 0,
+      ownedFactDigest: 'complete' as const,
+      ownedCanonicalBytes: owned.canonicalBytes,
+      ownedRustRssBytes: owned.rssKnown ? owned.rustRssBytes : 0,
+      ownedBoundaryBytes: owned.boundaryBytes,
+      ownedFallbackReason: '',
+      ownedPublicationBytes: owned.packedBytes,
+      ownedNodeCount: owned.nodes.length,
+      ownedEdgeCount: owned.edges.length,
+      ownedRustFacts: owned.rustFacts,
+      ownedTypescriptFacts: 0,
+      ownedRssKnown: owned.rssKnown,
+      ownedRetainedCanonicalBytes: owned.retainedCanonicalBytes,
+      ownedSimultaneousRssBytes: owned.simultaneousRssKnown ? owned.simultaneousRssBytes : 0,
+      probes: Object.freeze(probes.map((probe) => Object.freeze(probe))),
+    }),
+  };
+}
+
 export async function composeGraph(
   request: GraphCompositionRequest,
   ports: GraphExecutionPorts
@@ -2094,6 +2863,23 @@ async function composeGraphWithIntern(
 ): Promise<GraphCompositionResult> {
   try {
     discardStagedCompositionPreparation();
+    lastFactCanonicalKeyChars = 0;
+    lastFactCodeUnitInversions = 0;
+    lastFactNonAsciiKeys = 0;
+    lastOwnedFactDigestMode = 'off';
+    lastOwnedCanonicalBytes = 0;
+    lastOwnedRustRssBytes = 0;
+    lastOwnedBoundaryBytes = 0;
+    lastOwnedFallbackReason = '';
+    suppressOwnedFactDigest = false;
+    lastOwnedPublicationBytes = 0;
+    lastOwnedNodeCount = 0;
+    lastOwnedEdgeCount = 0;
+    lastOwnedRustFacts = 0;
+    lastOwnedTypescriptFacts = 0;
+    lastOwnedRssKnown = false;
+    lastOwnedRetainedCanonicalBytes = 0;
+    lastOwnedSimultaneousRssBytes = 0;
     ports.cancellation.throwIfAborted();
     const ontology = validateGraphOntologyProfile(request.ontology);
     if (!ontology.accepted) return failure('invalid-input', ontology.issues);
@@ -2189,6 +2975,75 @@ async function composeGraphWithIntern(
     const normalizedRequest = { ...request, sources: normalizedSources };
     const lineageIssues = validateLineages(normalizedRequest);
     if (lineageIssues.length > 0) return failure('invalid-input', lineageIssues);
+    if (process.env.WORKSPAI_GRAPH_COMPOSE_KERNEL === '1') {
+      const ownedStartedAt = performance.now();
+      const useResidentSession =
+        !process.env.WORKSPAI_GRAPH_COMPOSE_FAULT &&
+        !process.env.WORKSPAI_GRAPH_CHILD_FAULT &&
+        !process.env.WORKSPAI_GRAPH_COMPOSE_BIN;
+      const owned = useResidentSession
+        ? await composeThroughResidentSession(
+            normalizedRequest,
+            semanticFactCanonical,
+            ports.clock.now().toISOString(),
+            ports.cancellation,
+            ports.signal,
+            { materialize: process.env.WORKSPAI_GRAPH_COMPOSE_COMPAT === '1' }
+          )
+        : await composeOwnedGraph(
+            normalizedRequest,
+            semanticFactCanonical,
+            ports.clock.now().toISOString(),
+            ports.cancellation,
+            ports.signal,
+            { materialize: process.env.WORKSPAI_GRAPH_COMPOSE_COMPAT === '1' }
+          );
+      if (owned.status === 'complete') {
+        const published = await publishOwnedComposition(
+          normalizedRequest,
+          normalizedSources,
+          owned,
+          ports,
+          admitMs,
+          Math.max(0, Math.round(performance.now() - ownedStartedAt))
+        );
+        if (published) {
+          discardStreamedPartitionSpill(normalizedRequest);
+          return published;
+        }
+        const rehydrated = rehydrateStreamedPartitionSpill(normalizedSources, normalizedRequest);
+        normalizedSources.splice(0, normalizedSources.length, ...rehydrated);
+        lastOwnedFactDigestMode = 'fallback';
+        if (!lastOwnedFallbackReason) lastOwnedFallbackReason = 'validation';
+        lastOwnedTypescriptFacts = normalizedSources.reduce(
+          (total, source) => total + source.batch.facts.length,
+          0
+        );
+      } else if (owned.reason === 'cancelled') {
+        return failure('cancelled', [
+          issue(
+            'GRAPH_COMPOSITION_CANCELLED',
+            '',
+            'Native composition was cancelled before publication.'
+          ),
+        ]);
+      } else if (owned.reason === 'stream-incomplete') {
+        return failure('invalid-input', [
+          issue(
+            'GRAPH_COMPOSITION_STREAM_INCOMPLETE',
+            '/sources',
+            'Partition streaming stopped before a complete generation was available for fallback.'
+          ),
+        ]);
+      } else {
+        lastOwnedFactDigestMode = 'fallback';
+        lastOwnedFallbackReason = owned.reason;
+        lastOwnedBoundaryBytes = owned.boundaryBytes;
+        lastOwnedRustFacts = owned.rustFacts;
+        lastOwnedTypescriptFacts = owned.typescriptFacts;
+      }
+      suppressOwnedFactDigest = true;
+    }
     const shardPlan =
       ports.workers.serializesTasks === false
         ? { status: 'ready' as const, shards: Object.freeze([normalizedSources]) }
@@ -2287,6 +3142,13 @@ async function composeGraphWithIntern(
       );
     }
     const workerMs = Math.max(0, Math.round(performance.now() - workerStartedAt));
+    const workerValidationStartedAt = performance.now();
+    const probes: { at: string; rssBytes: number; heapUsedBytes: number }[] = [];
+    const pushProbe = (at: string): void => {
+      const snap = snapshotGraphBuildMemory(at);
+      probes.push({ at, rssBytes: snap.rssBytes, heapUsedBytes: snap.heapUsedBytes });
+    };
+    pushProbe('after-worker');
 
     const workerOutputValidation = validateWorkerCompositionOutput(
       compactOutput,
@@ -2343,6 +3205,11 @@ async function composeGraphWithIntern(
     ports.cancellation.throwIfAborted();
     await ports.scheduler.yield();
 
+    const workerValidationMs = Math.max(
+      0,
+      Math.round(performance.now() - workerValidationStartedAt)
+    );
+    const eligibilityStartedAt = performance.now();
     const knownFacts = new Map(
       normalizedSources.flatMap((source) =>
         source.batch.facts.map((fact) => [fact.factId, fact] as const)
@@ -2374,6 +3241,7 @@ async function composeGraphWithIntern(
       }
     }
 
+    const eligibilityMs = Math.max(0, Math.round(performance.now() - eligibilityStartedAt));
     const lineageByFactId = lineageIndex(normalizedRequest.lineages);
     const semanticStartedAt = performance.now();
     const semanticBundle = await computeSemanticDigestBundle(
@@ -2391,6 +3259,7 @@ async function composeGraphWithIntern(
       compositionPolicy: semanticBundle.compositionPolicy,
     };
     const semanticDigestMs = Math.max(0, Math.round(performance.now() - semanticStartedAt));
+    pushProbe('after-semantic-digest');
 
     const proofStartedAt = performance.now();
     const lineageDigest = derivationLineageDigest(normalizedRequest.lineages);
@@ -2572,6 +3441,7 @@ async function composeGraphWithIntern(
     }
 
     const edgeProofMs = Math.max(0, Math.round(performance.now() - proofStartedAt));
+    pushProbe('after-edge-proof');
     recordGraphDataMovement('indexed', Math.max(1, edges.length));
     edges.sort((left, right) => left.id.localeCompare(right.id));
     decisions.sort((left, right) => left.edgeKey.localeCompare(right.edgeKey));
@@ -2628,6 +3498,7 @@ async function composeGraphWithIntern(
       ports
     );
     const contentDigestMs = Math.max(0, Math.round(performance.now() - contentStartedAt));
+    pushProbe('after-content-digest');
     const generation: GraphGeneration = {
       reference: {
         id: `generation:${contentDigest.value.slice(0, 32)}`,
@@ -2730,10 +3601,13 @@ async function composeGraphWithIntern(
       releaseClaims: Object.freeze([]),
     };
 
+    const graphValidationStartedAt = performance.now();
     const graphValidation = validateCanonicalGraph(graphDraft, request.ontology);
     if (!graphValidation.accepted) return failure('composition-failed', graphValidation.issues);
     const qualityValidation = validateGraphQualityReport(qualityDraft);
     if (!qualityValidation.accepted) return failure('composition-failed', qualityValidation.issues);
+    const graphValidationMs = Math.max(0, Math.round(performance.now() - graphValidationStartedAt));
+    const qualityDigestStartedAt = performance.now();
     const qualityDigest = await digest(
       {
         integrity: qualityDraft.integrity,
@@ -2748,12 +3622,15 @@ async function composeGraphWithIntern(
       },
       ports
     );
+    const qualityDigestMs = Math.max(0, Math.round(performance.now() - qualityDigestStartedAt));
+    const freezeStartedAt = performance.now();
     const receipt = Object.freeze({
       ...semanticReceiptFromBundle(request.policy.architectureEpoch, semanticBundle),
       contentDigest: graphDraft.generation.reference.contentDigest,
       qualityDigest,
     });
     const published = deepFreeze({
+      representation: 'materialized' as const,
       graph: graphDraft,
       quality: qualityDraft,
       decisions,
@@ -2766,6 +3643,8 @@ async function composeGraphWithIntern(
       proofPolicyDigest: receipt.proofPolicySetDigest,
       lineageDigest,
     });
+    const freezeMs = Math.max(0, Math.round(performance.now() - freezeStartedAt));
+    pushProbe('after-freeze');
 
     return {
       accepted: true,
@@ -2774,9 +3653,31 @@ async function composeGraphWithIntern(
       timings: Object.freeze({
         admitMs,
         workerMs,
+        workerValidationMs,
+        eligibilityMs,
         semanticDigestMs,
         edgeProofMs,
         contentDigestMs,
+        graphValidationMs,
+        qualityDigestMs,
+        freezeMs,
+        canonicalKeyChars: lastFactCanonicalKeyChars,
+        canonicalCodeUnitInversions: lastFactCodeUnitInversions,
+        canonicalNonAsciiKeys: lastFactNonAsciiKeys,
+        ownedFactDigest: lastOwnedFactDigestMode,
+        ownedCanonicalBytes: lastOwnedCanonicalBytes,
+        ownedRustRssBytes: lastOwnedRustRssBytes,
+        ownedBoundaryBytes: lastOwnedBoundaryBytes,
+        ownedFallbackReason: lastOwnedFallbackReason,
+        ownedPublicationBytes: lastOwnedPublicationBytes,
+        ownedNodeCount: lastOwnedNodeCount,
+        ownedEdgeCount: lastOwnedEdgeCount,
+        ownedRustFacts: lastOwnedRustFacts,
+        ownedTypescriptFacts: lastOwnedTypescriptFacts,
+        ownedRssKnown: lastOwnedRssKnown,
+        ownedRetainedCanonicalBytes: lastOwnedRetainedCanonicalBytes,
+        ownedSimultaneousRssBytes: lastOwnedSimultaneousRssBytes,
+        probes: Object.freeze(probes.map((probe) => Object.freeze(probe))),
       }),
     };
   } catch (error) {

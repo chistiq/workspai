@@ -10,6 +10,12 @@ export {
 export { REPOSITORY_FILES_PROVIDER_ID, createRepositoryFilesProvider } from './repository-files.js';
 export { PACKAGE_JSON_PROVIDER_ID, createPackageJsonProvider } from './package-json.js';
 export {
+  ECOSYSTEM_MANIFESTS_PROVIDER_ID,
+  createEcosystemManifestsProvider,
+  parseCargoDeclaredManifest,
+  parseGoModuleDeclaredManifest,
+} from './ecosystem-manifests.js';
+export {
   ECMASCRIPT_IMPORTS_PROVIDER_ID,
   createEcmaScriptImportsProvider,
 } from './ecmascript-imports.js';
@@ -134,6 +140,7 @@ import type { GraphNativePort } from '../ports/index.js';
 import type { GraphProviderRuntime } from '../contracts/provider.js';
 
 import { createPackageJsonProvider } from './package-json.js';
+import { createEcosystemManifestsProvider } from './ecosystem-manifests.js';
 import { createRepositoryFilesProvider } from './repository-files.js';
 import { createEcmaScriptImportsProvider } from './ecmascript-imports.js';
 import { createLanguageImportsProvider } from './language-imports.js';
@@ -163,7 +170,7 @@ export interface GraphStandardRepositoryProviderOptions {
   readonly loadNative?: () => Promise<GraphNativePort | undefined>;
 }
 
-export const STANDARD_REPOSITORY_PROVIDER_COUNT = 24;
+export const STANDARD_REPOSITORY_PROVIDER_COUNT = 25;
 
 /** The deterministic, offline provider set admitted for the standalone repository preview. */
 export function createStandardRepositoryProviders(
@@ -172,6 +179,7 @@ export function createStandardRepositoryProviders(
   return Object.freeze([
     createRepositoryFilesProvider(),
     createPackageJsonProvider(),
+    createEcosystemManifestsProvider(),
     createVscodeExtensionManifestProvider(),
     createPythonProjectManifestProvider(),
     createEcmaScriptImportsProvider(),

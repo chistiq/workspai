@@ -19,6 +19,7 @@ import type {
   GraphCompositionReceipt,
   GraphCompositionSource,
   GraphCompositionTimings,
+  NativeGraphSnapshot,
 } from './composition-types.js';
 import type { GraphInventoryMembershipSnapshot } from './inventory-membership.js';
 import type { GraphRepoPhaseTiming } from './phase-metrics.js';
@@ -139,10 +140,24 @@ export interface GraphRepoBuildResult {
   readonly metrics: GraphRepoBuildMetrics;
   readonly compositionSources?: readonly GraphCompositionSource[];
   /**
+   * Counts and digests for a native snapshot build. Fact arrays stay out of
+   * this result so the caller can release the provider batches.
+   */
+  readonly sourceSummaries?: readonly {
+    readonly providerId: string;
+    readonly providerVersion: string;
+    readonly batchId: string;
+    readonly factCount: number;
+    readonly inputDigest: string;
+    readonly unknownZoneCount: number;
+    readonly unsupportedZoneCount: number;
+  }[];
+  /**
    * Proof-carrying receipt that binds the published graph and quality report
    * to admitted provider batches. Reuse without this receipt is forbidden.
    */
   readonly compositionReceipt?: GraphCompositionReceipt;
+  readonly nativeSnapshot?: NativeGraphSnapshot;
   /**
    * Admitted inventory leaves for in-process incremental rebuild. Omitted from
    * portable CLI output so host paths and file bytes are not published.

@@ -1,0 +1,75 @@
+{
+  "schema": "workspai.graph.compact-fact-kernel-measurement.v1",
+  "node": "v24.20.0",
+  "heapCapMB": 8192,
+  "kernelDefault": false,
+  "optIn": "WORKSPAI_GRAPH_FACT_KERNEL=1",
+  "acceptance": {
+    "compositionP50Reduction60": false,
+    "fullBuildP50Reduction35": false,
+    "peakRssReduction35": false,
+    "digestDrift": false
+  },
+  "runs": [
+    {
+      "repository": "pnpm",
+      "commit": "07d862d12b7ba0c858f4073b6afa97d646fefac7",
+      "dirtyEntries": 0,
+      "order": 1,
+      "kernel": false,
+      "status": "partial",
+      "elapsedMs": 60346,
+      "compositionMs": 37534,
+      "factCanonicalizationMs": 7478,
+      "graphIndexConstructionMs": 6722,
+      "contentDigestMs": 7298,
+      "contentDigestPrefix": "c68fed3af94dec80",
+      "rssMB": 3270,
+      "heapMB": 2949
+    },
+    {
+      "repository": "pnpm",
+      "commit": "07d862d12b7ba0c858f4073b6afa97d646fefac7",
+      "dirtyEntries": 0,
+      "order": 2,
+      "kernel": true,
+      "filesystemCache": "warm-from-previous-process",
+      "status": "partial",
+      "elapsedMs": 50155,
+      "compositionMs": 27907,
+      "factCanonicalizationMs": 7522,
+      "graphIndexConstructionMs": 4727,
+      "contentDigestMs": 4191,
+      "contentDigestPrefix": "c68fed3af94dec80",
+      "rssMB": 3171,
+      "heapMB": 2733
+    },
+    {
+      "repository": "OpenBot",
+      "commit": "ba3ab6e4aa97d015264dbdc891654a7f449c6517",
+      "dirtyEntries": 8,
+      "order": 1,
+      "kernel": true,
+      "status": "partial",
+      "elapsedMs": 4307,
+      "compositionMs": 2080,
+      "factCanonicalizationMs": 681,
+      "contentDigestPrefix": "78b408cd3b23c30d",
+      "rssMB": 588
+    },
+    {
+      "repository": "OpenBot",
+      "commit": "ba3ab6e4aa97d015264dbdc891654a7f449c6517",
+      "dirtyEntries": 8,
+      "order": 2,
+      "kernel": false,
+      "filesystemCache": "warm-from-previous-process",
+      "status": "partial",
+      "elapsedMs": 3694,
+      "compositionMs": 1902,
+      "factCanonicalizationMs": 451,
+      "contentDigestPrefix": "78b408cd3b23c30d",
+      "rssMB": 745
+    }
+  ]
+}

@@ -1,0 +1,103 @@
+{
+  "schema": "workspai.graph.call-resolution-corpus.v1",
+  "reviewStatus": "candidate-unreviewed",
+  "note": "Author-drafted candidate cases. This file is not an independently reviewed golden corpus, and its scores are not an admission result.",
+  "cases": [
+    {
+      "id": "ts-local-function",
+      "language": "typescript",
+      "repository": "synthetic",
+      "sha": "unspecified",
+      "caller": "function main",
+      "expression": "helper()",
+      "expectedClass": "exact",
+      "expectedTargets": ["function helper"],
+      "evidence": "same-file function declaration",
+      "reason": "local binding"
+    },
+    {
+      "id": "ts-renamed-import",
+      "language": "typescript",
+      "repository": "synthetic",
+      "sha": "unspecified",
+      "caller": "function main",
+      "expression": "alias()",
+      "expectedClass": "exact",
+      "expectedTargets": ["function helper"],
+      "evidence": "import { helper as alias }",
+      "reason": "renamed import"
+    },
+    {
+      "id": "ts-namespace-import",
+      "language": "typescript",
+      "repository": "synthetic",
+      "sha": "unspecified",
+      "caller": "function main",
+      "expression": "ns.helper()",
+      "expectedClass": "exact",
+      "expectedTargets": ["function helper"],
+      "evidence": "import * as ns",
+      "reason": "namespace import"
+    },
+    {
+      "id": "ts-unresolved",
+      "language": "typescript",
+      "repository": "synthetic",
+      "sha": "unspecified",
+      "caller": "function main",
+      "expression": "missing()",
+      "expectedClass": "unknown",
+      "expectedTargets": [],
+      "evidence": "no binding",
+      "reason": "unresolved symbol"
+    },
+    {
+      "id": "ts-ambiguous",
+      "language": "typescript",
+      "repository": "synthetic",
+      "sha": "unspecified",
+      "caller": "function main",
+      "expression": "overloaded(value)",
+      "expectedClass": "ambiguous",
+      "expectedTargets": ["function overloaded#1", "function overloaded#2"],
+      "evidence": "two compatible overloads",
+      "reason": "ambiguous legal targets"
+    },
+    {
+      "id": "ts-false-lexical",
+      "language": "typescript",
+      "repository": "synthetic",
+      "sha": "unspecified",
+      "caller": "function main",
+      "expression": "label: while (false) {}",
+      "expectedClass": "unsupported",
+      "expectedTargets": [],
+      "evidence": "name followed by punctuation is not a call",
+      "reason": "false-positive trap"
+    },
+    {
+      "id": "py-local-function",
+      "language": "python",
+      "repository": "synthetic",
+      "sha": "unspecified",
+      "caller": "def main",
+      "expression": "helper()",
+      "expectedClass": "exact",
+      "expectedTargets": ["def helper"],
+      "evidence": "same-file def",
+      "reason": "local binding"
+    },
+    {
+      "id": "py-unresolved",
+      "language": "python",
+      "repository": "synthetic",
+      "sha": "unspecified",
+      "caller": "def main",
+      "expression": "missing()",
+      "expectedClass": "unknown",
+      "expectedTargets": [],
+      "evidence": "no binding",
+      "reason": "unresolved symbol"
+    }
+  ]
+}

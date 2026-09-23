@@ -6,6 +6,7 @@ import { promisify } from 'node:util';
 import fsExtra from 'fs-extra';
 import { isPythonVirtualEnvironmentDirectory } from './utils/workspace-scan-policy.js';
 import { parseAllDocuments } from 'yaml';
+import { collectRustUseImports } from '../../graph/src/domain/rust-use.js';
 
 import type { WorkspaceContract } from './utils/workspace-contract.js';
 import type { ProjectGovernanceProfile } from './utils/project-governance.js';
@@ -828,7 +829,6 @@ const C_FAMILY_INCLUDE_PATTERNS = [
   { pattern: /^\s*#\s*include\s*["<]([^">]+)[">]/, detail: 'include' },
 ] as const;
 
-const RUST_IMPORT_PATTERNS = [{ pattern: /^\s*use\s+([A-Za-z0-9_:*.-]+)/, detail: 'use' }] as const;
 
 const JVM_IMPORT_PATTERNS = [
   { pattern: /^\s*import\s+(?:static\s+)?([A-Za-z0-9_.*]+)\s*;?/, detail: 'import' },
@@ -884,7 +884,7 @@ function importPatternsForFile(filePath: string) {
   if (['.c', '.cc', '.cpp', '.h', '.hpp'].includes(extension)) {
     return C_FAMILY_INCLUDE_PATTERNS;
   }
-  if (extension === '.rs') return RUST_IMPORT_PATTERNS;
+  if (extension === '.rs') return [];
   if (['.java', '.kt', '.kts', '.scala'].includes(extension)) return JVM_IMPORT_PATTERNS;
   if (['.cs', '.fs', '.fsx', '.vb'].includes(extension)) return DOTNET_IMPORT_PATTERNS;
   if (extension === '.go') return GO_IMPORT_PATTERNS;
@@ -3849,7 +3849,12 @@ const sourceStructureProvider: Provider = {
           proofIds: [fileProof],
         });
 
-        const imports = captureSourceFindings(sourceContents, importPatternsForFile(file), 250);
+        const imports =
+          path.extname(file).toLowerCase() === '.rs'
+            ? collectRustUseImports(sourceContents)
+                .slice(0, 250)
+                .map((item) => ({ name: item.path, line: item.line, detail: 'use' }))
+            : captureSourceFindings(sourceContents, importPatternsForFile(file), 250);
         for (const imported of imports) {
           const proof = await context.state.addProof({
             provider: this.id,
@@ -6812,9 +6817,9 @@ export async function buildWorkspaceKnowledgeGraph(
       return {
         ...project,
         root,
-        artifactPrefix: outsideWorkspace
-          ? `external/${project.id}`
-          : toPosix(workspaceRelative || project.id),
+        // A project that is the workspace root has no extra directory. Using the
+        // project id there invents a path segment the files do not have.
+        artifactPrefix: outsideWorkspace ? `external/${project.id}` : toPosix(workspaceRelative),
       };
     })
     .sort((a, b) => a.id.localeCompare(b.id));

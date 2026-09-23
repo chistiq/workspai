@@ -12,6 +12,7 @@ import {
   type GraphProviderManifest,
   type GraphWorkspaceFact,
 } from '../../src/contracts/index.js';
+import { requireMaterializedGraph } from '../../src/application/composition-types.js';
 import {
   GRAPH_STANDARD_COMPOSITION_POLICY,
   composeGraph,
@@ -201,7 +202,9 @@ function evidenceIds(result: Awaited<ReturnType<typeof composeGraph>>): string[]
   if (!result.accepted) return [];
   return [
     ...new Set(
-      result.value.graph.edges.flatMap((edge) => edge.proof.evidence.map((entry) => entry.id))
+      requireMaterializedGraph(result.value).edges.flatMap((edge) =>
+        edge.proof.evidence.map((entry) => entry.id)
+      )
     ),
   ].sort();
 }
@@ -217,7 +220,7 @@ describe('composeGraph mutation isolation', () => {
     const first = await composeGraph(request, ports());
     expect(first.accepted).toBe(true);
     if (!first.accepted) return;
-    expect(first.value.graph.edges[0]?.confidence).toBe(0.9);
+    expect(requireMaterializedGraph(first.value).edges[0]?.confidence).toBe(0.9);
     expect(evidenceIds(first)).toEqual(['e']);
 
     live.confidence = 0.8;
@@ -234,10 +237,10 @@ describe('composeGraph mutation isolation', () => {
     expect(second.value.semanticDigests.facts.value).not.toBe(
       first.value.semanticDigests.facts.value
     );
-    expect(second.value.graph.generation.factSetDigest.value).not.toBe(
-      first.value.graph.generation.factSetDigest.value
+    expect(requireMaterializedGraph(second.value).generation.factSetDigest.value).not.toBe(
+      requireMaterializedGraph(first.value).generation.factSetDigest.value
     );
-    expect(second.value.graph.edges[0]?.confidence).toBe(0.8);
+    expect(requireMaterializedGraph(second.value).edges[0]?.confidence).toBe(0.8);
     expect(evidenceIds(second)).toEqual(['e2']);
     expect(evidenceIds(second)).not.toContain('e');
   });
@@ -302,7 +305,7 @@ describe('composeGraph mutation isolation', () => {
     );
     expect(first.accepted).toBe(true);
     if (!first.accepted) return;
-    const publishedDigest = first.value.graph.generation.factSetDigest.value;
+    const publishedDigest = requireMaterializedGraph(first.value).generation.factSetDigest.value;
     live.confidence = 0.51;
     live.evidence[0] = {
       id: 'e-after',
@@ -310,8 +313,10 @@ describe('composeGraph mutation isolation', () => {
       relativeLocator: 'src/index.ts',
       digest,
     };
-    expect(first.value.graph.generation.factSetDigest.value).toBe(publishedDigest);
-    expect(first.value.graph.edges[0]?.confidence).toBe(0.9);
+    expect(requireMaterializedGraph(first.value).generation.factSetDigest.value).toBe(
+      publishedDigest
+    );
+    expect(requireMaterializedGraph(first.value).edges[0]?.confidence).toBe(0.9);
     expect(evidenceIds(first)).toEqual(['e']);
   });
 
@@ -361,7 +366,7 @@ describe('composeGraph mutation isolation', () => {
       if (!first.accepted) return undefined;
       rememberSessionCompositionAnchor({
         sources: [sourceFromFacts([original])],
-        graph: first.value.graph,
+        graph: requireMaterializedGraph(first.value),
         quality: first.value.quality,
         receipt: first.value.receipt,
         extractionEnvironmentDigest: 'env-edge-reuse',
@@ -374,9 +379,9 @@ describe('composeGraph mutation isolation', () => {
     expect(reused?.accepted).toBe(true);
     expect(oracle.accepted).toBe(true);
     if (!reused?.accepted || !oracle.accepted) return;
-    expect(reused.value.graph.edges[0]?.confidence).toBe(0.8);
-    expect(reused.value.graph.generation.reference.contentDigest).toEqual(
-      oracle.value.graph.generation.reference.contentDigest
+    expect(requireMaterializedGraph(reused.value).edges[0]?.confidence).toBe(0.8);
+    expect(requireMaterializedGraph(reused.value).generation.reference.contentDigest).toEqual(
+      requireMaterializedGraph(oracle.value).generation.reference.contentDigest
     );
     store.dispose();
   });
@@ -408,10 +413,10 @@ describe('composeGraph mutation isolation', () => {
       );
       expect(first.accepted).toBe(true);
       if (!first.accepted) return undefined;
-      const publishedEdge = first.value.graph.edges[0];
+      const publishedEdge = requireMaterializedGraph(first.value).edges[0];
       rememberSessionCompositionAnchor({
         sources: [sourceFromFacts([fact('fact:lineage')])],
-        graph: first.value.graph,
+        graph: requireMaterializedGraph(first.value),
         quality: first.value.quality,
         receipt: first.value.receipt,
         extractionEnvironmentDigest: 'env-lineage',
@@ -425,10 +430,10 @@ describe('composeGraph mutation isolation', () => {
     expect(reused?.second.accepted).toBe(true);
     expect(oracle.accepted).toBe(true);
     if (!reused?.second.accepted || !oracle.accepted) return;
-    expect(reused.second.value.graph.edges[0]).not.toBe(reused.publishedEdge);
-    expect(reused.second.value.graph.generation.reference.contentDigest).toEqual(
-      oracle.value.graph.generation.reference.contentDigest
-    );
+    expect(requireMaterializedGraph(reused.second.value).edges[0]).not.toBe(reused.publishedEdge);
+    expect(
+      requireMaterializedGraph(reused.second.value).generation.reference.contentDigest
+    ).toEqual(requireMaterializedGraph(oracle.value).generation.reference.contentDigest);
     store.dispose();
   });
 
@@ -445,7 +450,7 @@ describe('composeGraph mutation isolation', () => {
       if (!first.accepted) return undefined;
       rememberSessionCompositionAnchor({
         sources: request.sources,
-        graph: first.value.graph,
+        graph: requireMaterializedGraph(first.value),
         quality: first.value.quality,
         receipt: first.value.receipt,
         extractionEnvironmentDigest: 'env-same',
@@ -453,11 +458,11 @@ describe('composeGraph mutation isolation', () => {
         incomplete: false,
       });
       const second = await composeGraph(request, ports());
-      return { edge: first.value.graph.edges[0], second };
+      return { edge: requireMaterializedGraph(first.value).edges[0], second };
     });
     expect(reused?.second.accepted).toBe(true);
     if (!reused?.second.accepted) return;
-    expect(reused.second.value.graph.edges[0]).toBe(reused.edge);
+    expect(requireMaterializedGraph(reused.second.value).edges[0]).toBe(reused.edge);
     store.dispose();
   });
 
@@ -474,7 +479,7 @@ describe('composeGraph mutation isolation', () => {
       if (!first.accepted) return undefined;
       rememberSessionCompositionAnchor({
         sources: request.sources,
-        graph: first.value.graph,
+        graph: requireMaterializedGraph(first.value),
         quality: first.value.quality,
         receipt: first.value.receipt,
         extractionEnvironmentDigest: 'env-policy',
@@ -492,7 +497,7 @@ describe('composeGraph mutation isolation', () => {
       });
       rememberSessionCompositionAnchor({
         sources: request.sources,
-        graph: first.value.graph,
+        graph: requireMaterializedGraph(first.value),
         quality: first.value.quality,
         receipt: { ...first.value.receipt, proofPolicySetDigest: proofPolicyDigest },
         extractionEnvironmentDigest: 'env-policy',
@@ -500,16 +505,16 @@ describe('composeGraph mutation isolation', () => {
         incomplete: false,
       });
       const second = await composeGraph(request, ports());
-      return { edge: first.value.graph.edges[0], second };
+      return { edge: requireMaterializedGraph(first.value).edges[0], second };
     });
     const oracle = await composeGraph(request, ports());
     expect(reused?.second.accepted).toBe(true);
     expect(oracle.accepted).toBe(true);
     if (!reused?.second.accepted || !oracle.accepted) return;
-    expect(reused.second.value.graph.edges[0]).not.toBe(reused.edge);
-    expect(reused.second.value.graph.generation.reference.contentDigest).toEqual(
-      oracle.value.graph.generation.reference.contentDigest
-    );
+    expect(requireMaterializedGraph(reused.second.value).edges[0]).not.toBe(reused.edge);
+    expect(
+      requireMaterializedGraph(reused.second.value).generation.reference.contentDigest
+    ).toEqual(requireMaterializedGraph(oracle.value).generation.reference.contentDigest);
     store.dispose();
   });
 });

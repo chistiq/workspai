@@ -6,12 +6,29 @@ import { fileURLToPath } from 'node:url';
 const packageRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const repositoryRoot = path.resolve(packageRoot, '../..');
 
+function rustSources() {
+  const root = path.join(repositoryRoot, 'crates/graph-engine/src');
+  const files = [];
+  const visit = (directory) => {
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const full = path.join(directory, entry.name);
+      if (entry.isDirectory()) visit(full);
+      else if (entry.isFile() && entry.name.endsWith('.rs')) files.push(full);
+    }
+  };
+  visit(root);
+  return files.sort();
+}
+
 const SOURCE_INPUTS = Object.freeze([
   ['workspace-manifest', path.join(repositoryRoot, 'Cargo.toml')],
   ['workspace-lock', path.join(repositoryRoot, 'Cargo.lock')],
   ['engine-manifest', path.join(repositoryRoot, 'crates/graph-engine/Cargo.toml')],
-  ['engine-source', path.join(repositoryRoot, 'crates/graph-engine/src/lib.rs')],
-  ['engine-extract', path.join(repositoryRoot, 'crates/graph-engine/src/extract.rs')],
+  ['engine-build-script', path.join(repositoryRoot, 'crates/graph-engine/build.rs')],
+  ...rustSources().map((file) => [
+    path.relative(repositoryRoot, file).split(path.sep).join('/'),
+    file,
+  ]),
   ['wasm-build-policy', path.join(packageRoot, 'scripts/build-rust-wasm.mjs')],
 ]);
 
@@ -32,7 +49,7 @@ export function nativeEngineSourceEvidence() {
   const canonical = JSON.stringify(inputs);
   return Object.freeze({
     algorithm: 'sha256',
-    scope: 'canonical-source-and-build-policy',
+    scope: 'graph-engine-sources-and-build-policy',
     inputCount: inputs.length,
     digest: crypto.createHash('sha256').update(canonical).digest('hex'),
   });

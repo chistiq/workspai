@@ -147,7 +147,7 @@ describe('Graph G7 release inventory', () => {
       maxEdges: 5_000_000,
       maxMemoryBytes: 268_435_456,
       sourceDigest: expect.stringMatching(/^[a-f0-9]{64}$/),
-      sourceDigestScope: 'canonical-source-and-build-policy',
+      sourceDigestScope: 'graph-engine-sources-and-build-policy',
       artifactDigestPolicy: 'bound-in-build-evidence',
     });
     expect(inventory.schemas.length).toBeGreaterThan(0);

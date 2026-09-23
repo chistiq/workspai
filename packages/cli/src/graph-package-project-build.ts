@@ -8,6 +8,8 @@ import {
   createNodeGraphProductHostPorts,
   createScopeContainmentProvider,
   createStandardRepositoryProviders,
+  drainNativeQuery,
+  NativeGraphQuerySession,
   runWithOwnedGraphProductBuildSession,
   type GraphProductBuildSession,
 } from './graph-package-runtime.js';
@@ -31,6 +33,16 @@ export interface PreparedPackageProjectBuildResult {
     readonly sourceFixtureDigest: string;
     readonly providerProfileDigest: string;
     readonly graphPolicyDigest: string;
+  };
+  readonly nativeSnapshot?: {
+    readonly snapshotId: string;
+    readonly factDigest: string;
+    readonly contentDigest: string;
+    readonly nodeCount: number;
+    readonly edgeCount: number;
+    readonly query: 'paged';
+    readonly firstPageRecords: number;
+    readonly firstPageExhausted: boolean;
   };
 }
 
@@ -69,6 +81,70 @@ function renderIdentityPreimage(
     `entity:${namespace}:${kind}:sha256:${digest}`,
     `entity:${namespace}:${kind}:${encodeURIComponent(locator)}`,
   ];
+}
+
+function queryRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) {
+    throw new Error(
+      'GRAPH_NATIVE_QUERY_RECORD_INVALID: native query returned a non-object record.'
+    );
+  }
+  return value as Record<string, unknown>;
+}
+
+function queryNodes(records: readonly unknown[]): PackageGraphShadowInput['graph']['nodes'] {
+  return records.map((record) => {
+    const value = queryRecord(record);
+    if (typeof value.id !== 'string' || typeof value.kind !== 'string') {
+      throw new Error('GRAPH_NATIVE_QUERY_RECORD_INVALID: native node is missing id or kind.');
+    }
+    const aliases = Array.isArray(value.aliases)
+      ? value.aliases.map((alias) => {
+          const item = queryRecord(alias);
+          if (typeof item.id !== 'string') {
+            throw new Error('GRAPH_NATIVE_QUERY_RECORD_INVALID: native node alias is missing id.');
+          }
+          return { id: item.id };
+        })
+      : undefined;
+    return { id: value.id, kind: value.kind, ...(aliases ? { aliases } : {}) };
+  });
+}
+
+function queryEdges(records: readonly unknown[]): PackageGraphShadowInput['graph']['edges'] {
+  return records.map((record) => {
+    const value = queryRecord(record);
+    const proof = queryRecord(value.proof);
+    if (
+      typeof value.id !== 'string' ||
+      typeof value.from !== 'string' ||
+      typeof value.to !== 'string' ||
+      typeof value.relation !== 'string' ||
+      !Array.isArray(proof.evidence)
+    ) {
+      throw new Error('GRAPH_NATIVE_QUERY_RECORD_INVALID: native edge is missing relation proof.');
+    }
+    return {
+      id: value.id,
+      from: value.from,
+      to: value.to,
+      relation: value.relation,
+      proof: {
+        ...(typeof proof.state === 'string' ? { state: proof.state } : {}),
+        ...(Array.isArray(proof.authorities)
+          ? { authorities: proof.authorities.filter((item) => typeof item === 'string') }
+          : {}),
+        evidence: proof.evidence.map((item) => {
+          const evidence = queryRecord(item);
+          return {
+            ...(typeof evidence.relativeLocator === 'string'
+              ? { relativeLocator: evidence.relativeLocator }
+              : {}),
+          };
+        }),
+      },
+    };
+  });
 }
 
 function packageComparisonInput(
@@ -231,6 +307,93 @@ export async function buildPreparedProjectPackageGraph(input: {
         },
       },
     });
+    if (result.nativeSnapshot && !result.graph) {
+      if (!result.compositionReceipt) {
+        throw new Error(
+          'GRAPH_NATIVE_SNAPSHOT_UNMATERIALIZED: native snapshot has no composition receipt.'
+        );
+      }
+      const query = await NativeGraphQuerySession.open(result.nativeSnapshot);
+      try {
+        const nodes = queryNodes(await drainNativeQuery(query, 'nodes'));
+        const edges = queryEdges(await drainNativeQuery(query, 'edges'));
+        const unresolved = await drainNativeQuery(query, 'unresolved');
+        const evidenceLocators = [
+          ...new Set(
+            edges.flatMap((edge) =>
+              edge.proof.evidence.flatMap((evidence) =>
+                evidence.relativeLocator ? [evidence.relativeLocator] : []
+              )
+            )
+          ),
+        ].sort((left, right) => left.localeCompare(right));
+        const rendered = Object.fromEntries(
+          nodes.map((node) => {
+            const observed = identityRenderings.get(node.id);
+            const alias = node.aliases?.find(
+              (candidate) =>
+                candidate.id.startsWith('entity:') && !candidate.id.includes(':sha256:')
+            );
+            const identity = observed ?? alias?.id;
+            if (!identity) {
+              throw new Error('Canonical Graph identity was not observed at its digest port.');
+            }
+            return [node.id, identity];
+          })
+        );
+        const receipt = result.compositionReceipt;
+        return {
+          status: result.status,
+          inputFiles: result.metrics.inputFiles,
+          omittedFiles: result.metrics.omittedFiles,
+          omittedBytes: result.metrics.omittedBytes,
+          providerFacts: result.metrics.providerFacts,
+          comparison: {
+            graph: {
+              contract: {
+                id: receipt.graphSchema.id,
+                version: receipt.graphSchema.version,
+              },
+              generation: {
+                inputsDigest: receipt.inputsDigest,
+                providerSetDigest: receipt.providerSetDigest,
+                compositionPolicyDigest: receipt.compositionPolicyDigest,
+              },
+              nodes,
+              edges,
+              unresolved,
+              diagnostics: result.diagnostics.map((diagnostic) => ({ code: diagnostic.code })),
+            },
+            quality: {
+              unknownZones: result.quality.unknownZones.map((zone) => ({
+                code: zone.code,
+                ...(zone.scope ? { scope: zone.scope } : {}),
+              })),
+              unsupportedZones: result.quality.unsupportedZones.map((zone) => ({
+                code: zone.code,
+                ...(zone.scope ? { scope: zone.scope } : {}),
+              })),
+              coverage: (result.quality.graph?.coverage ?? []).map((entry) => ({
+                dimension: entry.dimension,
+                status: entry.status,
+              })),
+              ...(result.quality.omittedSubtrees
+                ? { omittedSubtrees: result.quality.omittedSubtrees }
+                : {}),
+            },
+            evidenceLocators,
+            identityRenderings: rendered,
+          },
+          semanticBinding: {
+            sourceFixtureDigest: `sha256:${receipt.inputsDigest.value}`,
+            providerProfileDigest: `sha256:${receipt.providerSetDigest.value}`,
+            graphPolicyDigest: `sha256:${receipt.compositionPolicyDigest.value}`,
+          },
+        };
+      } finally {
+        await query.close();
+      }
+    }
     const comparison = packageComparisonInput(result, identityRenderings);
     return {
       status: result.status,

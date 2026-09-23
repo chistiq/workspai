@@ -1,0 +1,50 @@
+{
+  "schema": "workspai.graph.reference-evaluation.v1",
+  "admitted": false,
+  "roles": {
+    "pnpm": "scale, imports, calls, composition, memory",
+    "agent-framework": "python-dotnet fact density",
+    "grpc": "polyglot includes, protobuf, build systems",
+    "opentelemetry-demo": "services, containers, routes",
+    "OpenBot": "small TypeScript regression loop",
+    "crewAI": "python plus large documentation inventory"
+  },
+  "repositories": [
+    {
+      "id": "pnpm",
+      "commit": "07d862d12b7ba0c858f4073b6afa97d646fefac7",
+      "dirtyEntries": 0,
+      "measuredThisChange": true
+    },
+    {
+      "id": "OpenBot",
+      "commit": "ba3ab6e4aa97d015264dbdc891654a7f449c6517",
+      "dirtyEntries": 8,
+      "measuredThisChange": "same dirty tree, kernel differential only"
+    },
+    {
+      "id": "opentelemetry-demo",
+      "commit": "898ede2f314b2c1e92a2d9a6ebd7efc188709290",
+      "dirtyEntries": 8,
+      "measuredThisChange": false
+    },
+    {
+      "id": "crewAI",
+      "commit": "9e9a8577becc322f98a966ad88d7904251049744",
+      "dirtyEntries": 0,
+      "measuredThisChange": false
+    },
+    {
+      "id": "grpc",
+      "commit": "b8f09d9168d856020d236bd32f39195f7b5aa2cf",
+      "dirtyEntries": 498,
+      "measuredThisChange": false
+    },
+    {
+      "id": "agent-framework",
+      "commit": "3c670707766a8455da6491a9049cc9d575e019f0",
+      "dirtyEntries": 0,
+      "measuredThisChange": false
+    }
+  ]
+}

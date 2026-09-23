@@ -1,4 +1,7 @@
 import { createHash } from 'node:crypto';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 
 import { describe, expect, it, vi } from 'vitest';
 
@@ -27,6 +30,10 @@ import type {
   GraphWorkerTaskRequest,
   GraphWorkerTaskResult,
 } from '../../src/ports/index.js';
+import {
+  disposeResidentSessions,
+  residentBuildObservations,
+} from '../../src/application/native-partition-session.js';
 import {
   createPackageJsonProvider,
   createRepositoryFilesProvider,
@@ -273,6 +280,93 @@ describe('buildRepoGraph', () => {
         scope: 'src/server.ts',
       })
     );
+  });
+
+  it('preserves real provider observation time across an unchanged rebuild', async () => {
+    const journal = mkdtempSync(join(tmpdir(), 'workspai-journal-'));
+    const snapshot = mkdtempSync(join(tmpdir(), 'workspai-snapshot-'));
+    const previousJournal = process.env.WORKSPAI_GRAPH_JOURNAL_ROOT;
+    const previousSnapshot = process.env.WORKSPAI_GRAPH_SNAPSHOT_ROOT;
+    const previousKernel = process.env.WORKSPAI_GRAPH_COMPOSE_KERNEL;
+    process.env.WORKSPAI_GRAPH_JOURNAL_ROOT = journal;
+    process.env.WORKSPAI_GRAPH_SNAPSHOT_ROOT = snapshot;
+    process.env.WORKSPAI_GRAPH_COMPOSE_KERNEL = '1';
+    let millis = Date.parse('2026-09-22T00:00:00.000Z');
+    const contents: Record<string, string> = {
+      'src/a.ts': 'export const a = 1;\n',
+      'src/b.ts': 'export const b = 2;\n',
+    };
+    const inputFor = (locator: string): GraphProviderInput => {
+      const content = contents[locator] ?? '';
+      const bytes = new TextEncoder().encode(content);
+      return {
+        locator,
+        mediaType: 'text/typescript',
+        byteLength: bytes.byteLength,
+        digest: { algorithm: 'sha256', value: createHash('sha256').update(bytes).digest('hex') },
+      };
+    };
+    const base = ports([], contents);
+    const host: GraphProductHostPorts = {
+      ...base,
+      clock: { now: () => new Date(millis) },
+      fileSource: {
+        inventory: async () => {
+          const inputs = [inputFor('src/a.ts'), inputFor('src/b.ts')];
+          return {
+            status: 'complete',
+            inputs,
+            diagnostics: [],
+            omittedFiles: 0,
+            omittedBytes: 0,
+            unknownZones: [],
+            unsupportedZones: [],
+          };
+        },
+        read: (root, requested, options) => base.fileSource.read(root, requested, options),
+      },
+    };
+    const build = () =>
+      buildRepoGraph({
+        ...request(createStandardRepositoryProviders(), host),
+        ontology: CORE_GRAPH_ONTOLOGY_PROFILE,
+      });
+    try {
+      const first = await build();
+      const opened = residentBuildObservations().at(-1);
+      expect(first.nativeSnapshot).toBeDefined();
+      expect(opened?.encodedPartitions).toBeGreaterThan(0);
+      const snapshotId = first.nativeSnapshot?.snapshotId;
+      millis += 60_000;
+      const second = await build();
+      const warmed = residentBuildObservations().at(-1);
+      expect(second.nativeSnapshot?.snapshotId).toBe(snapshotId);
+      expect(warmed?.encodedPartitions).toBe(0);
+      expect(warmed?.boundaryBytes).toBe(0);
+      expect(warmed?.recomputed).toBe(false);
+      expect(warmed?.snapshotIno).toBe(opened?.snapshotIno);
+      contents['src/b.ts'] = 'export const b = 3;\n';
+      const third = await build();
+      const edited = residentBuildObservations().at(-1);
+      expect(third.nativeSnapshot).toBeDefined();
+      expect(edited?.encodedPartitionIds.some((id) => id.endsWith(':src/b.ts'))).toBe(true);
+      expect(edited?.encodedPartitionIds.some((id) => id.endsWith(':src/a.ts'))).toBe(false);
+      expect(
+        edited?.encodedPartitionIds.every(
+          (id) => id.endsWith(':src/b.ts') || id.endsWith(':synthetic:receipt')
+        )
+      ).toBe(true);
+    } finally {
+      await disposeResidentSessions();
+      if (previousJournal === undefined) delete process.env.WORKSPAI_GRAPH_JOURNAL_ROOT;
+      else process.env.WORKSPAI_GRAPH_JOURNAL_ROOT = previousJournal;
+      if (previousSnapshot === undefined) delete process.env.WORKSPAI_GRAPH_SNAPSHOT_ROOT;
+      else process.env.WORKSPAI_GRAPH_SNAPSHOT_ROOT = previousSnapshot;
+      if (previousKernel === undefined) delete process.env.WORKSPAI_GRAPH_COMPOSE_KERNEL;
+      else process.env.WORKSPAI_GRAPH_COMPOSE_KERNEL = previousKernel;
+      rmSync(journal, { recursive: true, force: true });
+      rmSync(snapshot, { recursive: true, force: true });
+    }
   });
 
   it('does not treat ordinary Map.get or headers.get as unsupported routes', async () => {

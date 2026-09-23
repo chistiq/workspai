@@ -267,7 +267,65 @@ async function directionalDelta(project: string, root: string): Promise<unknown>
       .filter((item) => item.code.endsWith('_LEGACY_ONLY'))
       .slice(0, 8)
       .map((item) => ({ code: item.code, key: item.key })),
+    rankedDifferenceSamples: rankedDifferenceSamples(compared.report.differences),
   };
+}
+
+function portableSample(sample: string): string {
+  const stripped = sample
+    .replace(/\/home\/[^/\s\u0000]+/g, '<home>')
+    .replace(/\/Users\/[^/\s\u0000]+/g, '<home>')
+    .replace(/[A-Za-z]:[\\/]/g, '<drive>')
+    .replace(/\\\\/g, '/');
+  return PATH_LEAK.test(stripped) ? 'redacted-machine-path' : stripped;
+}
+
+function sideSummary(value: unknown): { count: number; sample?: string } {
+  if (!value || typeof value !== 'object') return { count: 0 };
+  const record = value as { count?: unknown; sample?: unknown };
+  const raw = Array.isArray(record.sample)
+    ? record.sample.find((item): item is string => typeof item === 'string')
+    : undefined;
+  const sample = raw === undefined ? undefined : portableSample(raw);
+  return {
+    count: typeof record.count === 'number' ? record.count : 0,
+    ...(sample !== undefined ? { sample } : {}),
+  };
+}
+
+function rankedDifferenceSamples(
+  differences: readonly {
+    code: string;
+    key?: string;
+    legacy?: unknown;
+    package?: unknown;
+  }[]
+): readonly {
+  code: string;
+  key: string;
+  count: number;
+  legacySample?: string;
+  packageSample?: string;
+}[] {
+  return differences
+    .map((item) => {
+      const legacy = sideSummary(item.legacy);
+      const packageSide = sideSummary(item.package);
+      return {
+        code: item.code,
+        key: item.key ?? '',
+        count: Math.max(legacy.count, packageSide.count),
+        ...(legacy.sample !== undefined ? { legacySample: legacy.sample } : {}),
+        ...(packageSide.sample !== undefined ? { packageSample: packageSide.sample } : {}),
+      };
+    })
+    .sort(
+      (left, right) =>
+        right.count - left.count ||
+        left.code.localeCompare(right.code) ||
+        left.key.localeCompare(right.key)
+    )
+    .slice(0, 24);
 }
 
 async function evaluateOne(referenceRoot: string, project: string): Promise<unknown> {
@@ -543,9 +601,15 @@ if (invoked) {
       process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
       process.exitCode = exitCode;
     })
-    .catch(() => {
+    .catch((error: unknown) => {
+      const message = error instanceof Error ? error.message : 'failed';
       process.stderr.write(
-        `${JSON.stringify({ schemaVersion: 'workspai.graph-reference-quality-error.v1', error: 'Reference quality evaluation failed before a report could be produced.' })}\n`
+        `${JSON.stringify({
+          schemaVersion: 'workspai.graph-reference-quality-error.v1',
+          error: PATH_LEAK.test(message)
+            ? 'Reference quality evaluation failed before a report could be produced.'
+            : message,
+        })}\n`
       );
       process.exitCode = 4;
     });

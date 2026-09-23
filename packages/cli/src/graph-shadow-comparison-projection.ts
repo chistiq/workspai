@@ -267,7 +267,7 @@ export function isGraphShadowComparableDiagnostic(code: string): boolean {
 }
 
 export type GraphShadowProjectedIdentity =
-  | { readonly status: 'comparable'; readonly identity: string }
+  | { readonly status: 'comparable'; readonly identity: string; readonly kind?: string }
   | { readonly status: 'unsafe'; readonly locator: string };
 
 export type GraphShadowProjectedLocator =
@@ -332,6 +332,101 @@ export function mapShadowKind(kind: string, overrides?: Readonly<Record<string, 
   return GRAPH_COMPARABLE_SURFACE.mapKind(kind, overrides);
 }
 
+/** Released CLI calls member callables `method`. Package extraction calls the same shape `function`. */
+function comparableSymbolDetail(detail: string): string {
+  return detail === 'method' ? 'function' : detail;
+}
+
+/**
+ * Dotted namespace modules are case-insensitive (the package already resolves dotnet that way).
+ * Path-shaped specifiers keep case so Go and filesystem modules stay distinct.
+ */
+function comparableProtobufDeclaration(key: string): GraphShadowProjectedIdentity | undefined {
+  const message = /^protobuf-message:([^:]+):([^:]+):[0-9a-f]{16}$/u.exec(key);
+  const service = message
+    ? undefined
+    : /^protobuf-service:([^:]+):([^:]+):[0-9a-f]{16}$/u.exec(key);
+  const match = message ?? service;
+  if (!match?.[1] || !match[2]) return undefined;
+  const kind = message ? 'schema' : 'service';
+  const qualified = match[1] === 'unscoped' ? match[2] : `${match[1]}.${match[2]}`;
+  return { status: 'comparable', identity: `${kind}:${qualified}`, kind };
+}
+
+function comparableModuleIdentity(identity: string): string {
+  const specifier = identity.startsWith('module:') ? identity.slice('module:'.length) : identity;
+  if (!identity.startsWith('module:') || specifier.includes('/')) return identity;
+  return `module:${specifier.toLowerCase()}`;
+}
+
+/**
+ * A declared dependency import and a module specifier import are the same edge.
+ * `package:npm:@scope/name` and `module:@scope/name` both name that dependency.
+ * Subpaths stay distinct: `package:npm:lodash` does not become `module:lodash/get`.
+ */
+export function comparableDeclaredPackageImportTarget(identity: string): string {
+  const declared = /^package:([a-z0-9]+):(.+)$/u.exec(identity);
+  if (!declared?.[1] || !declared[2] || !DECLARED_PACKAGE_ECOSYSTEMS.has(declared[1])) {
+    return identity;
+  }
+  return comparableModuleIdentity(`module:${declared[2]}`);
+}
+
+const DECLARED_PACKAGE_ECOSYSTEMS = new Set([
+  'cargo',
+  'clojure',
+  'cmake',
+  'composer',
+  'dart',
+  'elixir',
+  'go',
+  'gradle',
+  'maven',
+  'npm',
+  'nuget',
+  'python',
+  'ruby',
+  'scala',
+  'swift',
+]);
+
+function declaredPackageEcosystem(namespace: string): string | undefined {
+  const suffix = namespace.endsWith('-project')
+    ? '-project'
+    : namespace.endsWith('-package')
+      ? '-package'
+      : '';
+  if (!suffix) return undefined;
+  const ecosystem = namespace.slice(0, -suffix.length);
+  return DECLARED_PACKAGE_ECOSYSTEMS.has(ecosystem) ? ecosystem : undefined;
+}
+
+function comparableDeclaredPackage(
+  namespace: string,
+  locator: string
+): { readonly identity: string; readonly kind: 'package' } {
+  const ecosystem = declaredPackageEcosystem(namespace) ?? 'npm';
+  const dependency = /^dependency:(.+)$/u.exec(locator);
+  if (dependency?.[1] && declaredPackageEcosystem(namespace)) {
+    return { identity: `package:${ecosystem}:${dependency[1]}`, kind: 'package' };
+  }
+  const hash = locator.lastIndexOf('#');
+  const name = hash >= 0 ? locator.slice(hash + 1) : locator;
+  return { identity: `package:${ecosystem}:${name}`, kind: 'package' };
+}
+
+function comparableComposeServiceName(identity: string): string | undefined {
+  const legacy = /^compose-service:.+:(?:compose|docker-compose):([^:]+)$/u.exec(identity);
+  if (legacy?.[1]) return legacy[1];
+  const packaged = /^service:services\/([^/]+)$/u.exec(identity);
+  if (!packaged?.[1]) return undefined;
+  try {
+    return decodeURIComponent(packaged[1]);
+  } catch {
+    return packaged[1];
+  }
+}
+
 export function mapShadowRelation(
   relation: string,
   overrides?: Readonly<Record<string, string>>
@@ -391,7 +486,10 @@ function comparablePackageLocator(
     if (classified.class === 'unsafe') {
       return { status: 'unsafe', locator: classified.locator };
     }
-    return { status: 'comparable', identity: `module:${classified.locator}` };
+    return {
+      status: 'comparable',
+      identity: comparableModuleIdentity(`module:${classified.locator}`),
+    };
   }
   if (kind === 'endpoint') {
     const endpoint = comparableHttpRouteIdentity(locator);
@@ -413,7 +511,7 @@ function comparablePackageLocator(
     const parts = locator.split(':');
     if (parts.length >= 3) {
       const name = parts.at(-1) ?? '';
-      const symbolKind = parts.at(-2) ?? '';
+      const symbolKind = comparableSymbolDetail(parts.at(-2) ?? '');
       const filePath = preparedPath(parts.slice(0, -2).join(':'), projectId);
       if (filePath.status === 'unsafe') return filePath;
       const file = filePath.status === 'source' ? filePath.locator : filePath.locator;
@@ -425,9 +523,8 @@ function comparablePackageLocator(
     return { status: 'comparable', identity: `language:${projectId}:${locator}` };
   }
   if (kind === 'package' || namespace === 'npm-project') {
-    const hash = locator.lastIndexOf('#');
-    const name = hash >= 0 ? locator.slice(hash + 1) : locator;
-    return { status: 'comparable', identity: `package:npm:${name}` };
+    const declared = comparableDeclaredPackage(namespace, locator);
+    return { status: 'comparable', identity: declared.identity, kind: declared.kind };
   }
   if (kind === 'repository' || kind === 'project') {
     return { status: 'comparable', identity: `project:${projectId || locator}` };
@@ -441,8 +538,12 @@ function comparablePackageLocator(
   if (kind === 'command') {
     return { status: 'comparable', identity: `command:${locator}` };
   }
+  if (kind === 'service') {
+    const composeService = comparableComposeServiceName(`service:${locator}`);
+    if (composeService) return { status: 'comparable', identity: `service:${composeService}` };
+  }
   if (kind === 'module') {
-    return { status: 'comparable', identity: `module:${locator}` };
+    return { status: 'comparable', identity: comparableModuleIdentity(`module:${locator}`) };
   }
   if (kind === 'endpoint') {
     const endpoint = comparableHttpRouteIdentity(locator);
@@ -467,23 +568,52 @@ export function projectLegacyIdentity(
     return { status: 'comparable', identity: `file:${filePath.locator}` };
   }
   const symbolMatch = /^symbol:([^:]+):(.*)$/u.exec(mapped);
-  if (symbolMatch?.[2]) {
+  if (symbolMatch?.[1] && symbolMatch[2]) {
     const rest = symbolMatch[2];
     const parts = rest.split(':');
     if (parts.length >= 3) {
       const name = parts.at(-1) ?? '';
-      const symbolKind = parts.at(-2) ?? '';
-      const filePath = preparedPath(parts.slice(0, -2).join(':'), projectId);
+      const symbolKind = comparableSymbolDetail(parts.at(-2) ?? '');
+      const filePath = preparedPath(parts.slice(0, -2).join(':'), symbolMatch[1] || projectId);
       if (filePath.status === 'unsafe') return filePath;
       return {
         status: 'comparable',
         identity: `symbol:${filePath.locator}:${symbolKind}:${name}`,
       };
     }
+    if (parts.length === 2 && parts[0] && parts[1]) {
+      const filePath = preparedPath(symbolMatch[1], projectId);
+      if (filePath.status === 'unsafe') return filePath;
+      return {
+        status: 'comparable',
+        identity: `symbol:${filePath.locator}:${comparableSymbolDetail(parts[0])}:${parts[1]}`,
+      };
+    }
   }
-  const packageMatch = /^package:[^:]+:npm:([^:]+):/u.exec(mapped);
-  if (packageMatch?.[1])
-    return { status: 'comparable', identity: `package:npm:${packageMatch[1]}` };
+  if (mapped.startsWith('file:')) {
+    const locator = mapped.slice('file:'.length);
+    if (!locator.includes(':')) {
+      const filePath = preparedPath(locator, projectId);
+      if (filePath.status === 'unsafe') return filePath;
+      return { status: 'comparable', identity: `file:${filePath.locator}` };
+    }
+  }
+  const packageMatch = /^package:[^:]+:([a-z0-9]+):([^:]+):(.+)$/u.exec(mapped);
+  if (packageMatch?.[1] && packageMatch[2]) {
+    return {
+      status: 'comparable',
+      identity: `package:${packageMatch[1]}:${packageMatch[2]}`,
+      kind: 'package',
+    };
+  }
+  const dependencyMatch = /^dependency:([a-z0-9]+):(.+)$/u.exec(mapped);
+  if (dependencyMatch?.[1] && dependencyMatch[2]) {
+    return {
+      status: 'comparable',
+      identity: `package:${dependencyMatch[1]}:${dependencyMatch[2]}`,
+      kind: 'package',
+    };
+  }
   const documentMatch = /^document:(.+)$/u.exec(mapped);
   if (documentMatch?.[1]) {
     const documentPath = preparedPath(documentMatch[1], projectId);
@@ -511,10 +641,35 @@ export function projectLegacyIdentity(
     const endpoint = comparableHttpRouteIdentity(mapped);
     if (endpoint) return endpoint;
   }
+  if (mapped.startsWith('pipeline:')) {
+    const pipelinePath = preparedPath(mapped.slice('pipeline:'.length), projectId);
+    if (pipelinePath.status === 'unsafe') return pipelinePath;
+    return { status: 'comparable', identity: `pipeline:${pipelinePath.locator}` };
+  }
+  const protobuf = comparableProtobufDeclaration(mapped);
+  if (protobuf) return protobuf;
+  const dockerfile = /^dockerfile:([^:]+):(.+)$/u.exec(mapped);
+  if (dockerfile?.[1] && dockerfile[2]) {
+    const imagePath = preparedPath(dockerfile[2], dockerfile[1]);
+    if (imagePath.status === 'unsafe') return imagePath;
+    return { status: 'comparable', identity: `container:${imagePath.locator}`, kind: 'container' };
+  }
+  const legacyModule = /^module:([^:]+):(.+)$/u.exec(mapped);
+  if (legacyModule?.[1] === projectId && legacyModule[2]) {
+    return {
+      status: 'comparable',
+      identity: comparableModuleIdentity(`module:${legacyModule[2]}`),
+    };
+  }
+  const composeService = comparableComposeServiceName(mapped);
+  if (composeService) return { status: 'comparable', identity: `service:${composeService}` };
   if (isUnsafeComparableLocator(mapped, mappedKind === 'module' ? 'module' : 'file')) {
     return { status: 'unsafe', locator: normalizeComparablePath(mapped, mappedKind) || mapped };
   }
-  return { status: 'comparable', identity: mapped };
+  return {
+    status: 'comparable',
+    identity: mapped.startsWith('module:') ? comparableModuleIdentity(mapped) : mapped,
+  };
 }
 
 export function projectPackageIdentity(

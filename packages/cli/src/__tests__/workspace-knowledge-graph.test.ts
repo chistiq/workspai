@@ -1529,7 +1529,11 @@ describe('workspace knowledge graph', () => {
       .sort();
     expect(localDependencyTargets).toEqual(['example.com/alpha', 'example.com/beta']);
     expect(
-      graph.proofs.some((proof) => proof.artifact.endsWith('/go.work') && proof.pointer === '/use')
+      graph.proofs.some(
+        (proof) =>
+          (proof.artifact === 'go.work' || proof.artifact.endsWith('/go.work')) &&
+          proof.pointer === '/use'
+      )
     ).toBe(true);
   });
 
@@ -1754,8 +1758,8 @@ describe('workspace knowledge graph', () => {
     );
     expect(packages).toHaveLength(2);
     expect(packages.map((entity) => entity.attributes.manifest).sort()).toEqual([
-      'monorepo/package.json',
-      'monorepo/packages/cli/package.json',
+      'package.json',
+      'packages/cli/package.json',
     ]);
     expect(
       graph.diagnostics.some(
@@ -3543,7 +3547,7 @@ describe('workspace knowledge graph', () => {
     });
     const overlay = buildWorkspaceKnowledgeGraphChangeOverlay(base, head, NOW);
 
-    expect(overlay.changedArtifacts).toEqual(['platform/packages/z-added/package.json']);
+    expect(overlay.changedArtifacts).toEqual(['packages/z-added/package.json']);
     expect(
       overlay.entities.changed.some(
         (change) => change.after?.label === 'zod' && change.changedFields.includes('proofIds')

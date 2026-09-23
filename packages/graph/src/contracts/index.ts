@@ -59,6 +59,8 @@ export {
   type GraphUnknownZone,
   type GraphUnsupportedZone,
   type GraphValidationIssue,
+  type GraphObservationOrigin,
+  type GraphPartitionOwner,
   type GraphValidationResult,
   type GraphWorkspaceFact,
 } from './foundation.js';

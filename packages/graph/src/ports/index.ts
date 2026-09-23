@@ -163,6 +163,16 @@ export interface GraphNativePort {
    * TypeScript extractor; a missing method never changes Graph identity.
    */
   extractDeclarations?(request: GraphNativeDeclarationRequest): GraphNativeDeclarationResult;
+  /**
+   * Optional compact-fact canonicalizer. A missing method or a rejected batch
+   * keeps the TypeScript semantic-fact string. It must not invent a second digest.
+   */
+  canonicalizeFactBatch?(bytes: Uint8Array): GraphNativeFactCanonicalResult;
+}
+
+export interface GraphNativeFactCanonicalResult {
+  readonly status: 'complete' | 'rejected' | 'failed';
+  readonly canonical: readonly string[];
 }
 
 export interface GraphExecutionPorts {
@@ -172,6 +182,8 @@ export interface GraphExecutionPorts {
   readonly scheduler: GraphSchedulerPort;
   readonly workers: GraphWorkerPoolPort;
   readonly signal?: AbortSignal;
+  /** Bundled acceleration. Absent means the TypeScript reference path. */
+  readonly native?: GraphNativePort;
 }
 
 export interface GraphFileInventoryRequest {

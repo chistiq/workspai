@@ -7,6 +7,7 @@ import type {
   GraphNativeDeclaration,
   GraphNativeDeclarationRequest,
   GraphNativeDeclarationResult,
+  GraphNativeFactCanonicalResult,
   GraphNativePort,
   GraphNativeTraversalRequest,
   GraphNativeTraversalResult,
@@ -98,6 +99,12 @@ interface GraphEngineExports {
     namesPointer: number,
     namesCapacity: number
   ) => number;
+  readonly graph_engine_compose_facts: (
+    inputPointer: number,
+    inputLen: number,
+    outputPointer: number,
+    outputCapacity: number
+  ) => number;
 }
 
 const ERROR_CODES: Readonly<Record<number, string>> = Object.freeze({
@@ -112,6 +119,10 @@ const ERROR_CODES: Readonly<Record<number, string>> = Object.freeze({
   [-14]: 'GRAPH_NATIVE_SOURCE_INVALID',
   [-15]: 'GRAPH_NATIVE_OUTPUT_LIMIT_EXCEEDED',
   [-16]: 'GRAPH_NATIVE_OUTPUT_LIMIT_EXCEEDED',
+  [-21]: 'GRAPH_NATIVE_FACT_INPUT_TRUNCATED',
+  [-22]: 'GRAPH_NATIVE_FACT_LIMIT_EXCEEDED',
+  [-23]: 'GRAPH_NATIVE_FACT_INPUT_INVALID',
+  [-26]: 'GRAPH_NATIVE_FACT_OUTPUT_LIMIT_EXCEEDED',
 });
 
 function result(
@@ -229,7 +240,8 @@ function assertExports(exports: unknown): asserts exports is GraphEngineExports 
     typeof candidate.graph_engine_alloc_u8 !== 'function' ||
     typeof candidate.graph_engine_dealloc_u8 !== 'function' ||
     typeof candidate.graph_engine_reachable !== 'function' ||
-    typeof candidate.graph_engine_extract_declarations !== 'function'
+    typeof candidate.graph_engine_extract_declarations !== 'function' ||
+    typeof candidate.graph_engine_compose_facts !== 'function'
   ) {
     throw new GraphNativeAdapterLoadError('GRAPH_NATIVE_ABI_EXPORT_MISSING');
   }
@@ -600,6 +612,87 @@ export async function createNodeRustWasmGraphNativePort(
               reinitialize();
             } catch {
               // Isolation already failed closed; the next call re-throws on use.
+            }
+          },
+        });
+      }
+    },
+    canonicalizeFactBatch(bytes: Uint8Array): GraphNativeFactCanonicalResult {
+      const rejected = (): GraphNativeFactCanonicalResult =>
+        Object.freeze({ status: 'rejected', canonical: Object.freeze([]) });
+      const failed = (): GraphNativeFactCanonicalResult =>
+        Object.freeze({ status: 'failed', canonical: Object.freeze([]) });
+      if (
+        !(bytes instanceof Uint8Array) ||
+        bytes.byteLength === 0 ||
+        bytes.byteLength > 24 * 1024 * 1024
+      ) {
+        return rejected();
+      }
+      let inputPointer = 0;
+      let outputPointer = 0;
+      let outputCapacity = 0;
+      let trapped = false;
+      try {
+        inputPointer = engine.graph_engine_alloc_u8(bytes.byteLength);
+        if (inputPointer === 0) return failed();
+        new Uint8Array(engine.memory.buffer, inputPointer, bytes.byteLength).set(bytes);
+        outputCapacity = Math.min(32 * 1024 * 1024, Math.max(bytes.byteLength * 4, 65_536));
+        outputPointer = engine.graph_engine_alloc_u8(outputCapacity);
+        if (outputPointer === 0) return failed();
+        let written = engine.graph_engine_compose_facts(
+          inputPointer,
+          bytes.byteLength,
+          outputPointer,
+          outputCapacity
+        );
+        if (written === -26 && outputCapacity < 32 * 1024 * 1024) {
+          engine.graph_engine_dealloc_u8(outputPointer, outputCapacity);
+          outputPointer = 0;
+          outputCapacity = 32 * 1024 * 1024;
+          outputPointer = engine.graph_engine_alloc_u8(outputCapacity);
+          if (outputPointer === 0) return failed();
+          written = engine.graph_engine_compose_facts(
+            inputPointer,
+            bytes.byteLength,
+            outputPointer,
+            outputCapacity
+          );
+        }
+        if (written < 0) return rejected();
+        if (written < 4 || written > outputCapacity) return failed();
+        const view = new DataView(engine.memory.buffer, outputPointer, written);
+        const count = view.getUint32(0, true);
+        if (count > 8_192) return failed();
+        const canonical: string[] = [];
+        let offset = 4;
+        for (let index = 0; index < count; index += 1) {
+          if (offset + 4 > written) return failed();
+          const length = view.getUint32(offset, true);
+          offset += 4;
+          if (offset + length > written) return failed();
+          canonical.push(
+            decoder.decode(new Uint8Array(engine.memory.buffer, outputPointer + offset, length))
+          );
+          offset += length;
+        }
+        if (offset !== written) return failed();
+        return Object.freeze({ status: 'complete', canonical: Object.freeze(canonical) });
+      } catch {
+        trapped = true;
+        return failed();
+      } finally {
+        reclaimBundledEngineBuffers({
+          trapped,
+          dealloc: () => {
+            if (inputPointer !== 0) engine.graph_engine_dealloc_u8(inputPointer, bytes.byteLength);
+            if (outputPointer !== 0) engine.graph_engine_dealloc_u8(outputPointer, outputCapacity);
+          },
+          reinitialize: () => {
+            try {
+              reinitialize();
+            } catch {
+              // The next canonical batch falls back to the TypeScript reference.
             }
           },
         });

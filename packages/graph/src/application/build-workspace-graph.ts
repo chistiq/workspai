@@ -575,6 +575,19 @@ export async function buildWorkspaceGraph(
     };
   }
 
+  if (composed.value.representation !== 'materialized') {
+    return {
+      accepted: false,
+      code: 'composition-failed',
+      issues: [
+        issue(
+          'GRAPH_NATIVE_SNAPSHOT_UNMATERIALIZED',
+          '/graph',
+          'Workspace merge requires an explicit materialized graph.'
+        ),
+      ],
+    };
+  }
   const merged = await mergeWorkspaceGraphs(
     request,
     composed.value.graph,

@@ -99,6 +99,12 @@ export interface GraphProviderRuntime {
   readonly manifest: GraphProviderManifest;
   detect(request: GraphProviderDetectionRequest): Promise<unknown> | unknown;
   collect(request: GraphProviderCollectionRequest): Promise<unknown> | unknown;
+  /**
+   * Locator-owned batches. The product kernel pulls one batch, waits for the
+   * native acknowledgement, then pulls the next. `collect` remains the
+   * compatibility materialization of the same batches.
+   */
+  partitionStream?(request: GraphProviderCollectionRequest): AsyncIterable<GraphFactBatch>;
 }
 
 export interface GraphProviderRunSummary {

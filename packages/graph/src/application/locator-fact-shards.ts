@@ -21,6 +21,7 @@ import type {
   GraphCanonicalGraph,
   GraphEntityReference,
   GraphFactBatch,
+  GraphObservationOrigin,
   GraphQualityReport,
   GraphUnknownZone,
   GraphWorkspaceFact,
@@ -61,6 +62,7 @@ export interface GraphLocatorFactShard extends GraphLocatorFactShardKey {
   readonly schema: typeof GRAPH_LOCATOR_FACT_SHARD_SCHEMA;
   readonly providerVersion: string;
   readonly facts: readonly GraphWorkspaceFact[];
+  readonly observationOrigins: readonly (readonly [string, GraphObservationOrigin])[];
   readonly unknownZones: readonly GraphUnknownZone[];
   readonly processing: GraphFactBatch['processing'][number];
   readonly callEnvironmentDigest: string;
@@ -144,10 +146,11 @@ function membershipSignature(locators: readonly string[]): string {
   return [...locators].sort((left, right) => left.localeCompare(right)).join('\0');
 }
 
-function shardMapKey(membership: string, key: GraphLocatorFactShardKey): string {
+function shardMapKey(key: GraphLocatorFactShardKey): string {
+  // Membership is stored once on the registry. setMembership clears this map
+  // when the signature changes, so the key must not repeat that signature.
   return [
     GRAPH_LOCATOR_FACT_SHARD_SCHEMA,
-    membership,
     key.providerId,
     key.locator,
     key.inputDigest,
@@ -272,12 +275,12 @@ class LocatorFactShardRegistry implements LocatorFactShardStore {
 
   get(key: GraphLocatorFactShardKey): GraphLocatorFactShard | undefined {
     if (this.disposed) return undefined;
-    return this.shards.get(shardMapKey(this.membershipToken, key));
+    return this.shards.get(shardMapKey(key));
   }
 
   set(shard: GraphLocatorFactShard): void {
     if (this.disposed) return;
-    const key = shardMapKey(this.membershipToken, shard);
+    const key = shardMapKey(shard);
     const existing = this.shards.get(key);
     const nextFacts = this.factCount - (existing?.facts.length ?? 0) + shard.facts.length;
     const nextBytes =
@@ -572,8 +575,21 @@ export function appendReusedLocatorFacts(
   const shard = lookupLocatorFactShard(key);
   if (!shard) return false;
   if (shard.callEnvironmentDigest !== expectedCallEnvironmentDigest) return false;
-  facts.push(...shard.facts);
+  facts.push(...materializeLocatorFactShardFacts(shard));
   processing.push(shard.processing);
   unknownZones.push(...shard.unknownZones);
   return true;
+}
+
+export function materializeLocatorFactShardFacts(
+  shard: GraphLocatorFactShard
+): readonly GraphWorkspaceFact[] {
+  const origins = new Map(shard.observationOrigins);
+  return shard.facts.map((fact) => ({
+    ...fact,
+    partitionOwner: {
+      locator: shard.locator,
+      observationOrigin: origins.get(fact.factId) ?? 'build-clock',
+    },
+  }));
 }

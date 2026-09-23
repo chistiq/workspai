@@ -7,12 +7,32 @@
 //! - a low-level WASM ABI
 //!
 //! Not shipped: N-API/native addon, JSON/object-graph composition, Tree-sitter
-//! grammars, or unbounded Rayon fan-out. A Rust composition kernel may land
-//! only after admitted compact-fact parity against the TypeScript reference.
+//! grammars, or unbounded Rayon fan-out. The compact-fact kernel emits the
+//! TypeScript semantic-fact string. A digest mismatch falls back to TypeScript.
 
 #![forbid(unsafe_op_in_unsafe_fn)]
 
+mod collate;
+mod compose;
 mod extract;
+mod fact_set;
+#[cfg(not(target_arch = "wasm32"))]
+mod graph_compose;
+#[cfg(not(target_arch = "wasm32"))]
+mod packed_query;
+mod sha256;
+pub use sha256::{hex32, Sha256};
+
+#[cfg(not(target_arch = "wasm32"))]
+pub use graph_compose::{
+    ComposeFailure, ComposeOutput, ComposeRequest, Composer, LineageSpec, RelationSpec,
+    ResidentEngine, ResidentFact, ResidentPartition,
+};
+#[cfg(not(target_arch = "wasm32"))]
+pub use packed_query::serve_packed_queries;
+
+pub use compose::{compose_fact_canonical, pack_fact_canonical, ComposeError};
+pub use fact_set::{FactSet, FactSetError};
 
 use std::collections::VecDeque;
 
@@ -339,6 +359,48 @@ pub unsafe extern "C" fn graph_engine_extract_declarations(
         name_offset += name_bytes.len();
     }
     findings.len() as i32
+}
+
+#[cfg(target_arch = "wasm32")]
+const COMPOSE_OUTPUT_TOO_SMALL: i32 = compose::COMPOSE_OUTPUT_TOO_SMALL;
+
+#[cfg(target_arch = "wasm32")]
+#[no_mangle]
+pub unsafe extern "C" fn graph_engine_compose_facts(
+    input_pointer: u32,
+    input_len: u32,
+    output_pointer: u32,
+    output_capacity: u32,
+) -> i32 {
+    if input_len > 0 && input_pointer == 0 {
+        return ComposeError::Invalid.abi_code();
+    }
+    // SAFETY: the ABI caller allocates this exact byte range in linear memory.
+    let input = if input_len == 0 {
+        &[]
+    } else {
+        unsafe { std::slice::from_raw_parts(input_pointer as *const u8, input_len as usize) }
+    };
+    let facts = match compose_fact_canonical(input) {
+        Ok(value) => value,
+        Err(error) => return error.abi_code(),
+    };
+    let packed = pack_fact_canonical(&facts);
+    if packed.len() > output_capacity as usize {
+        return COMPOSE_OUTPUT_TOO_SMALL;
+    }
+    if packed.is_empty() {
+        return 0;
+    }
+    if output_pointer == 0 {
+        return COMPOSE_OUTPUT_TOO_SMALL;
+    }
+    // SAFETY: output_pointer references output_capacity bytes allocated by the caller.
+    let output = unsafe {
+        std::slice::from_raw_parts_mut(output_pointer as *mut u8, output_capacity as usize)
+    };
+    output[..packed.len()].copy_from_slice(&packed);
+    packed.len() as i32
 }
 
 #[cfg(test)]

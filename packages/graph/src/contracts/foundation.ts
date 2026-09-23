@@ -143,6 +143,20 @@ export interface GraphUnknownZone extends GraphUnknownObservationFields {
   readonly reason: string;
 }
 
+export type GraphObservationOrigin = 'source' | 'provider' | 'build-clock';
+
+/**
+ * Explicit partition ownership. Locator identity is not a content digest:
+ * two files with identical bytes remain different partitions.
+ * `build-clock` may be replaced by the first trusted observation for an
+ * unchanged input. `source` and `provider` stay semantic even when the
+ * timestamp equals the build clock.
+ */
+export interface GraphPartitionOwner {
+  readonly locator: string;
+  readonly observationOrigin: GraphObservationOrigin;
+}
+
 export interface GraphWorkspaceFact {
   readonly factId: string;
   readonly factType: string;
@@ -158,6 +172,8 @@ export interface GraphWorkspaceFact {
   readonly freshness: GraphFactFreshness;
   readonly truthLifecycle: GraphTruthLifecycle;
   readonly observedAt: string;
+  /** @deprecated Native composition promotes this provider hint to its source envelope. */
+  readonly partitionOwner?: GraphPartitionOwner;
   readonly inputDigest: WisDigestReference;
   readonly unknownZones: readonly GraphUnknownZone[];
   readonly extensions?: Readonly<Record<string, unknown>>;

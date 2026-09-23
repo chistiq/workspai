@@ -39,6 +39,8 @@ const build = spawnSync(
     'wasm32-unknown-unknown',
     '--package',
     'workspai-graph-engine',
+    // The native compose/query bins are host-only. WASM ships the library ABI.
+    '--lib',
   ],
   { cwd: repositoryRoot, encoding: 'utf8', env: environment, windowsHide: true }
 );
@@ -67,6 +69,7 @@ for (const required of [
   'graph_engine_dealloc_u8',
   'graph_engine_reachable',
   'graph_engine_extract_declarations',
+  'graph_engine_compose_facts',
 ]) {
   if (!exports.has(required)) throw new Error(`Rust Graph WASM omits required export ${required}`);
 }

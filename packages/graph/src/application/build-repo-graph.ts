@@ -7,6 +7,7 @@ import {
 import { createMemoizedIdentityResolver } from '../conformance/identity.js';
 import type {
   GraphDiagnostic,
+  GraphFactBatch,
   GraphProviderInput,
   GraphProviderRunSummary,
   GraphValidationIssue,
@@ -20,6 +21,11 @@ import { isGraphFactAdmitted } from '../domain/admitted-graph-facts.js';
 import { structurizeUnknownZone } from '../domain/unknown-cause.js';
 import type { GraphFileInventoryResult } from '../ports/index.js';
 
+import {
+  canonicalRepositoryIdentity,
+  aggregateInputDigest,
+  promoteNativePartitionEnvelope,
+} from './native-partition-session.js';
 import {
   composeGraph,
   compositionQualityDigestMatches,
@@ -242,13 +248,13 @@ function snapshotCompositionSource(source: GraphCompositionSource): GraphComposi
 }
 
 function snapshotAdmittedSource(source: GraphCompositionSource): GraphCompositionSource {
-  if (
-    source.batch.facts.length > 0 &&
-    source.batch.facts.every((fact) => isGraphFactAdmitted(fact))
-  ) {
-    return adoptFrozenGraphCompositionSource(source);
+  const factsWereAdmitted =
+    source.batch.facts.length > 0 && source.batch.facts.every((fact) => isGraphFactAdmitted(fact));
+  if (factsWereAdmitted) {
+    return adoptFrozenGraphCompositionSource(promoteNativePartitionEnvelope(source));
   }
-  return snapshotAdmittedGraphCompositionSource(source);
+  const snapshotted = snapshotAdmittedGraphCompositionSource(source);
+  return adoptFrozenGraphCompositionSource(promoteNativePartitionEnvelope(snapshotted));
 }
 
 function rememberDefaultLocatorShards(
@@ -256,6 +262,11 @@ function rememberDefaultLocatorShards(
   providerVersion: string,
   source: GraphCompositionSource
 ): void {
+  const observationOrigins = new Map(
+    (source.partitionOwnership ?? []).flatMap((partition) =>
+      partition.facts.map((fact) => [fact.factId, fact.observationOrigin] as const)
+    )
+  );
   const processingByLocator = new Map(
     source.batch.processing.map((record) => [record.input.locator, record])
   );
@@ -282,6 +293,11 @@ function rememberDefaultLocatorShards(
       ...key,
       providerVersion,
       facts: Object.freeze(factsByLocator.get(input.locator) ?? []),
+      observationOrigins: Object.freeze(
+        (factsByLocator.get(input.locator) ?? []).map(
+          (fact) => [fact.factId, observationOrigins.get(fact.factId) ?? 'build-clock'] as const
+        )
+      ),
       unknownZones: Object.freeze(
         source.batch.unknownZones.filter((zone) => zone.scope === input.locator)
       ),
@@ -546,6 +562,8 @@ async function executeRepoGraphBuild(
   const diagnostics: GraphDiagnostic[] = [];
   const summaries: GraphProviderRunSummary[] = [];
   const sources: GraphCompositionSource[] = [];
+  const pausedPartitionStreams: AsyncIterator<GraphFactBatch>[] = [];
+  let streamedFactCount: number | undefined;
   let inventory: GraphFileInventoryResult;
 
   if (!request.root.trim()) {
@@ -821,6 +839,7 @@ async function executeRepoGraphBuild(
 
   if (!reuseSessionExtractedSources)
     for (const provider of providers) {
+      streamedFactCount = undefined;
       try {
         request.ports.cancellation.throwIfAborted();
       } catch {
@@ -1013,49 +1032,82 @@ async function executeRepoGraphBuild(
       const collectionStartedAt = performance.now();
       try {
         let providerReadBytes = 0;
-        collected = await runProviderPhase(
-          manifest.value.limits.maxDurationMs,
-          request.ports.signal,
-          (providerSignal) =>
-            provider.collect({
-              scope,
-              inputs: admittedInputs,
-              observedAt,
-              signal: providerSignal,
-              resolveIdentity,
-              readInput: async (input: GraphProviderInput, options) => {
-                const admitted = inputByLocator.get(input.locator);
-                if (!admitted || admitted.digest.value !== input.digest.value) {
-                  throw new Error('Provider requested an input outside the admitted inventory.');
-                }
-                const totalBudget = Math.min(
-                  request.policy.limits.maxProviderReadBytes,
-                  manifest.value.limits.maxInputBytes ?? Number.MAX_SAFE_INTEGER
-                );
-                const maxBytes = Math.min(options.maxBytes, totalBudget);
-                if (
-                  !Number.isInteger(maxBytes) ||
-                  maxBytes <= 0 ||
-                  admitted.byteLength > maxBytes
-                ) {
-                  throw new Error('Provider input read exceeds the admitted byte budget.');
-                }
-                providerReadBytes += admitted.byteLength;
-                if (providerReadBytes > totalBudget) {
-                  throw new Error('Provider cumulative reads exceed the admitted byte budget.');
-                }
-                const cacheKey = `${admitted.locator}\u0000${admitted.digest.value}`;
-                const cached = fileBytes.get(cacheKey);
-                if (cached) return cached;
-                const pending = request.ports.fileSource.read(request.root, admitted, {
-                  maxBytes,
-                  signal: options.signal ?? providerSignal,
-                });
-                fileBytes.set(cacheKey, pending);
-                return pending;
-              },
-            })
-        );
+        const readInput = async (
+          input: GraphProviderInput,
+          options: { readonly maxBytes: number; readonly signal?: AbortSignal },
+          providerSignal: AbortSignal | undefined
+        ) => {
+          const admitted = inputByLocator.get(input.locator);
+          if (!admitted || admitted.digest.value !== input.digest.value) {
+            throw new Error('Provider requested an input outside the admitted inventory.');
+          }
+          const totalBudget = Math.min(
+            request.policy.limits.maxProviderReadBytes,
+            manifest.value.limits.maxInputBytes ?? Number.MAX_SAFE_INTEGER
+          );
+          const maxBytes = Math.min(options.maxBytes, totalBudget);
+          if (!Number.isInteger(maxBytes) || maxBytes <= 0 || admitted.byteLength > maxBytes) {
+            throw new Error('Provider input read exceeds the admitted byte budget.');
+          }
+          providerReadBytes += admitted.byteLength;
+          if (providerReadBytes > totalBudget) {
+            throw new Error('Provider cumulative reads exceed the admitted byte budget.');
+          }
+          const cacheKey = `${admitted.locator}\u0000${admitted.digest.value}`;
+          const cached = fileBytes.get(cacheKey);
+          if (cached) return cached;
+          const pending = request.ports.fileSource.read(request.root, admitted, {
+            maxBytes,
+            signal: options.signal ?? providerSignal,
+          });
+          fileBytes.set(cacheKey, pending);
+          return pending;
+        };
+        const kernelStream =
+          process.env.WORKSPAI_GRAPH_COMPOSE_KERNEL === '1' &&
+          !process.env.WORKSPAI_GRAPH_COMPOSE_FAULT &&
+          !process.env.WORKSPAI_GRAPH_CHILD_FAULT &&
+          !process.env.WORKSPAI_GRAPH_COMPOSE_BIN &&
+          typeof provider.partitionStream === 'function';
+        if (kernelStream && provider.partitionStream) {
+          const partitionStream = provider.partitionStream;
+          collected = await runProviderPhase(
+            manifest.value.limits.maxDurationMs,
+            request.ports.signal,
+            async (providerSignal) => {
+              const iterator = partitionStream({
+                scope,
+                inputs: admittedInputs,
+                observedAt,
+                signal: request.ports.signal ?? providerSignal,
+                resolveIdentity,
+                readInput: (input, options) =>
+                  readInput(input, options, request.ports.signal ?? providerSignal),
+              })[Symbol.asyncIterator]();
+              const first = await iterator.next();
+              if (first.done || first.value.facts.length > 0 || first.value.coverage.length === 0) {
+                throw new Error('partition stream did not emit a receipt');
+              }
+              pausedPartitionStreams.push(iterator);
+              streamedFactCount = first.value.inputs.length;
+              return first.value;
+            }
+          );
+        } else {
+          collected = await runProviderPhase(
+            manifest.value.limits.maxDurationMs,
+            request.ports.signal,
+            (providerSignal) =>
+              provider.collect({
+                scope,
+                inputs: admittedInputs,
+                observedAt,
+                signal: providerSignal,
+                resolveIdentity,
+                readInput: (input, options) => readInput(input, options, providerSignal),
+              })
+          );
+        }
       } catch (error) {
         const cancelled =
           request.ports.cancellation.aborted || request.ports.signal?.aborted === true;
@@ -1147,7 +1199,7 @@ async function executeRepoGraphBuild(
         provider: identity,
         detection: detection.value.status,
         collection: admission.batch.status,
-        factCount: admission.batch.facts.length,
+        factCount: streamedFactCount ?? admission.batch.facts.length,
         diagnostics: admission.batch.diagnostics,
         detectionMs,
         collectionMs,
@@ -1159,8 +1211,10 @@ async function executeRepoGraphBuild(
             batch: admission.batch,
           });
           sources.push(snapshot);
-          rebindLocatorFactShards(identity.id, snapshot.batch.facts);
-          rememberDefaultLocatorShards(identity.id, identity.version, snapshot);
+          if (streamedFactCount === undefined) {
+            rebindLocatorFactShards(identity.id, snapshot.batch.facts);
+            rememberDefaultLocatorShards(identity.id, identity.version, snapshot);
+          }
         } catch {
           const providerDiagnostics = [
             diagnostic(
@@ -1302,6 +1356,39 @@ async function executeRepoGraphBuild(
           ontology: request.ontology,
           sources,
           policy: request.policy.composition,
+          repositoryIdentity: canonicalRepositoryIdentity(request.scope, request.root),
+          ...(pausedPartitionStreams.length > 0
+            ? {
+                streamSources: async function* () {
+                  for (const iterator of pausedPartitionStreams) {
+                    while (true) {
+                      const next = await iterator.next();
+                      if (next.done) break;
+                      const providerSource = sources.find(
+                        (source) => source.manifest.id === next.value.provider.id
+                      );
+                      if (!providerSource) throw new Error('partition-admission');
+                      const admission = admitGraphProviderOutput(
+                        providerSource.manifest,
+                        next.value
+                      );
+                      if (!admission.accepted) throw new Error('partition-admission');
+                      const snapshot = snapshotAdmittedSource({
+                        manifest: admission.manifest,
+                        batch: admission.batch,
+                      });
+                      rebindLocatorFactShards(admission.manifest.id, snapshot.batch.facts);
+                      rememberDefaultLocatorShards(
+                        admission.manifest.id,
+                        admission.manifest.version,
+                        snapshot
+                      );
+                      yield snapshot;
+                    }
+                  }
+                },
+              }
+            : {}),
         },
         request.ports
       );
@@ -1326,9 +1413,13 @@ async function executeRepoGraphBuild(
       inventoryZones
     );
   }
+  const nativeSnapshot =
+    composed && composed.accepted && composed.value.representation === 'native-snapshot'
+      ? composed.value.snapshot
+      : undefined;
   const graph = reusedCanonical
     ? reuseCandidate!.graph
-    : composed && composed.accepted
+    : composed && composed.accepted && composed.value.representation === 'materialized'
       ? composed.value.graph
       : undefined;
   const qualityGraph = reusedCanonical
@@ -1341,7 +1432,7 @@ async function executeRepoGraphBuild(
     : composed && composed.accepted
       ? composed.value.receipt
       : undefined;
-  if (!graph) {
+  if (!graph && !nativeSnapshot) {
     discardStagedCompositionPreparation();
     return emptyResult(
       'failed',
@@ -1395,11 +1486,27 @@ async function executeRepoGraphBuild(
     filesExtracted: phaseTimings.find((timing) => timing.phase === 'extract')?.files ?? 0,
   };
   captureMemory('end');
+  const nativeWithoutFacts = Boolean(nativeSnapshot && !graph);
   return {
     status: incomplete ? 'partial' : 'complete',
-    graph,
-    compositionSources: Object.freeze([...sources]),
+    ...(graph ? { graph } : {}),
+    ...(nativeWithoutFacts
+      ? {
+          sourceSummaries: Object.freeze(
+            sources.map((source) => ({
+              providerId: source.manifest.id,
+              providerVersion: source.manifest.version,
+              batchId: source.batch.batchId,
+              factCount: source.batch.facts.length,
+              inputDigest: aggregateInputDigest(source.batch.inputs),
+              unknownZoneCount: source.batch.unknownZones.length,
+              unsupportedZoneCount: source.batch.unsupportedZones.length,
+            }))
+          ),
+        }
+      : { compositionSources: Object.freeze([...sources]) }),
     ...(compositionReceipt ? { compositionReceipt } : {}),
+    ...(nativeSnapshot ? { nativeSnapshot } : {}),
     admittedInputs,
     inventoryMembership: freezeInventoryMembership(
       inventory.membershipLocators ?? admittedInputs.map((input) => input.locator),
@@ -1434,7 +1541,21 @@ async function executeRepoGraphBuild(
         })),
     },
     providers: summaries,
-    diagnostics: [...diagnostics, ...graph.diagnostics],
+    diagnostics: [
+      ...diagnostics,
+      ...(graph?.diagnostics ?? []),
+      ...(nativeSnapshot
+        ? [
+            {
+              code: 'GRAPH_NATIVE_SNAPSHOT',
+              severity: 'info' as const,
+              path: '',
+              message:
+                'The native snapshot is the graph body. Materialize it explicitly or query it; this result has no JavaScript node array.',
+            },
+          ]
+        : []),
+    ],
     metrics: {
       inputFiles: inventory.inputs.length,
       inputBytes,

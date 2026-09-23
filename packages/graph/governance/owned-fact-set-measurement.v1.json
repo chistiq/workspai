@@ -1,0 +1,82 @@
+{
+  "schema": "workspai.graph.owned-fact-set-measurement.v1",
+  "admitted": false,
+  "kernelDefault": false,
+  "env": "WORKSPAI_GRAPH_COMPOSE_KERNEL=1",
+  "binary": "target/release/graph-compose-session",
+  "node": "v24.20.0",
+  "acceptance": {
+    "compositionReduction60": false,
+    "wallReduction35": false,
+    "rssReduction35": false,
+    "digestMatch": true,
+    "statusMatch": true,
+    "silentFallback": false,
+    "silentTruncation": false
+  },
+  "pnpm": {
+    "path": "/home/opendesxi/Documents/InWork/Reference/pnpm",
+    "commit": "07d862d12b7ba0c858f4073b6afa97d646fefac7",
+    "dirtyFiles": 0,
+    "cache": "warm-filesystem",
+    "order": ["off", "on", "on", "off"],
+    "loadavg": ["3.60 3.22 2.41", "3.87 3.32 2.49", "4.80 3.66 2.66", "3.94 3.60 2.70"],
+    "off": [
+      {
+        "elapsedMs": 49391,
+        "compositionMs": 30347,
+        "semanticDigestMs": 6375,
+        "rssMB": 3247,
+        "heapMB": 2888,
+        "digestPrefix": "c68fed3af94dec80",
+        "status": "partial"
+      },
+      {
+        "elapsedMs": 45476,
+        "compositionMs": 27298,
+        "semanticDigestMs": 5829,
+        "rssMB": 3230,
+        "heapMB": 2917,
+        "digestPrefix": "c68fed3af94dec80",
+        "status": "partial"
+      }
+    ],
+    "on": [
+      {
+        "elapsedMs": 58397,
+        "compositionMs": 38624,
+        "semanticDigestMs": 13569,
+        "rssMB": 2537,
+        "heapMB": 2159,
+        "rustRssBytes": 443375616,
+        "boundaryBytes": 99266951,
+        "canonicalBytes": 385365450,
+        "ownedFactDigest": "complete",
+        "fallbackReason": "",
+        "digestPrefix": "c68fed3af94dec80",
+        "status": "partial"
+      },
+      {
+        "elapsedMs": 56448,
+        "compositionMs": 36979,
+        "semanticDigestMs": 12982,
+        "rssMB": 2565,
+        "heapMB": 2194,
+        "rustRssBytes": 441589760,
+        "boundaryBytes": 99266951,
+        "canonicalBytes": 385365450,
+        "ownedFactDigest": "complete",
+        "fallbackReason": "",
+        "digestPrefix": "c68fed3af94dec80",
+        "status": "partial"
+      }
+    ]
+  },
+  "blocking": {
+    "wasmMaxBytes": 268435456,
+    "canonicalKeyChars": 385365450,
+    "codeUnitInversions": 17763,
+    "nonAsciiKeys": 0,
+    "factDigestAloneCannotHit60": "off-run semanticDigestMs 5829 and 6375 of compositionMs 27298 and 30347"
+  }
+}

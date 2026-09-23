@@ -1,5 +1,9 @@
 import { createHash } from 'node:crypto';
 
+import {
+  classifyModuleSpecifier,
+  resolveEcmaScriptModuleLocator,
+} from '../../graph/src/domain/module-resolution.js';
 import { GRAPH_INVENTORY_SURFACE } from './graph-package-runtime.js';
 
 import {
@@ -22,6 +26,7 @@ import {
   isGraphShadowComparableSourceProofLocator,
   isGraphShadowTruncatingCoverage,
   isUnsafeComparableLocator,
+  comparableDeclaredPackageImportTarget,
   mapShadowKind,
   mapShadowRelation,
   projectLegacyIdentity,
@@ -729,6 +734,51 @@ function mapLegacyRelation(
   return `${from}\0${mappedRelation}\0${to}`;
 }
 
+function packageFileLocators(
+  nodes: Iterable<{ readonly identity: string; readonly kind: string }>
+): Set<string> {
+  const files = new Set<string>();
+  for (const node of nodes) {
+    if (node.kind === 'file' && node.identity.startsWith('file:')) {
+      files.add(node.identity.slice('file:'.length));
+    }
+  }
+  return files;
+}
+
+/**
+ * A legacy `module:./specifier` import is the same edge as the package file
+ * import when the package inventory binds that specifier to one file.
+ * Unresolved specifiers stay modules. Package names are not rewritten.
+ */
+function boundRelativeImportTarget(
+  fromIdentity: string,
+  toIdentity: string,
+  files: ReadonlySet<string>
+): string | undefined {
+  if (!fromIdentity.startsWith('file:') || !toIdentity.startsWith('module:')) return undefined;
+  const specifier = toIdentity.slice('module:'.length);
+  if (classifyModuleSpecifier(specifier) !== 'relative') return undefined;
+  const resolved = resolveEcmaScriptModuleLocator({
+    fromLocator: fromIdentity.slice('file:'.length),
+    specifier,
+    available: files,
+  });
+  return resolved ? `file:${resolved}` : undefined;
+}
+
+const UNRESOLVED_RELATIVE_IMPORT_CODE = 'graph.ecmascript-local-import-unresolved';
+
+function unresolvedRelativeImporters(
+  zones: readonly { code: string; scope?: string }[]
+): Set<string> {
+  const importers = new Set<string>();
+  for (const zone of zones) {
+    if (zone.code === UNRESOLVED_RELATIVE_IMPORT_CODE && zone.scope) importers.add(zone.scope);
+  }
+  return importers;
+}
+
 function compareGraphs(
   legacy: LegacyGraphShadowInput,
   packageInput: PackageGraphShadowInput,
@@ -739,7 +789,7 @@ function compareGraphs(
   const projectId = inferLegacyProjectId(legacy.entities);
   const unsafeLegacyIdentities: string[] = [];
   const unsafePackageIdentities: string[] = [];
-  const legacyNodeById = new Map<string, string>();
+  const legacyNodeById = new Map<string, { readonly identity: string; readonly kind: string }>();
   for (const entity of legacy.entities) {
     const projected = projectLegacyIdentity(
       entity.identity.key,
@@ -752,14 +802,18 @@ function compareGraphs(
       unsafeLegacyIdentities.push(`${projected.locator}\0identity`);
       continue;
     }
-    if (!isGraphShadowCliCompatibleIdentity(projected.identity, entity.kind)) continue;
-    legacyNodeById.set(entity.id, projected.identity);
+    const comparableKind = projected.kind ?? entity.kind;
+    if (!isGraphShadowCliCompatibleIdentity(projected.identity, comparableKind)) continue;
+    legacyNodeById.set(entity.id, {
+      identity: projected.identity,
+      kind: mapShadowKind(comparableKind, policy.kindMappings),
+    });
   }
   const legacyNodes = legacy.entities.flatMap((entity) => {
-    const identity = legacyNodeById.get(entity.id);
-    return identity ? [`${identity}\0${mapShadowKind(entity.kind, policy.kindMappings)}`] : [];
+    const projected = legacyNodeById.get(entity.id);
+    return projected ? [`${projected.identity}\0${projected.kind}`] : [];
   });
-  const packageComparable = new Map<string, string>();
+  const packageComparable = new Map<string, { readonly identity: string; readonly kind: string }>();
   for (const node of packageInput.graph.nodes) {
     const projected = projectPackageIdentity(
       packageInput.identityRenderings?.[node.id] ?? node.id,
@@ -771,8 +825,12 @@ function compareGraphs(
       unsafePackageIdentities.push(`${projected.locator}\0identity`);
       continue;
     }
-    if (!isGraphShadowCliCompatibleIdentity(projected.identity, node.kind)) continue;
-    packageComparable.set(node.id, projected.identity);
+    const comparableKind = projected.kind ?? node.kind;
+    if (!isGraphShadowCliCompatibleIdentity(projected.identity, comparableKind)) continue;
+    packageComparable.set(node.id, {
+      identity: projected.identity,
+      kind: mapShadowKind(comparableKind, policy.kindMappings),
+    });
   }
   if (unsafeLegacyIdentities.length > 0 || unsafePackageIdentities.length > 0) {
     differences.push({
@@ -787,8 +845,8 @@ function compareGraphs(
     });
   }
   const packageNodes = packageInput.graph.nodes.flatMap((node) => {
-    const identity = packageComparable.get(node.id);
-    return identity ? [`${identity}\0${mapShadowKind(node.kind, policy.kindMappings)}`] : [];
+    const projected = packageComparable.get(node.id);
+    return projected ? [`${projected.identity}\0${projected.kind}`] : [];
   });
   pushDirectional(
     'node',
@@ -801,19 +859,46 @@ function compareGraphs(
     'Directional node identities differ after explicit compatibility projection onto the Graph comparable-surface corpus.'
   );
 
+  const admittedPackageFiles = packageFileLocators(packageComparable.values());
+  const explainedImporters = unresolvedRelativeImporters(packageInput.quality.unknownZones);
   const legacyRelations = legacy.relations.flatMap((relation) => {
-    const from = legacyNodeById.get(relation.from);
-    const to = legacyNodeById.get(relation.to);
+    const from = legacyNodeById.get(relation.from)?.identity;
+    const to = legacyNodeById.get(relation.to)?.identity;
     if (!from || !to) return [];
     if (!isGraphShadowCliCompatibleRelation(relation.kind, policy.relationMappings)) return [];
+    const mappedRelation = mapShadowRelation(relation.kind, policy.relationMappings);
+    if (mappedRelation === 'imports') {
+      const boundTarget = boundRelativeImportTarget(from, to, admittedPackageFiles);
+      if (boundTarget) {
+        return [mapLegacyRelation(from, relation.kind, boundTarget, policy.relationMappings)];
+      }
+      const specifier = to.startsWith('module:') ? to.slice('module:'.length) : '';
+      if (
+        from.startsWith('file:') &&
+        classifyModuleSpecifier(specifier) === 'relative' &&
+        explainedImporters.has(from.slice('file:'.length))
+      ) {
+        return [];
+      }
+      return [
+        mapLegacyRelation(
+          from,
+          relation.kind,
+          comparableDeclaredPackageImportTarget(to),
+          policy.relationMappings
+        ),
+      ];
+    }
     return [mapLegacyRelation(from, relation.kind, to, policy.relationMappings)];
   });
   const packageRelations = packageInput.graph.edges.flatMap((edge) => {
-    const from = packageComparable.get(edge.from);
-    const to = packageComparable.get(edge.to);
+    const from = packageComparable.get(edge.from)?.identity;
+    const to = packageComparable.get(edge.to)?.identity;
     if (!from || !to) return [];
     if (!isGraphShadowCliCompatibleRelation(edge.relation, policy.relationMappings)) return [];
-    return [`${from}\0${mapShadowRelation(edge.relation, policy.relationMappings)}\0${to}`];
+    const mappedRelation = mapShadowRelation(edge.relation, policy.relationMappings);
+    const target = mappedRelation === 'imports' ? comparableDeclaredPackageImportTarget(to) : to;
+    return [`${from}\0${mappedRelation}\0${target}`];
   });
   pushDirectional(
     'relation',

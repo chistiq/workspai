@@ -162,6 +162,125 @@ describe('Graph shadow comparison projection', () => {
         'app'
       )
     ).toBe('symbol:src/catalog.ts:function:listCatalog');
+    expect(
+      comparableLegacyIdentity(
+        'symbol:app:app/src/catalog.ts:function:listCatalog',
+        'symbol',
+        ''
+      )
+    ).toBe('symbol:src/catalog.ts:function:listCatalog');
+    expect(
+      comparableLegacyIdentity('file:app/src/catalog.ts', 'file', 'app')
+    ).toBe('file:src/catalog.ts');
+    expect(
+      comparableLegacyIdentity('symbol:app/src/catalog.ts:function:listCatalog', 'symbol', 'app')
+    ).toBe('symbol:src/catalog.ts:function:listCatalog');
+    expect(
+      comparableLegacyIdentity(
+        'symbol:app:src/accounting/Consumer.cs:method:Dispose',
+        'symbol',
+        'app'
+      )
+    ).toBe('symbol:src/accounting/Consumer.cs:function:Dispose');
+    expect(
+      comparablePackageIdentity(
+        'entity:workspai:symbol:src%2Faccounting%2FConsumer.cs%3Amethod%3ADispose',
+        'symbol',
+        'app'
+      )
+    ).toBe('symbol:src/accounting/Consumer.cs:function:Dispose');
+    expect(comparableLegacyIdentity('module:app:glob', 'module', 'app')).toBe('module:glob');
+    expect(comparableLegacyIdentity('module:other:glob', 'module', 'app')).toBe(
+      'module:other:glob'
+    );
+    expect(comparableLegacyIdentity('module:app:Confluent.Kafka', 'module', 'app')).toBe(
+      'module:confluent.kafka'
+    );
+    expect(comparableLegacyIdentity('module:app:github.com/foo/Bar', 'module', 'app')).toBe(
+      'module:github.com/foo/Bar'
+    );
+    expect(
+      comparablePackageIdentity('entity:dotnet-module:module:Confluent.Kafka', 'module', 'app')
+    ).toBe('module:confluent.kafka');
+    expect(
+      comparableLegacyIdentity('compose-service:app:app:compose:accounting', 'service', 'app')
+    ).toBe('service:accounting');
+    expect(
+      comparableLegacyIdentity('compose-service:app:deploy:docker-compose:web', 'service', 'app')
+    ).toBe('service:web');
+    expect(
+      comparablePackageIdentity(
+        'entity:compose-service:service:services%2Faccounting',
+        'service',
+        'app'
+      )
+    ).toBe('service:accounting');
+    expect(
+      comparableLegacyIdentity(
+        'package:app:npm:frontend:src/frontend/package.json',
+        'package',
+        'app'
+      )
+    ).toBe('package:npm:frontend');
+    expect(
+      comparableLegacyIdentity(
+        'package:app:cargo:shipping:src/shipping/Cargo.toml',
+        'package',
+        'app'
+      )
+    ).toBe('package:cargo:shipping');
+    expect(
+      comparableLegacyIdentity(
+        'package:app:cmake:anonymous:src/currency/CMakeLists.txt',
+        'package',
+        'app'
+      )
+    ).toBe('package:cmake:anonymous');
+    expect(comparableLegacyIdentity('dependency:cmake:gRPC', 'module', 'app')).toBe(
+      'package:cmake:gRPC'
+    );
+    expect(
+      comparableLegacyIdentity('pipeline:app/.github/workflows/ci.yml', 'pipeline', 'app')
+    ).toBe('pipeline:.github/workflows/ci.yml');
+    expect(
+      comparableLegacyIdentity(
+        'protobuf-message:grpc.health.v1:HealthCheckRequest:3c506a7477062f6f',
+        'schema',
+        'app'
+      )
+    ).toBe('schema:grpc.health.v1.HealthCheckRequest');
+    expect(
+      projectLegacyIdentity('protobuf-service:unscoped:Health:0123456789abcdef', 'api', 'app')
+    ).toEqual({
+      status: 'comparable',
+      identity: 'service:Health',
+      kind: 'service',
+    });
+    expect(
+      projectLegacyIdentity('dockerfile:app:src/checkout/Dockerfile', 'container', 'app')
+    ).toEqual({
+      status: 'comparable',
+      identity: 'container:src/checkout/Dockerfile',
+      kind: 'container',
+    });
+    expect(comparableLegacyIdentity('dependency:npm:@bufbuild/protobuf', 'module', 'app')).toBe(
+      'package:npm:@bufbuild/protobuf'
+    );
+    expect(projectLegacyIdentity('dependency:cargo:actix-web', 'module', 'app')).toEqual({
+      status: 'comparable',
+      identity: 'package:cargo:actix-web',
+      kind: 'package',
+    });
+    expect(
+      comparablePackageIdentity('entity:npm-package:package:dependency%3Areact', 'package', 'app')
+    ).toBe('package:npm:react');
+    expect(
+      comparablePackageIdentity(
+        'entity:cargo-project:package:src%2Fshipping%23shipping',
+        'package',
+        'app'
+      )
+    ).toBe('package:cargo:shipping');
   });
 
   it('maps kind and relation names through the Graph comparable-surface corpus', () => {

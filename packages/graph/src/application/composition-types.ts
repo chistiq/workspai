@@ -13,6 +13,7 @@ import {
   type GraphQualityReport,
   type GraphResolutionState,
   type GraphValidationIssue,
+  type GraphObservationOrigin,
 } from '../contracts/index.js';
 
 export interface GraphCompositionPolicy {
@@ -32,6 +33,20 @@ export interface GraphCompositionPolicy {
 export interface GraphCompositionSource {
   readonly manifest: GraphProviderManifest;
   readonly batch: GraphFactBatch;
+  /**
+   * Native transport ownership. This is deliberately outside semantic facts:
+   * locator ownership and clock provenance describe extraction partitions,
+   * not graph truth.
+   */
+  readonly partitionOwnership?: readonly GraphCompositionPartitionOwnership[];
+}
+
+export interface GraphCompositionPartitionOwnership {
+  readonly locator: string;
+  readonly facts: readonly {
+    readonly factId: string;
+    readonly observationOrigin: GraphObservationOrigin;
+  }[];
 }
 
 export interface GraphCompositionRequest {
@@ -45,6 +60,57 @@ export interface GraphCompositionRequest {
    * re-derive identity from a fact subset. Absent for single-shot composition.
    */
   readonly identityFreeze?: GraphCompositionIdentityFreeze;
+  /**
+   * Process-local repository identity for the resident session key. It is not
+   * part of the published graph digest.
+   */
+  readonly repositoryIdentity?: string;
+  /**
+   * Pull-based partitions for the native session. When set, each yielded source
+   * is upserted and then released before the next read. `sources` still carries
+   * provider identity, inputs, coverage, and zones for the semantic header.
+   * Fact arrays on those sources may be empty.
+   */
+  readonly streamSources?: () => AsyncIterable<GraphCompositionSource>;
+}
+
+export interface NativeGraphProofCounts {
+  readonly supported: number;
+  readonly corroborated: number;
+  readonly verified: number;
+  readonly disputed: number;
+  readonly insufficient: number;
+  readonly unresolved: number;
+}
+
+export interface NativeGraphSnapshot {
+  readonly schema: 'workspai.graph.native-snapshot.v1';
+  readonly snapshotId: string;
+  readonly format: 'WGP1' | 'WGP2';
+  readonly formatVersion: 1;
+  readonly protocolVersion: 2;
+  readonly binaryPackaging: 'packaged' | 'development' | 'override';
+  readonly factDigest: WisDigestReference;
+  readonly contentDigest: WisDigestReference;
+  readonly packedDigest: string;
+  readonly packedBytes: number;
+  readonly nodeCount: number;
+  readonly edgeCount: number;
+  readonly factCount: number;
+  readonly unresolvedCount: number;
+  readonly decisionCount: number;
+  readonly orphanCount: number;
+  readonly staleFactCount: number;
+  readonly decisionsAccepted: number;
+  readonly decisionsRejected: number;
+  readonly decisionsDisputed: number;
+  readonly decisionsUnresolved: number;
+  readonly proofStates: NativeGraphProofCounts;
+  readonly fallback: '';
+  readonly lifecycle: 'published';
+  readonly storage: 'content-addressed';
+  readonly query: 'paged';
+  readonly evaluatedAt: string;
 }
 
 export interface GraphCompositionIdentityFreeze {
@@ -87,9 +153,35 @@ export interface GraphReferenceCompositionTaskOutput {
 export interface GraphCompositionTimings {
   readonly admitMs: number;
   readonly workerMs: number;
+  readonly workerValidationMs: number;
+  readonly eligibilityMs: number;
   readonly semanticDigestMs: number;
   readonly edgeProofMs: number;
   readonly contentDigestMs: number;
+  readonly graphValidationMs: number;
+  readonly qualityDigestMs: number;
+  readonly freezeMs: number;
+  readonly canonicalKeyChars: number;
+  readonly canonicalCodeUnitInversions: number;
+  readonly canonicalNonAsciiKeys: number;
+  readonly ownedFactDigest: 'off' | 'complete' | 'fallback';
+  readonly ownedCanonicalBytes: number;
+  readonly ownedRustRssBytes: number;
+  readonly ownedBoundaryBytes: number;
+  readonly ownedFallbackReason: string;
+  readonly ownedPublicationBytes: number;
+  readonly ownedNodeCount: number;
+  readonly ownedEdgeCount: number;
+  readonly ownedRustFacts: number;
+  readonly ownedTypescriptFacts: number;
+  readonly ownedRssKnown: boolean;
+  readonly ownedRetainedCanonicalBytes: number;
+  readonly ownedSimultaneousRssBytes: number;
+  readonly probes: readonly {
+    readonly at: string;
+    readonly rssBytes: number;
+    readonly heapUsedBytes: number;
+  }[];
 }
 
 export const GRAPH_COMPOSITION_RECEIPT_SCHEMA = 'workspai.graph.composition-receipt.v1' as const;
@@ -128,10 +220,8 @@ export interface GraphCompositionReceipt extends GraphCompositionSemanticReceipt
   readonly qualityDigest: WisDigestReference;
 }
 
-export interface GraphCompositionOutput {
-  readonly graph: GraphCanonicalGraph;
+interface GraphCompositionShared {
   readonly quality: GraphQualityReport;
-  readonly decisions: readonly GraphCompositionDecision[];
   readonly semanticDigests: {
     readonly ontology: WisDigestReference;
     readonly proofPolicies: WisDigestReference;
@@ -141,6 +231,44 @@ export interface GraphCompositionOutput {
     readonly compositionPolicy: WisDigestReference;
   };
   readonly receipt: GraphCompositionReceipt;
+}
+
+export type GraphCompositionOutput = GraphCompositionShared &
+  (
+    | {
+        readonly representation: 'materialized';
+        readonly graph: GraphCanonicalGraph;
+        readonly decisions: readonly GraphCompositionDecision[];
+      }
+    | {
+        readonly representation: 'native-snapshot';
+        readonly snapshot: NativeGraphSnapshot;
+      }
+  );
+
+export function requireMaterializedDecisions(
+  value: GraphCompositionOutput
+): readonly GraphCompositionDecision[] {
+  if (value.representation !== 'materialized') {
+    throw new Error('GRAPH_NATIVE_SNAPSHOT_UNMATERIALIZED');
+  }
+  return value.decisions;
+}
+
+export function requireMaterializedGraph(value: GraphCompositionOutput): GraphCanonicalGraph {
+  if (value.representation !== 'materialized') {
+    throw new Error('GRAPH_NATIVE_SNAPSHOT_UNMATERIALIZED');
+  }
+  return value.graph;
+}
+
+export function isMaterializedComposition(
+  value: GraphCompositionOutput
+): value is GraphCompositionOutput & {
+  readonly representation: 'materialized';
+  readonly graph: GraphCanonicalGraph;
+} {
+  return value.representation === 'materialized';
 }
 
 function digestEquals(left: WisDigestReference, right: WisDigestReference): boolean {

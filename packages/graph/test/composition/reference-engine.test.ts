@@ -15,6 +15,10 @@ import {
 } from '../../src/contracts/index.js';
 import { validateCanonicalGraph, validateGraphQualityReport } from '../../src/conformance/index.js';
 import {
+  requireMaterializedDecisions,
+  requireMaterializedGraph,
+} from '../../src/application/composition-types.js';
+import {
   GRAPH_STANDARD_COMPOSITION_POLICY,
   composeGraph,
   executeGraphReferenceCompositionTask,
@@ -273,7 +277,7 @@ function compositionSemantics(result: GraphCompositionResult) {
       issues: result.issues,
     };
   }
-  const graph = result.value.graph;
+  const graph = requireMaterializedGraph(result.value);
   return {
     accepted: true as const,
     issues: result.issues,
@@ -284,7 +288,7 @@ function compositionSemantics(result: GraphCompositionResult) {
     diagnostics: graph.diagnostics,
     assertions: graph.assertions,
     ontology: graph.ontology,
-    decisions: result.value.decisions,
+    decisions: requireMaterializedDecisions(result.value),
     quality: {
       integrity: result.value.quality.integrity,
       determinism: result.value.quality.determinism,
@@ -340,15 +344,17 @@ describe('Graph G2 reference composition engine', () => {
     expect(forward).toMatchObject({ accepted: true });
     expect(reverse).toMatchObject({ accepted: true });
     if (!forward.accepted || !reverse.accepted) return;
-    expect(forward.value.graph.generation.reference.contentDigest).toEqual(
-      reverse.value.graph.generation.reference.contentDigest
+    expect(requireMaterializedGraph(forward.value).generation.reference.contentDigest).toEqual(
+      requireMaterializedGraph(reverse.value).generation.reference.contentDigest
     );
-    expect(forward.value.graph.edges[0]).toMatchObject({
+    expect(requireMaterializedGraph(forward.value).edges[0]).toMatchObject({
       state: 'accepted',
       facts: ['fact:a', 'fact:b'],
       proof: { state: 'corroborated' },
     });
-    expect(validateCanonicalGraph(forward.value.graph, ontology)).toMatchObject({ accepted: true });
+    expect(validateCanonicalGraph(requireMaterializedGraph(forward.value), ontology)).toMatchObject(
+      { accepted: true }
+    );
     expect(validateGraphQualityReport(forward.value.quality)).toMatchObject({ accepted: true });
   });
 
@@ -409,9 +415,11 @@ describe('Graph G2 reference composition engine', () => {
 
     expect(result).toMatchObject({ accepted: true });
     if (!result.accepted) return;
-    expect(result.value.graph.edges).toHaveLength(1);
-    expect(result.value.graph.edges[0]?.proof).toMatchObject({ state: 'supported' });
-    expect(result.value.graph.edges[0]?.facts).toHaveLength(64);
+    expect(requireMaterializedGraph(result.value).edges).toHaveLength(1);
+    expect(requireMaterializedGraph(result.value).edges[0]?.proof).toMatchObject({
+      state: 'supported',
+    });
+    expect(requireMaterializedGraph(result.value).edges[0]?.facts).toHaveLength(64);
   });
 
   it('preserves a minority functional claim as a dispute instead of majority voting', async () => {
@@ -433,12 +441,15 @@ describe('Graph G2 reference composition engine', () => {
 
     expect(result).toMatchObject({ accepted: true });
     if (!result.accepted) return;
-    expect(result.value.graph.edges).toHaveLength(2);
-    expect(result.value.graph.edges.every((edge) => edge.state === 'disputed')).toBe(true);
-    expect(result.value.graph.edges.map((edge) => edge.to).sort()).toEqual([
-      'entity:majority-target',
-      'entity:minority-target',
-    ]);
+    expect(requireMaterializedGraph(result.value).edges).toHaveLength(2);
+    expect(
+      requireMaterializedGraph(result.value).edges.every((edge) => edge.state === 'disputed')
+    ).toBe(true);
+    expect(
+      requireMaterializedGraph(result.value)
+        .edges.map((edge) => edge.to)
+        .sort()
+    ).toEqual(['entity:majority-target', 'entity:minority-target']);
   });
 
   it('returns an immutable content-addressed result without freezing caller input', async () => {
@@ -455,8 +466,10 @@ describe('Graph G2 reference composition engine', () => {
     expect(result).toMatchObject({ accepted: true });
     if (!result.accepted) return;
     expect(Object.isFrozen(result.value)).toBe(true);
-    expect(Object.isFrozen(result.value.graph.edges[0])).toBe(true);
-    expect(Object.isFrozen(result.value.graph.edges[0]?.proof.evidence[0])).toBe(true);
+    expect(Object.isFrozen(requireMaterializedGraph(result.value).edges[0])).toBe(true);
+    expect(
+      Object.isFrozen(requireMaterializedGraph(result.value).edges[0]?.proof.evidence[0])
+    ).toBe(true);
     expect(Object.isFrozen(inputFact)).toBe(false);
   });
 
@@ -473,10 +486,12 @@ describe('Graph G2 reference composition engine', () => {
 
     expect(result).toMatchObject({ accepted: true });
     if (!result.accepted) return;
-    expect(result.value.graph.edges).toHaveLength(2);
-    expect(result.value.graph.edges.every((edge) => edge.state === 'disputed')).toBe(true);
-    expect(result.value.graph.disputes).toHaveLength(1);
-    expect(result.value.decisions.map((decision) => decision.state)).toEqual([
+    expect(requireMaterializedGraph(result.value).edges).toHaveLength(2);
+    expect(
+      requireMaterializedGraph(result.value).edges.every((edge) => edge.state === 'disputed')
+    ).toBe(true);
+    expect(requireMaterializedGraph(result.value).disputes).toHaveLength(1);
+    expect(requireMaterializedDecisions(result.value).map((decision) => decision.state)).toEqual([
       'disputed',
       'disputed',
     ]);
@@ -494,11 +509,11 @@ describe('Graph G2 reference composition engine', () => {
     expect(earlier).toMatchObject({ accepted: true });
     expect(later).toMatchObject({ accepted: true });
     if (!earlier.accepted || !later.accepted) return;
-    expect(earlier.value.graph.generation.reference.generatedAt).not.toBe(
-      later.value.graph.generation.reference.generatedAt
+    expect(requireMaterializedGraph(earlier.value).generation.reference.generatedAt).not.toBe(
+      requireMaterializedGraph(later.value).generation.reference.generatedAt
     );
-    expect(earlier.value.graph.generation.reference.contentDigest).toEqual(
-      later.value.graph.generation.reference.contentDigest
+    expect(requireMaterializedGraph(earlier.value).generation.reference.contentDigest).toEqual(
+      requireMaterializedGraph(later.value).generation.reference.contentDigest
     );
   });
 
@@ -531,8 +546,8 @@ describe('Graph G2 reference composition engine', () => {
     expect(earlier).toMatchObject({ accepted: true });
     expect(later).toMatchObject({ accepted: true });
     if (!earlier.accepted || !later.accepted) return;
-    expect(earlier.value.graph.generation.reference.contentDigest).toEqual(
-      later.value.graph.generation.reference.contentDigest
+    expect(requireMaterializedGraph(earlier.value).generation.reference.contentDigest).toEqual(
+      requireMaterializedGraph(later.value).generation.reference.contentDigest
     );
     expect(earlier.value.semanticDigests.facts).toEqual(later.value.semanticDigests.facts);
   });
@@ -553,10 +568,13 @@ describe('Graph G2 reference composition engine', () => {
 
     expect(result).toMatchObject({ accepted: true });
     if (!result.accepted) return;
-    expect(result.value.graph.edges).toHaveLength(1);
-    expect(result.value.graph.edges[0]).toMatchObject({ to: 'entity:first', state: 'accepted' });
-    expect(result.value.graph.disputes).toEqual([]);
-    expect(result.value.decisions).toEqual(
+    expect(requireMaterializedGraph(result.value).edges).toHaveLength(1);
+    expect(requireMaterializedGraph(result.value).edges[0]).toMatchObject({
+      to: 'entity:first',
+      state: 'accepted',
+    });
+    expect(requireMaterializedGraph(result.value).disputes).toEqual([]);
+    expect(requireMaterializedDecisions(result.value)).toEqual(
       expect.arrayContaining([expect.objectContaining({ state: 'rejected' })])
     );
   });
@@ -588,14 +606,14 @@ describe('Graph G2 reference composition engine', () => {
 
     expect(result).toMatchObject({ accepted: true });
     if (!result.accepted) return;
-    expect(result.value.graph.edges).toHaveLength(1);
-    expect(result.value.graph.edges[0]).toMatchObject({
+    expect(requireMaterializedGraph(result.value).edges).toHaveLength(1);
+    expect(requireMaterializedGraph(result.value).edges[0]).toMatchObject({
       facts: ['fact:current'],
       proof: { state: 'supported' },
       freshness: { status: 'current' },
       confidence: 0.9,
     });
-    expect(result.value.decisions).toEqual(
+    expect(requireMaterializedDecisions(result.value)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           factIds: ['fact:stale'],
@@ -624,8 +642,8 @@ describe('Graph G2 reference composition engine', () => {
 
     expect(result).toMatchObject({ accepted: true });
     if (!result.accepted) return;
-    expect(result.value.graph.edges).toEqual([]);
-    expect(result.value.decisions).toContainEqual(
+    expect(requireMaterializedGraph(result.value).edges).toEqual([]);
+    expect(requireMaterializedDecisions(result.value)).toContainEqual(
       expect.objectContaining({
         state: 'unresolved',
         explanation: expect.objectContaining({ code: 'GRAPH_FACT_ID_COLLISION' }),
@@ -654,18 +672,20 @@ describe('Graph G2 reference composition engine', () => {
 
     expect(result).toMatchObject({ accepted: true });
     if (!result.accepted) return;
-    expect(result.value.graph.edges).toHaveLength(1);
-    expect(result.value.graph.edges[0]).toMatchObject({
+    expect(requireMaterializedGraph(result.value).edges).toHaveLength(1);
+    expect(requireMaterializedGraph(result.value).edges[0]).toMatchObject({
       from: 'entity:new',
       facts: ['fact:new', 'fact:old'],
     });
-    expect(result.value.graph.nodes).toContainEqual(
+    expect(requireMaterializedGraph(result.value).nodes).toContainEqual(
       expect.objectContaining({
         id: 'entity:new',
         aliases: [expect.objectContaining({ id: 'entity:old' })],
       })
     );
-    expect(result.value.graph.nodes.some((node) => node.id === 'entity:old')).toBe(false);
+    expect(
+      requireMaterializedGraph(result.value).nodes.some((node) => node.id === 'entity:old')
+    ).toBe(false);
   });
 
   it('preserves alias cycles as unresolved instead of selecting a canonical winner', async () => {
@@ -692,8 +712,8 @@ describe('Graph G2 reference composition engine', () => {
 
     expect(result).toMatchObject({ accepted: true });
     if (!result.accepted) return;
-    expect(result.value.graph.edges).toEqual([]);
-    expect(result.value.graph.unresolved).toEqual(
+    expect(requireMaterializedGraph(result.value).edges).toEqual([]);
+    expect(requireMaterializedGraph(result.value).unresolved).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: expect.stringContaining('unresolved:alias-cycle:') }),
       ])
@@ -720,8 +740,8 @@ describe('Graph G2 reference composition engine', () => {
 
     expect(result).toMatchObject({ accepted: true });
     if (!result.accepted) return;
-    expect(result.value.graph.edges).toEqual([]);
-    expect(result.value.decisions).toEqual(
+    expect(requireMaterializedGraph(result.value).edges).toEqual([]);
+    expect(requireMaterializedDecisions(result.value)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ state: 'rejected', includedInGraph: false }),
         expect.objectContaining({ state: 'unresolved', includedInGraph: false }),
@@ -849,7 +869,7 @@ describe('Graph G2 reference composition engine', () => {
     });
     expect(grouped).toMatchObject({ accepted: true });
     if (!grouped.accepted) return;
-    expect(grouped.value.graph.edges[0]?.proof.corroborationGroups).toEqual([
+    expect(requireMaterializedGraph(grouped.value).edges[0]?.proof.corroborationGroups).toEqual([
       expect.objectContaining({
         root: 'root:a',
         evidence: [expect.objectContaining({ id: 'evidence:fact:a' })],
@@ -1183,12 +1203,14 @@ describe('sharded composition equivalence', () => {
     expect(planShards).toBeGreaterThan(1);
     expect(sharded).toMatchObject({ accepted: true });
     if (!sharded.accepted) return;
-    const conflicted = sharded.value.graph.edges.filter((edge) => edge.from === 'entity:source');
+    const conflicted = requireMaterializedGraph(sharded.value).edges.filter(
+      (edge) => edge.from === 'entity:source'
+    );
     expect(conflicted).toHaveLength(2);
     expect(conflicted.every((edge) => edge.state === 'disputed')).toBe(true);
-    expect(sharded.value.decisions.map((decision) => decision.explanation.code)).toEqual(
-      expect.arrayContaining(['GRAPH_EDGE_FUNCTIONAL_CONFLICT'])
-    );
+    expect(
+      requireMaterializedDecisions(sharded.value).map((decision) => decision.explanation.code)
+    ).toEqual(expect.arrayContaining(['GRAPH_EDGE_FUNCTIONAL_CONFLICT']));
     expect(compositionSemantics(sharded)).toEqual(compositionSemantics(single));
   });
 
@@ -1204,7 +1226,9 @@ describe('sharded composition equivalence', () => {
     expect(planShards).toBeGreaterThan(1);
     expect(sharded).toMatchObject({ accepted: true });
     if (!sharded.accepted) return;
-    const target = sharded.value.graph.edges.find((edge) => edge.to === 'entity:target');
+    const target = requireMaterializedGraph(sharded.value).edges.find(
+      (edge) => edge.to === 'entity:target'
+    );
     expect(target).toMatchObject({
       facts: ['fact:a', 'fact:b'],
       proof: { state: 'corroborated' },
@@ -1242,7 +1266,7 @@ describe('sharded composition equivalence', () => {
     ]);
     expect(sharded).toMatchObject({ accepted: true });
     if (!sharded.accepted) return;
-    expect(sharded.value.decisions).toEqual(
+    expect(requireMaterializedDecisions(sharded.value)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           state: 'unresolved',
@@ -1275,7 +1299,7 @@ describe('sharded composition equivalence', () => {
     expect(planShards).toBeGreaterThan(1);
     expect(sharded).toMatchObject({ accepted: true });
     if (!sharded.accepted) return;
-    expect(sharded.value.decisions).toEqual(
+    expect(requireMaterializedDecisions(sharded.value)).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ state: 'rejected', includedInGraph: false }),
         expect.objectContaining({ state: 'unresolved', includedInGraph: false }),
@@ -1305,7 +1329,7 @@ describe('sharded composition equivalence', () => {
     expect(planShards).toBeGreaterThan(1);
     expect(sharded).toMatchObject({ accepted: true });
     if (!sharded.accepted) return;
-    expect(sharded.value.graph.unresolved).toEqual(
+    expect(requireMaterializedGraph(sharded.value).unresolved).toEqual(
       expect.arrayContaining([
         expect.objectContaining({ id: expect.stringContaining('unresolved:alias-cycle:') }),
       ])
@@ -1375,7 +1399,9 @@ describe('sharded composition equivalence', () => {
     expect(planShards).toBeGreaterThan(1);
     expect(sharded).toMatchObject({ accepted: true });
     if (!sharded.accepted) return;
-    const grouped = sharded.value.graph.edges.find((edge) => edge.to === 'entity:target');
+    const grouped = requireMaterializedGraph(sharded.value).edges.find(
+      (edge) => edge.to === 'entity:target'
+    );
     expect(grouped?.proof.corroborationGroups).toEqual([
       expect.objectContaining({
         root: 'root:a',
