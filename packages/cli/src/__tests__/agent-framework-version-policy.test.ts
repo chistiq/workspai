@@ -32,6 +32,14 @@ function pythonDiscoveryFixture(): AgentFrameworkVersionBaseline {
   };
 }
 
+function isGitHubApiHost(url: string): boolean {
+  try {
+    return new URL(url).hostname === 'api.github.com';
+  } catch {
+    return false;
+  }
+}
+
 describe('agent framework version policy', () => {
   it('keeps every built-in on an explicit latest-admitted, nonautomatic policy', () => {
     expect(BUILTIN_AGENT_FRAMEWORK_VERSION_BASELINES).toHaveLength(6);
@@ -261,7 +269,7 @@ describe('agent framework version policy', () => {
         ok: true,
         status: 200,
         async json() {
-          if (url.includes('api.github.com')) {
+          if (isGitHubApiHost(url)) {
             return [{ tag_name: 'v8.0.0', prerelease: false, draft: false }];
           }
           if (url !== baseline.packages[0]?.registryUrl) {
