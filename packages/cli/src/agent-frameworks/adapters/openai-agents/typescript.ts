@@ -15,9 +15,9 @@ import {
 import { detectAgentFramework } from '../../detection.js';
 import { openaiAgentsManifest } from './common.js';
 import {
-  openaiAgentsTypeScriptContextSource,
+  agentFrameworkTypeScriptContextSource,
   WORKSPAI_CONTEXT_SCHEMA_VERSION,
-} from './typescript-context-source.js';
+} from '../../context-loaders/typescript.js';
 import { OPENAI_AGENTS_TYPESCRIPT_BASELINE, packageVersion } from '../../version-policy.js';
 
 const FRAMEWORK_VERSION = OPENAI_AGENTS_TYPESCRIPT_BASELINE.frameworkVersion;
@@ -76,7 +76,7 @@ function pathsFor(instanceName: string) {
 function renderTypeScriptFiles(input: AgentFrameworkAdapterInput) {
   const target = pathsFor(input.instanceName);
   return [
-    managedFile(target.context, openaiAgentsTypeScriptContextSource()),
+    managedFile(target.context, agentFrameworkTypeScriptContextSource()),
     managedFile(
       target.agent,
       `// Generated and managed by Workspai. Do not place secrets in this file.

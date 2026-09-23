@@ -9,14 +9,31 @@ import {
 } from '../agent-frameworks/index.js';
 
 describe('agent framework release admission', () => {
-  it('admits exactly the four adapters promoted from the reviewed v2 matrix', () => {
+  it('admits exactly the four Microsoft and OpenAI adapters promoted from the reviewed v2 matrix', () => {
     const admissions = listBundledAgentFrameworkReleaseAdmissions();
-    expect(admissions.map((admission) => admission.id).sort()).toEqual(
+    expect(admissions.map((admission) => admission.id).sort()).toEqual([
+      'microsoft-agent-framework-dotnet',
+      'microsoft-agent-framework-python',
+      'openai-agents-python',
+      'openai-agents-typescript',
+    ]);
+    expect(
       BUILTIN_AGENT_FRAMEWORK_ADAPTERS.map((adapter) => adapter.manifest.adapter.id).sort()
-    );
+    ).toEqual([
+      'google-adk-python',
+      'google-adk-typescript',
+      'microsoft-agent-framework-dotnet',
+      'microsoft-agent-framework-python',
+      'openai-agents-python',
+      'openai-agents-typescript',
+    ]);
 
     for (const adapter of BUILTIN_AGENT_FRAMEWORK_ADAPTERS) {
       const resolution = assessBundledAgentFrameworkRelease(adapter);
+      if (adapter.manifest.framework.id === 'google-adk') {
+        expect(resolution.status).toBe('blocked');
+        continue;
+      }
       expect(resolution.status).toBe('admitted');
       expect(resolution.blockers).toEqual([]);
     }
@@ -94,6 +111,11 @@ describe('agent framework release admission', () => {
       adapters
         .filter((adapter) => adapter.id.startsWith('openai-agents-'))
         .every((adapter) => adapter.status === 'admitted' && adapter.stability === 'stable')
+    ).toBe(true);
+    expect(
+      adapters
+        .filter((adapter) => adapter.id.startsWith('google-adk-'))
+        .every((adapter) => adapter.status === 'blocked' && adapter.stability === 'preview')
     ).toBe(true);
     expect(
       createBuiltinAgentFrameworkRegistry().resolveAdapter('openai-agents-python').status

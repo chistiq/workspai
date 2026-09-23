@@ -272,7 +272,7 @@ export function registerAgentFrameworkCommands(agentCommand: Command): void {
       .option('--runtime <runtime>', 'python, dotnet, or node')
       .option(
         '--framework <framework>',
-        'Independent framework id, for example microsoft-agent-framework or openai-agents'
+        'Independent framework id, for example microsoft-agent-framework, openai-agents, or google-adk'
       )
       .option('--name <name>', 'Agent instance name')
       .option('--goal <goal-id>', 'Reuse an existing ready Goal Pack')

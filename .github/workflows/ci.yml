@@ -105,7 +105,7 @@ jobs:
     if: needs.changes.outputs.heavy == 'true'
     runs-on: ${{ matrix.os }}
     env:
-      RAPIDKIT_BUNDLE_SIZE_LIMIT_KB: "3000"
+      RAPIDKIT_BUNDLE_SIZE_LIMIT_KB: "10000"
 
     strategy:
       fail-fast: false

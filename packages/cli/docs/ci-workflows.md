@@ -29,15 +29,15 @@ a report and artifact. It does not commit, open a pull request, regenerate
 Create contracts, or write `release-admissions.v2.json`. A human pin update
 still has to pass the manual `full` mode of `agent-framework-conformance` on
 Linux, macOS, and Windows for every built-in adapter runtime. Pull requests run
-the faster Linux gate only for the affected Microsoft or OpenAI family; shared
-agent-framework surfaces select both, while documentation-only changes skip the
-specialized workflow. The full matrix compiles the nested `agents/primary`
+the faster Linux gate only for the affected Microsoft, OpenAI, or Google family;
+shared agent-framework surfaces select the affected families, while documentation-only
+changes skip the specialized workflow. The full matrix compiles the nested `agents/primary`
 runtime, runs credentialless context-boundary tests, and records manifest-bound
 admission data plus semantic implementation provenance. Promotion requires the
 candidate source commit to equal the checked-out promotion commit. An
 implementation digest is audit evidence, not a runtime lock and not a manual
 maintenance requirement after every routine adapter edit.
-It never sets Foundry or OpenAI credentials. Only a reviewed admission on the protected
+It never sets Foundry, OpenAI, Gemini, or Vertex credentials. Only a reviewed admission on the protected
 version-update branch can promote a green candidate.
 
 OpenRouter AI Gateway kits are not part of the Agent Framework conformance

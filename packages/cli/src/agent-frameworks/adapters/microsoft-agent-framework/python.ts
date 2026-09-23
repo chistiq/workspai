@@ -15,8 +15,8 @@ import {
 import { detectAgentFramework } from '../../detection.js';
 import { getDefaultPythonCommand } from '../../../utils/platform-capabilities.js';
 import { microsoftAgentFrameworkManifest } from './common.js';
-import { openaiAgentsPythonContextSource } from '../openai-agents/python-context-source.js';
-import { WORKSPAI_CONTEXT_SCHEMA_VERSION } from '../openai-agents/typescript-context-source.js';
+import { agentFrameworkPythonContextSource } from '../../context-loaders/python.js';
+import { WORKSPAI_CONTEXT_SCHEMA_VERSION } from '../../context-loaders/typescript.js';
 import { MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE, packageVersion } from '../../version-policy.js';
 
 const FRAMEWORK_VERSION = MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE.frameworkVersion;
@@ -80,7 +80,7 @@ function renderPythonFiles(input: AgentFrameworkAdapterInput) {
   const target = pathsFor(input.instanceName);
   const python = getDefaultPythonCommand();
   return [
-    managedFile(target.context, openaiAgentsPythonContextSource()),
+    managedFile(target.context, agentFrameworkPythonContextSource()),
     managedFile(
       target.agent,
       `# Generated and managed by Workspai. Do not place secrets in this file.

@@ -22,12 +22,14 @@ afterEach(async () => {
 });
 
 describe('agent framework project kits', () => {
-  it('publishes every Microsoft and OpenAI kit without treating visibility as admission', () => {
+  it('publishes every Microsoft, OpenAI, and Google kit without treating visibility as admission', () => {
     expect(describeAgentFrameworkProjectKits().map((kit) => kit.id)).toEqual([
       'agent.microsoft.python',
       'agent.microsoft.dotnet',
       'agent.openai.python',
       'agent.openai.typescript',
+      'agent.google-adk.python',
+      'agent.google-adk.typescript',
     ]);
     const kits = listAgentFrameworkProjectKits();
     expect(kits.map((kit) => kit.id)).toEqual([
@@ -35,20 +37,33 @@ describe('agent framework project kits', () => {
       'agent.microsoft.dotnet',
       'agent.openai.python',
       'agent.openai.typescript',
+      'agent.google-adk.python',
+      'agent.google-adk.typescript',
     ]);
+    const aliases = kits.flatMap((kit) => kit.aliases);
+    expect(new Set(aliases).size).toBe(aliases.length);
     expect(isAgentFrameworkProjectKit('agent.openai.python')).toBe(true);
     expect(isAgentFrameworkProjectKit('agent.openai.typescript')).toBe(true);
+    expect(isAgentFrameworkProjectKit('agent.google-adk.python')).toBe(true);
+    expect(isAgentFrameworkProjectKit('google-adk-typescript')).toBe(true);
     expect(resolveAgentFrameworkProjectKit('agent.openai.python')?.adapterId).toBe(
       'openai-agents-python'
     );
     expect(resolveAgentFrameworkProjectKit('agent.openai.typescript')?.adapterId).toBe(
       'openai-agents-typescript'
     );
+    expect(resolveAgentFrameworkProjectKit('agent.google-adk.python')?.adapterId).toBe(
+      'google-adk-python'
+    );
     expect(isAdmittedAgentFrameworkProjectKit('agent.openai.python')).toBe(releaseAdmitted);
     expect(isAdmittedAgentFrameworkProjectKit('agent.openai.typescript')).toBe(releaseAdmitted);
-    expect(kits.every((kit) => isAdmittedAgentFrameworkProjectKit(kit) === releaseAdmitted)).toBe(
-      true
-    );
+    expect(isAdmittedAgentFrameworkProjectKit('agent.google-adk.python')).toBe(false);
+    expect(isAdmittedAgentFrameworkProjectKit('agent.google-adk.typescript')).toBe(false);
+    expect(
+      kits
+        .filter((kit) => kit.frameworkId !== 'google-adk')
+        .every((kit) => isAdmittedAgentFrameworkProjectKit(kit) === releaseAdmitted)
+    ).toBe(true);
   });
 
   it('resolves stable aliases without exposing mutable registry state', () => {

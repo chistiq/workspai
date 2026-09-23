@@ -105,6 +105,23 @@ describe('backend-framework-contract', () => {
       confidence: 'high',
       source: 'kit',
     });
+    expect(detectBackendFrameworkFromHints({ kitName: 'agent.google-adk.python' })).toMatchObject({
+      key: 'google-adk',
+      runtime: 'python',
+      confidence: 'high',
+      source: 'kit',
+    });
+    expect(
+      detectBackendFrameworkFromHints({
+        kitName: 'agent.google-adk.typescript',
+        runtime: 'node',
+      })
+    ).toMatchObject({
+      key: 'google-adk',
+      runtime: 'node',
+      confidence: 'high',
+      source: 'kit',
+    });
     expect(
       detectBackendFrameworkFromHints({
         kitName: 'gateway.openrouter.typescript',

@@ -28,6 +28,7 @@ export type BackendRuntimeFamily =
 export type BackendPlatformKey =
   | 'microsoft-agent-framework'
   | 'openai-agents'
+  | 'google-adk'
   | 'openrouter'
   | 'fastapi'
   | 'django'
@@ -142,6 +143,15 @@ const BACKEND_CONTRACTS: Record<BackendPlatformKey, BackendContractDescriptor> =
     importStack: 'unknown',
     aliases: ['openai-agents', 'openai agents', 'openai agents sdk'],
     kitPrefixes: ['agent.openai'],
+  },
+  'google-adk': {
+    key: 'google-adk',
+    runtime: 'python',
+    displayName: 'Google Agent Development Kit',
+    supportTier: 'extended',
+    importStack: 'unknown',
+    aliases: ['google-adk', 'google adk', 'google agent development kit', 'adk'],
+    kitPrefixes: ['agent.google-adk', 'agent.google.'],
   },
   openrouter: {
     key: 'openrouter',
@@ -794,7 +804,7 @@ export function getBackendFrameworkContract(key: BackendPlatformKey): BackendFra
 }
 
 export function isAgentFrameworkPlatformKey(key: BackendPlatformKey): boolean {
-  return key === 'microsoft-agent-framework' || key === 'openai-agents';
+  return key === 'microsoft-agent-framework' || key === 'openai-agents' || key === 'google-adk';
 }
 
 function preservesAuthoredRuntime(key: BackendPlatformKey): boolean {

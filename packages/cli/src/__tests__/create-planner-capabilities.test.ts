@@ -143,6 +143,20 @@ describe('create planner capabilities', () => {
       category: 'agent',
       versionPolicy: 'tested-baseline',
     });
+    expect(contract.nativeCreate.find((kit) => kit.id === 'agent.google-adk.python')).toMatchObject(
+      {
+        framework: 'google-adk',
+        category: 'agent',
+        stability: 'preview',
+        versionPolicy: 'tested-baseline',
+      }
+    );
+    expect(
+      contract.nativeCreate.find((kit) => kit.id === 'gateway.openrouter.python')
+    ).toMatchObject({
+      framework: 'openrouter',
+      category: 'gateway',
+    });
     expect(contract.nativeCreate.find((kit) => kit.id === 'fastapi.standard')).toMatchObject({
       plannerFramework: 'fastapi',
       workspacePythonEngine: 'required',

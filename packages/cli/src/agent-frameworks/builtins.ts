@@ -8,6 +8,7 @@ import {
   openaiAgentsPythonAdapter,
   openaiAgentsTypeScriptAdapter,
 } from './adapters/openai-agents/index.js';
+import { googleAdkPythonAdapter, googleAdkTypeScriptAdapter } from './adapters/google-adk/index.js';
 import { AgentFrameworkRegistry } from './registry.js';
 import {
   digestAgentFrameworkImplementation,
@@ -19,6 +20,8 @@ export const BUILTIN_AGENT_FRAMEWORK_ADAPTERS: readonly AgentFrameworkAdapter[] 
   microsoftAgentFrameworkDotnetAdapter,
   openaiAgentsPythonAdapter,
   openaiAgentsTypeScriptAdapter,
+  googleAdkPythonAdapter,
+  googleAdkTypeScriptAdapter,
 ]);
 
 export function digestBuiltinAgentFrameworkManifest(adapter: AgentFrameworkAdapter): string {

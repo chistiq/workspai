@@ -584,4 +584,56 @@ describe('agent framework detection and registry', () => {
     expect(result.status).toBe('blocked');
     expect(result.blockers).toContain('duplicate conformance report for linux/node/1.0.0');
   });
+
+  it('registers a third-party adapter through the generic registry without Google, Microsoft, or OpenAI branches', async () => {
+    const root = await tempRoot('workspai-agent-third-party-');
+    await fs.writeFile(
+      path.join(root, 'package.json'),
+      JSON.stringify({ dependencies: { 'example-agent-runtime': '1.0.0' } })
+    );
+    const thirdParty = manifest({
+      adapterId: 'example-agent-runtime-node',
+      frameworkId: 'example-agent-runtime',
+      runtimes: ['node'],
+      markers: [
+        {
+          id: 'example-package',
+          kind: 'dependency',
+          ecosystem: 'npm',
+          name: 'example-agent-runtime',
+          match: 'exact',
+          manifestPaths: ['package.json'],
+          manifestSuffixes: [],
+          searchDepth: 0,
+          weight: 1,
+        },
+      ],
+    });
+    const registry = new AgentFrameworkRegistry().register({
+      manifest: thirdParty,
+      manifestSha256: digest,
+      implementationSha256: digest,
+      source: 'package',
+      conformanceReports: [reportFor(thirdParty)],
+    });
+    const listed = registry.list();
+    listed[0]!.manifest.adapter.id = 'mutated';
+    expect(registry.list()[0]?.manifest.adapter.id).toBe('example-agent-runtime-node');
+    expect(registry.get('example-agent-runtime-node')).not.toHaveProperty('releaseAdapter');
+    await expect(
+      registry.resolveProject({ projectRoot: root, runtime: 'node' })
+    ).resolves.toMatchObject({
+      status: 'matched',
+      entry: { manifest: { adapter: { id: 'example-agent-runtime-node' } } },
+    });
+    expect(() =>
+      registry.register({
+        manifest: thirdParty,
+        manifestSha256: digest,
+        implementationSha256: digest,
+        source: 'workspace',
+        conformanceReports: [],
+      })
+    ).toThrow('adapter id is already registered');
+  });
 });

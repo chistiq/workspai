@@ -12,8 +12,8 @@ native kits:
 This policy does not cover FastAPI or NestJS kits owned by the RapidKit Python
 engine. It also does not cover generators delegated to an upstream official
 CLI, such as Next.js, Astro, Angular, Vue, Svelte, Nuxt, or React Native.
-Governed Microsoft Agent Framework and OpenAI Agents SDK kits are versioned
-separately through the
+Governed Microsoft Agent Framework, OpenAI Agents SDK, and Google ADK kits are
+versioned separately through the
 [Agent Framework Adapter Contract](./agent-framework-adapters.md); they are
 not native HTTP service generators. OpenRouter AI Gateway kits are versioned
 through [AI Gateway](./model-gateways.md) and are not Agent Framework kits.

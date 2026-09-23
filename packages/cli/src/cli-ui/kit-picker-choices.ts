@@ -93,7 +93,9 @@ export function buildKitPickerChoices(category?: CreateKitCategoryId): Categoriz
     value: kit.id,
     label: `AI Agent · ${kit.label}`,
     hint: `${kit.runtime} · ${
-      isAdmittedAgentFrameworkProjectKit(kit) ? 'release-admitted baseline' : 'published baseline'
+      isAdmittedAgentFrameworkProjectKit(kit)
+        ? 'release-admitted baseline'
+        : `${kit.stability} · awaiting release admission`
     }`,
     name: kit.label,
     category: 'agent' as const,

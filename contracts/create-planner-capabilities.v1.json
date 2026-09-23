@@ -118,7 +118,7 @@
       "plannerFramework": "microsoft-agent-framework",
       "category": "agent",
       "owner": "workspai",
-      "stability": "stable",
+      "stability": "preview",
       "versionPolicy": "tested-baseline",
       "moduleSupport": false,
       "workspacePythonEngine": "none"
@@ -130,7 +130,7 @@
       "plannerFramework": "microsoft-agent-framework",
       "category": "agent",
       "owner": "workspai",
-      "stability": "stable",
+      "stability": "preview",
       "versionPolicy": "tested-baseline",
       "moduleSupport": false,
       "workspacePythonEngine": "none"
@@ -155,6 +155,30 @@
       "category": "agent",
       "owner": "workspai",
       "stability": "stable",
+      "versionPolicy": "tested-baseline",
+      "moduleSupport": false,
+      "workspacePythonEngine": "none"
+    },
+    {
+      "id": "agent.google-adk.python",
+      "runtime": "python",
+      "framework": "google-adk",
+      "plannerFramework": "google-adk",
+      "category": "agent",
+      "owner": "workspai",
+      "stability": "preview",
+      "versionPolicy": "tested-baseline",
+      "moduleSupport": false,
+      "workspacePythonEngine": "none"
+    },
+    {
+      "id": "agent.google-adk.typescript",
+      "runtime": "node",
+      "framework": "google-adk",
+      "plannerFramework": "google-adk",
+      "category": "agent",
+      "owner": "workspai",
+      "stability": "preview",
       "versionPolicy": "tested-baseline",
       "moduleSupport": false,
       "workspacePythonEngine": "none"

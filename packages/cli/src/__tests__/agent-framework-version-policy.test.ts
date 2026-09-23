@@ -6,6 +6,8 @@ import {
   isStableRegistryVersion,
   MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE,
   MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE,
+  GOOGLE_ADK_PYTHON_BASELINE,
+  GOOGLE_ADK_TYPESCRIPT_BASELINE,
   OPENAI_AGENTS_PYTHON_BASELINE,
   OPENAI_AGENTS_TYPESCRIPT_BASELINE,
   packageVersion,
@@ -30,9 +32,17 @@ function pythonDiscoveryFixture(): AgentFrameworkVersionBaseline {
   };
 }
 
+function isGitHubApiHost(url: string): boolean {
+  try {
+    return new URL(url).hostname === 'api.github.com';
+  } catch {
+    return false;
+  }
+}
+
 describe('agent framework version policy', () => {
   it('keeps every built-in on an explicit latest-admitted, nonautomatic policy', () => {
-    expect(BUILTIN_AGENT_FRAMEWORK_VERSION_BASELINES).toHaveLength(4);
+    expect(BUILTIN_AGENT_FRAMEWORK_VERSION_BASELINES).toHaveLength(6);
     for (const baseline of BUILTIN_AGENT_FRAMEWORK_VERSION_BASELINES) {
       expect(baseline.policy).toBe('latest-admitted');
       expect(baseline.automaticUpgrade).toBe(false);
@@ -63,6 +73,18 @@ describe('agent framework version policy', () => {
     expect(packageVersion(OPENAI_AGENTS_PYTHON_BASELINE, 'openai-agents')).toBe('0.22.2');
     expect(packageVersion(OPENAI_AGENTS_TYPESCRIPT_BASELINE, '@openai/agents')).toBe('0.18.0');
     expect(packageVersion(OPENAI_AGENTS_TYPESCRIPT_BASELINE, 'zod')).toBe('4.6.5');
+    expect(formatAgentFrameworkVersionPolicy(GOOGLE_ADK_PYTHON_BASELINE)).toBe(
+      `${GOOGLE_ADK_PYTHON_BASELINE.frameworkVersion} · Workspai verified stable baseline`
+    );
+    expect(formatAgentFrameworkVersionPolicy(GOOGLE_ADK_TYPESCRIPT_BASELINE)).toBe(
+      `${GOOGLE_ADK_TYPESCRIPT_BASELINE.frameworkVersion} · Workspai verified stable baseline`
+    );
+    expect(packageVersion(GOOGLE_ADK_PYTHON_BASELINE, 'google-adk')).toBe(
+      GOOGLE_ADK_PYTHON_BASELINE.frameworkVersion
+    );
+    expect(packageVersion(GOOGLE_ADK_TYPESCRIPT_BASELINE, '@google/adk')).toBe(
+      GOOGLE_ADK_TYPESCRIPT_BASELINE.frameworkVersion
+    );
   });
 
   it('never promotes prereleases into a stable discovery lane', () => {
@@ -235,5 +257,32 @@ describe('agent framework version policy', () => {
     expect(() => buildAgentFrameworkVersionPromotion([baseline], report)).toThrow(
       'Discovery package identity does not match'
     );
+  });
+
+  it('requires GitHub agreement for Google ADK and blocks registry/GitHub disagreement', async () => {
+    const baseline = structuredClone(GOOGLE_ADK_PYTHON_BASELINE);
+    const version = packageVersion(baseline, 'google-adk');
+    const report = await discoverAgentFrameworkVersions({
+      baselines: [baseline],
+      generatedAt: '2026-09-22T00:00:00.000Z',
+      fetcher: async (url) => ({
+        ok: true,
+        status: 200,
+        async json() {
+          if (isGitHubApiHost(url)) {
+            return [{ tag_name: 'v8.0.0', prerelease: false, draft: false }];
+          }
+          if (url !== baseline.packages[0]?.registryUrl) {
+            throw new Error(`Unexpected registry URL: ${url}`);
+          }
+          return { releases: { [version]: [{ yanked: false }], '9.9.9': [{ yanked: false }] } };
+        },
+      }),
+    });
+    expect(report.adapters[0]).toMatchObject({
+      adapterId: 'google-adk-python',
+      status: 'blocked',
+      github: { required: true, status: 'disagreement' },
+    });
   });
 });

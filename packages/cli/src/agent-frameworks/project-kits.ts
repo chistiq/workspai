@@ -1,7 +1,10 @@
 import fsExtra from 'fs-extra';
 import path from 'node:path';
 
-import { createBuiltinAgentFrameworkRegistry } from './builtins.js';
+import {
+  createBuiltinAgentFrameworkRegistry,
+  BUILTIN_AGENT_FRAMEWORK_ADAPTERS,
+} from './builtins.js';
 import type { AgentFrameworkUserRuntime } from './selection.js';
 import { getVersion } from '../update-checker.js';
 
@@ -14,7 +17,15 @@ export type AgentFrameworkProjectKit = {
   frameworkId: string;
   frameworkName: string;
   requiredEnvironment: string[];
+  stability: 'stable' | 'preview';
 };
+
+function adapterStability(adapterId: string): 'stable' | 'preview' {
+  const adapter = BUILTIN_AGENT_FRAMEWORK_ADAPTERS.find(
+    (candidate) => candidate.manifest.adapter.id === adapterId
+  );
+  return adapter?.manifest.adapter.stability === 'stable' ? 'stable' : 'preview';
+}
 
 const PROJECT_KITS: AgentFrameworkProjectKit[] = [
   {
@@ -26,6 +37,7 @@ const PROJECT_KITS: AgentFrameworkProjectKit[] = [
     frameworkId: 'microsoft-agent-framework',
     frameworkName: 'Microsoft Agent Framework',
     requiredEnvironment: ['FOUNDRY_PROJECT_ENDPOINT', 'FOUNDRY_MODEL'],
+    stability: adapterStability('microsoft-agent-framework-python'),
   },
   {
     id: 'agent.microsoft.dotnet',
@@ -36,6 +48,7 @@ const PROJECT_KITS: AgentFrameworkProjectKit[] = [
     frameworkId: 'microsoft-agent-framework',
     frameworkName: 'Microsoft Agent Framework',
     requiredEnvironment: ['FOUNDRY_PROJECT_ENDPOINT', 'FOUNDRY_MODEL'],
+    stability: adapterStability('microsoft-agent-framework-dotnet'),
   },
   {
     id: 'agent.openai.python',
@@ -46,6 +59,7 @@ const PROJECT_KITS: AgentFrameworkProjectKit[] = [
     frameworkId: 'openai-agents',
     frameworkName: 'OpenAI Agents SDK',
     requiredEnvironment: ['OPENAI_API_KEY', 'OPENAI_MODEL'],
+    stability: adapterStability('openai-agents-python'),
   },
   {
     id: 'agent.openai.typescript',
@@ -61,6 +75,34 @@ const PROJECT_KITS: AgentFrameworkProjectKit[] = [
     frameworkId: 'openai-agents',
     frameworkName: 'OpenAI Agents SDK',
     requiredEnvironment: ['OPENAI_API_KEY', 'OPENAI_MODEL'],
+    stability: adapterStability('openai-agents-typescript'),
+  },
+  {
+    id: 'agent.google-adk.python',
+    aliases: ['agent.google-adk.python', 'google-adk-python', 'agent.google.python'],
+    label: 'Google Agent Development Kit · Python',
+    runtime: 'python',
+    adapterId: 'google-adk-python',
+    frameworkId: 'google-adk',
+    frameworkName: 'Google Agent Development Kit',
+    requiredEnvironment: ['WORKSPAI_ADK_PROVIDER', 'ADK_MODEL'],
+    stability: adapterStability('google-adk-python'),
+  },
+  {
+    id: 'agent.google-adk.typescript',
+    aliases: [
+      'agent.google-adk.typescript',
+      'agent.google-adk.node',
+      'google-adk-typescript',
+      'agent.google.typescript',
+    ],
+    label: 'Google Agent Development Kit · TypeScript',
+    runtime: 'node',
+    adapterId: 'google-adk-typescript',
+    frameworkId: 'google-adk',
+    frameworkName: 'Google Agent Development Kit',
+    requiredEnvironment: ['WORKSPAI_ADK_PROVIDER', 'ADK_MODEL'],
+    stability: adapterStability('google-adk-typescript'),
   },
 ];
 

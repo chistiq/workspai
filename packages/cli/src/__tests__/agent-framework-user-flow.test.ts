@@ -115,6 +115,21 @@ describe.skipIf(releaseAdmitted)('agent framework user flow fail-closed', () => 
   });
 });
 
+describe('Google ADK user flow fail-closed', () => {
+  it('refuses prepare while Google adapters remain outside the reviewed admission inventory', async () => {
+    const { workspacePath } = await fixture();
+    await expect(
+      prepareAgentFrameworkAttachment({
+        workspacePath,
+        project: 'api',
+        runtime: 'python',
+        framework: 'google-adk',
+        instanceName: 'primary',
+      })
+    ).rejects.toThrow(/not release-admitted/i);
+  });
+});
+
 describe.skipIf(!releaseAdmitted)('agent framework user flow', () => {
   it('turns one attach request into a Goal, hash-bound plan, authorization, and owned files', async () => {
     const { workspacePath, projectPath } = await fixture();

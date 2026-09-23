@@ -374,6 +374,8 @@ describe('Microsoft Agent Framework adapters', () => {
     await fs.writeFile(path.join(root, 'requirements.txt'), 'agent-framework-foundry==1.17.0\n');
     const registry = createBuiltinAgentFrameworkRegistry();
     expect(registry.list().map((entry) => entry.manifest.adapter.id)).toEqual([
+      'google-adk-python',
+      'google-adk-typescript',
       'microsoft-agent-framework-dotnet',
       'microsoft-agent-framework-python',
       'openai-agents-python',

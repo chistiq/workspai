@@ -7,6 +7,44 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Implemented Google Agent Development Kit adapters for Python (`google-adk`)
+  and TypeScript (`@google/adk`) as independent runtimes in the existing Agent
+  Framework registry. Create kit ids are `agent.google-adk.python` and
+  `agent.google-adk.typescript`. Adapters are labeled `preview`. Gemini
+  Developer API (`gemini-api`) and Vertex AI (`vertex-ai`) are provider
+  profiles, not gateway kits. OpenRouter remains a separate Gateway category.
+  Create and Attach stay fail-closed until the reviewed v2 inventory is
+  promoted from Linux, macOS, and Windows evidence for this SHA. Sequential,
+  parallel, loop, graph Workflow Runtime, A2A, MCP, Agent Engine, and hosted
+  Google tools stay unsupported.
+
+### Changed
+
+- Agent Framework Create now refuses kits that are not in the reviewed v2
+  admission inventory before `--dry-run` and before any project or workspace
+  filesystem mutation. Unpublished Google ADK kits show
+  `preview · awaiting release admission` in the kit picker and create help.
+- Google ADK starters emit `event.partial` fragments as display deltas and
+  keep the SDK-recognized final response as canonical streamed text without
+  re-emitting it after fragments. Intermediate metadata does not reset the
+  fragment window; tool-call and function-response events do. Python and
+  TypeScript both use the official final-response predicate. Telemetry stays
+  off unless `WORKSPAI_AGENT_TRACING=1` is set from process startup;
+  credentialless conformance observes a non-recording span without opt-in and
+  a recording span in a separate opted-in process with a test TracerProvider.
+  Starters consume the shared `agent-frameworks/context-loaders` sources
+  instead of OpenAI-owned copies. `OTEL_SDK_DISABLED` is process-global;
+  generated starters are isolated CLI processes. Conformance path filters now
+  include Create, Doctor, and planner contract surfaces. Linux credentialless
+  evidence records `streamingPartialSemantics`, `streamingMetadataInterleaving`,
+  `streamingToolBoundary`, `telemetryDefaultNonRecording`, and
+  `telemetryOptInRecording` as distinct verification-binding fields.
+- Align the CLI bundle-size metrics gate with the existing 10000 KB limit
+  already set on the graph worktree. This ADK branch still inherited the stale
+  3000 KB `origin/main` value, which is why Linux metrics failed at 3068 KB.
+
 ## [0.77.0] - 2026-09-21
 
 ### Added
