@@ -263,9 +263,17 @@ Adapters are labeled `preview`. Create kits are `agent.google-adk.python` and
 `agent.google-adk.typescript`. Create and Attach stay fail-closed until the
 reviewed v2 inventory includes these adapters from Linux, macOS, and Windows
 evidence. Create refuses unpublished kits before `--dry-run` and before any
-filesystem or workspace mutation. Streaming writes each text delta as the SDK
-yields it. Telemetry stays off unless `WORKSPAI_AGENT_TRACING=1`; otherwise the
-starter sets `OTEL_SDK_DISABLED=true` before importing ADK. Context loaders live
+filesystem or workspace mutation. Streaming emits \`event.partial\` fragments as
+display deltas. The SDK-recognized final response is retained as canonical text
+and is not re-emitted after streamed fragments. Intermediate metadata does not
+close the fragment window; tool-call and function-response events do. Telemetry
+stays off unless \`WORKSPAI_AGENT_TRACING=1\` is set from process startup;
+otherwise the starter sets \`OTEL_SDK_DISABLED=true\` before importing ADK. That
+env var is process-global, so the generated starter is an isolated CLI process
+and must not be imported into a host that still needs OpenTelemetry.
+Credentialless conformance observes a non-recording span in a process without
+opt-in and a recording span in a separate opted-in process with a test
+TracerProvider. Context loaders live
 in `src/agent-frameworks/context-loaders/` and are shared by Google, OpenAI, and
 Microsoft adapters. Sequential, parallel, loop, graph workflow, A2A, MCP, Agent Engine,
 Cloud Run, GKE, Google Search, voice, browser agents, and remote agents are

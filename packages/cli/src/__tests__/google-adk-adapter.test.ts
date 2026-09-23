@@ -82,16 +82,31 @@ describe('Google ADK adapters', () => {
       /no AbortSignal/i
     );
     expect(googleAdkPythonAdapter.manifest.capabilities.streaming?.limitations.join(' ')).toMatch(
-      /writes each text delta/i
+      /display fragments/i
+    );
+    expect(googleAdkPythonAdapter.manifest.capabilities.streaming?.limitations.join(' ')).toMatch(
+      /SDK-recognized final response/i
     );
     expect(
       googleAdkTypeScriptAdapter.manifest.capabilities.streaming?.limitations.join(' ')
     ).toMatch(/AbortSignal/);
     expect(
       googleAdkTypeScriptAdapter.manifest.capabilities.streaming?.limitations.join(' ')
-    ).toMatch(/writes each text delta/i);
+    ).toMatch(/display fragments/i);
+    expect(
+      googleAdkTypeScriptAdapter.manifest.capabilities.streaming?.limitations.join(' ')
+    ).toMatch(/SDK-recognized final response/i);
     expect(googleAdkPythonAdapter.manifest.capabilities.telemetry?.evidence.join(' ')).toMatch(
-      /OTEL_SDK_DISABLED/
+      /non-recording span in a process without opt-in/i
+    );
+    expect(googleAdkPythonAdapter.manifest.capabilities.telemetry?.evidence.join(' ')).toMatch(
+      /recording span in a separate opted-in process/i
+    );
+    expect(googleAdkTypeScriptAdapter.manifest.capabilities.telemetry?.evidence.join(' ')).toMatch(
+      /recording span in a separate opted-in process/i
+    );
+    expect(googleAdkPythonAdapter.manifest.capabilities.telemetry?.limitations.join(' ')).toMatch(
+      /process-global/i
     );
     expect(
       googleAdkTypeScriptAdapter.manifest.capabilities.streaming?.limitations.join(' ')
@@ -214,7 +229,16 @@ describe('Google ADK adapters', () => {
     expect(generatedFrameworkTests).toContain('ScriptedLlm');
     expect(generatedFrameworkTests).toContain('in_memory_session_continues');
     expect(generatedFrameworkTests).toContain('first_chunk_before_the_model_finishes');
+    expect(generatedFrameworkTests).toContain(
+      'streaming_semantics_follow_partial_and_final_response'
+    );
     expect(generatedFrameworkTests).toContain('tracing_is_disabled_unless_opted_in');
+    expect(generatedFrameworkTests).toContain('tracing_opt_in_records_in_an_isolated_process');
+    expect(entrypoint).toContain('_is_partial_fragment');
+    expect(entrypoint).toContain('_is_final_response');
+    expect(entrypoint).toContain('_observe_stream_event');
+    expect(entrypoint).toContain('_event_has_tool_payload');
+    expect(entrypoint).not.toContain('_is_turn_boundary');
     expect(agent).toContain('def tracing_enabled');
     expect(agent.indexOf('def tracing_enabled')).toBeLessThan(agent.indexOf('from google.adk'));
     expect(agent).toContain('OTEL_SDK_DISABLED');
@@ -288,7 +312,16 @@ describe('Google ADK adapters', () => {
     expect(generatedFrameworkTests).toContain('ScriptedLlm');
     expect(generatedFrameworkTests).toContain('in-memory session continues');
     expect(generatedFrameworkTests).toContain('first chunk before the model finishes');
+    expect(generatedFrameworkTests).toContain(
+      'streaming semantics follow partial and final-response'
+    );
     expect(generatedFrameworkTests).toContain('tracing is disabled unless opted in');
+    expect(generatedFrameworkTests).toContain('tracing opt-in records in an isolated process');
+    expect(agent).toContain('isFinalResponse');
+    expect(agent).toContain('isPartialFragment');
+    expect(agent).toContain('eventHasToolPayload');
+    expect(agent).toContain('observeAdmittedStreamEvent');
+    expect(agent).not.toContain('startsWith(last)');
     expect(agent).toContain("from './tracing.js'");
     expect(agent.indexOf("from './tracing.js'")).toBeLessThan(agent.indexOf("from '@google/adk'"));
     expect(agent).toContain('onText');

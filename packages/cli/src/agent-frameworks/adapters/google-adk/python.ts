@@ -112,6 +112,8 @@ def tracing_enabled() -> bool:
     return os.environ.get("WORKSPAI_AGENT_TRACING") == "1"
 
 
+# Isolated CLI process contract: OTEL_SDK_DISABLED is process-global.
+# Do not import this module into a host that still needs OpenTelemetry.
 if not tracing_enabled():
     os.environ.setdefault("OTEL_SDK_DISABLED", "true")
 
@@ -254,6 +256,77 @@ def _event_text(event: object) -> str:
     return "".join(part.text for part in parts if getattr(part, "text", None))
 
 
+def _event_has_tool_payload(event: object) -> bool:
+    get_calls = getattr(event, "get_function_calls", None)
+    if callable(get_calls) and get_calls():
+        return True
+    get_responses = getattr(event, "get_function_responses", None)
+    if callable(get_responses) and get_responses():
+        return True
+    content = getattr(event, "content", None)
+    parts = getattr(content, "parts", None) or []
+    return any(
+        getattr(part, "function_call", None) or getattr(part, "function_response", None)
+        for part in parts
+    )
+
+
+def _has_trailing_code_execution(event: object) -> bool:
+    content = getattr(event, "content", None)
+    parts = getattr(content, "parts", None) or []
+    if not parts:
+        return False
+    return getattr(parts[-1], "code_execution_result", None) is not None
+
+
+def _is_partial_fragment(event: object) -> bool:
+    return getattr(event, "partial", None) is True
+
+
+def _is_final_response(event: object) -> bool:
+    final = getattr(event, "is_final_response", None)
+    if callable(final):
+        return bool(final())
+    return (
+        not _is_partial_fragment(event)
+        and not _event_has_tool_payload(event)
+        and not _has_trailing_code_execution(event)
+    )
+
+
+class _StreamState:
+    def __init__(self) -> None:
+        self.displayed: list[str] = []
+        self.final_text = ""
+        self.saw_partial = False
+
+    def result(self) -> str:
+        return self.final_text or "".join(self.displayed)
+
+
+def _observe_stream_event(
+    state: _StreamState,
+    event: object,
+    on_text: Callable[[str], None] | None,
+) -> None:
+    text = _event_text(event)
+    if _is_partial_fragment(event):
+        if text:
+            state.saw_partial = True
+            state.displayed.append(text)
+            if on_text is not None:
+                on_text(text)
+        return
+    if _event_has_tool_payload(event):
+        state.saw_partial = False
+        return
+    if _is_final_response(event) and text:
+        state.final_text = text
+        if not state.saw_partial and on_text is not None:
+            on_text(text)
+        state.saw_partial = False
+
+
 async def run_admitted_agent(
     prompt: str,
     *,
@@ -285,19 +358,7 @@ async def run_admitted_agent(
         max_llm_calls=MAX_LLM_CALLS if max_llm_calls is None else max_llm_calls,
     )
     message = types.Content(role="user", parts=[types.Part(text=prompt)])
-    last = ""
-    pieces: list[str] = []
-
-    def _note(text: str) -> None:
-        nonlocal last
-        if not text:
-            return
-        delta = text[len(last) :] if text.startswith(last) else text
-        last = text if text.startswith(last) else last + text
-        if delta:
-            pieces.append(delta)
-            if on_text is not None:
-                on_text(delta)
+    state = _StreamState()
 
     async def _consume() -> str:
         async for event in runner.run_async(
@@ -306,8 +367,8 @@ async def run_admitted_agent(
             new_message=message,
             run_config=config,
         ):
-            _note(_event_text(event))
-        return "".join(pieces)
+            _observe_stream_event(state, event, on_text)
+        return state.result()
 
     timeout = RUN_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
     return await asyncio.wait_for(_consume(), timeout=timeout)
@@ -514,6 +575,7 @@ import asyncio
 import json
 import os
 import shutil
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -688,6 +750,14 @@ class RequiredFrameworkLoopTests(unittest.TestCase):
         self.assertEqual(second, "TURN_2")
         self.assertEqual(len(model.calls), 2)
 
+    def _isolated_tracing_env(self, *, opt_in: bool) -> dict[str, str]:
+        env = os.environ.copy()
+        env.pop("WORKSPAI_AGENT_TRACING", None)
+        env.pop("OTEL_SDK_DISABLED", None)
+        if opt_in:
+            env["WORKSPAI_AGENT_TRACING"] = "1"
+        return env
+
     def test_tracing_is_disabled_unless_opted_in(self) -> None:
         try:
             from agent import tracing_enabled
@@ -698,6 +768,73 @@ class RequiredFrameworkLoopTests(unittest.TestCase):
         os.environ["WORKSPAI_AGENT_TRACING"] = "1"
         self.addCleanup(os.environ.pop, "WORKSPAI_AGENT_TRACING", None)
         self.assertTrue(tracing_enabled())
+
+    def test_tracing_opt_in_records_in_an_isolated_process(self) -> None:
+        try:
+            import google.adk  # noqa: F401
+        except ImportError as error:
+            self.fail(f"google-adk is required for this Google ADK kit: {error}")
+
+        agent_root = str(Path(__file__).resolve().parents[1])
+        disabled = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import os\\n"
+                "os.environ.pop('WORKSPAI_AGENT_TRACING', None)\\n"
+                "os.environ.pop('OTEL_SDK_DISABLED', None)\\n"
+                "from agent import tracing_enabled\\n"
+                "from opentelemetry import trace\\n"
+                "if tracing_enabled():\\n"
+                "    raise SystemExit('tracing was opted in by default')\\n"
+                "if os.environ.get('OTEL_SDK_DISABLED') != 'true':\\n"
+                "    raise SystemExit('OTEL_SDK_DISABLED was not set unless tracing is opted in')\\n"
+                "span = trace.get_tracer('workspai-conformance').start_span('probe')\\n"
+                "recording = span.is_recording()\\n"
+                "span.end()\\n"
+                "if recording:\\n"
+                "    raise SystemExit('OpenTelemetry created a recording span while tracing is disabled')\\n"
+                "print('WORKSPAI_AGENT_TELEMETRY_DISABLED_OK')\\n",
+            ],
+            cwd=agent_root,
+            env=self._isolated_tracing_env(opt_in=False),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(disabled.returncode, 0, disabled.stderr + disabled.stdout)
+        self.assertIn("WORKSPAI_AGENT_TELEMETRY_DISABLED_OK", disabled.stdout)
+
+        opted = subprocess.run(
+            [
+                sys.executable,
+                "-c",
+                "import os\\n"
+                "os.environ['WORKSPAI_AGENT_TRACING'] = '1'\\n"
+                "os.environ.pop('OTEL_SDK_DISABLED', None)\\n"
+                "from opentelemetry import trace\\n"
+                "from opentelemetry.sdk.trace import TracerProvider\\n"
+                "trace.set_tracer_provider(TracerProvider())\\n"
+                "from agent import tracing_enabled\\n"
+                "if not tracing_enabled():\\n"
+                "    raise SystemExit('WORKSPAI_AGENT_TRACING=1 did not enable tracing')\\n"
+                "if os.environ.get('OTEL_SDK_DISABLED') == 'true':\\n"
+                "    raise SystemExit('OTEL_SDK_DISABLED was set despite opt-in')\\n"
+                "span = trace.get_tracer('workspai-conformance').start_span('probe')\\n"
+                "recording = span.is_recording()\\n"
+                "span.end()\\n"
+                "if not recording:\\n"
+                "    raise SystemExit('opt-in process did not create a recording span')\\n"
+                "print('WORKSPAI_AGENT_TELEMETRY_OPT_IN_OK')\\n",
+            ],
+            cwd=agent_root,
+            env=self._isolated_tracing_env(opt_in=True),
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(opted.returncode, 0, opted.stderr + opted.stdout)
+        self.assertIn("WORKSPAI_AGENT_TELEMETRY_OPT_IN_OK", opted.stdout)
 
     def test_streaming_delivers_the_first_chunk_before_the_model_finishes(self) -> None:
         try:
@@ -719,14 +856,24 @@ class RequiredFrameworkLoopTests(unittest.TestCase):
                     content=types.Content(
                         role="model",
                         parts=[types.Part(text="STREAM_A")],
-                    )
+                    ),
+                    partial=True,
                 )
                 await asyncio.wait_for(released.wait(), timeout=2.0)
                 yield LlmResponse(
                     content=types.Content(
                         role="model",
                         parts=[types.Part(text="STREAM_B")],
-                    )
+                    ),
+                    partial=True,
+                )
+                yield LlmResponse(
+                    content=types.Content(
+                        role="model",
+                        parts=[types.Part(text="STREAM_ASTREAM_B")],
+                    ),
+                    partial=False,
+                    turn_complete=True,
                 )
 
         seen: list[str] = []
@@ -748,9 +895,201 @@ class RequiredFrameworkLoopTests(unittest.TestCase):
                 on_text=on_text,
             )
         )
-        self.assertIn("STREAM_A", "".join(seen))
-        self.assertIn("STREAM_B", output)
+        self.assertEqual(seen, ["STREAM_A", "STREAM_B"])
+        self.assertEqual(output, "STREAM_ASTREAM_B")
         self.assertTrue(released.is_set())
+
+    def test_streaming_semantics_follow_partial_and_final_response(self) -> None:
+        try:
+            from google.adk.models.base_llm import BaseLlm
+            from google.adk.models.llm_response import LlmResponse
+            from google.genai import types
+            from main import _StreamState, _observe_stream_event, run_admitted_agent
+        except ImportError as error:
+            self.fail(f"google-adk is required for this Google ADK kit: {error}")
+
+        class ScriptedStreamLlm(BaseLlm):
+            def __init__(self, steps: list) -> None:
+                super().__init__(model="workspai-scripted")
+                object.__setattr__(self, "steps", steps)
+
+            async def generate_content_async(self, llm_request, stream=False):
+                for step in self.steps:
+                    yield step
+
+        class ScriptedTurnLlm(BaseLlm):
+            def __init__(self, turns: list) -> None:
+                super().__init__(model="workspai-scripted")
+                object.__setattr__(self, "turns", turns)
+                object.__setattr__(self, "calls", [])
+
+            async def generate_content_async(self, llm_request, stream=False):
+                self.calls.append(llm_request)
+                for step in self.turns[len(self.calls) - 1]:
+                    yield step
+
+        def part(text: str, *, partial: bool, turn_complete: bool = False) -> LlmResponse:
+            return LlmResponse(
+                content=types.Content(role="model", parts=[types.Part(text=text)]),
+                partial=partial,
+                turn_complete=turn_complete,
+            )
+
+        def function_call(name: str) -> LlmResponse:
+            return LlmResponse(
+                content=types.Content(
+                    role="model",
+                    parts=[types.Part(function_call=types.FunctionCall(name=name, args={}))],
+                ),
+                partial=False,
+                turn_complete=True,
+            )
+
+        self._context_path().write_text(
+            json.dumps({"schemaVersion": CONTEXT_SCHEMA_VERSION}),
+            encoding="utf-8",
+        )
+
+        def run_case(steps: list) -> tuple[list[str], str]:
+            seen: list[str] = []
+            output = asyncio.run(
+                run_admitted_agent(
+                    "stream",
+                    model=ScriptedStreamLlm(steps),
+                    streaming=True,
+                    on_text=seen.append,
+                )
+            )
+            return seen, output
+
+        seen, output = run_case(
+            [
+                part("ha", partial=True),
+                part("ha", partial=True),
+                part("haha", partial=False, turn_complete=True),
+            ]
+        )
+        self.assertEqual(seen, ["ha", "ha"])
+        self.assertEqual(output, "haha")
+
+        seen, output = run_case(
+            [
+                part("a", partial=True),
+                part("abc", partial=True),
+                part("aabc", partial=False, turn_complete=True),
+            ]
+        )
+        self.assertEqual(seen, ["a", "abc"])
+        self.assertEqual(output, "aabc")
+
+        seen, output = run_case(
+            [
+                part("The weather", partial=True),
+                part(" in Tokyo is", partial=True),
+                part(" sunny.", partial=True),
+                part("The weather in Tokyo is sunny.", partial=False, turn_complete=True),
+            ]
+        )
+        self.assertEqual(seen, ["The weather", " in Tokyo is", " sunny."])
+        self.assertEqual(output, "The weather in Tokyo is sunny.")
+
+        seen, output = run_case(
+            [
+                part("a", partial=True),
+                LlmResponse(
+                    content=types.Content(role="model", parts=[]),
+                    partial=False,
+                ),
+                part("b", partial=True),
+                part("ab", partial=False, turn_complete=True),
+            ]
+        )
+        self.assertEqual(seen, ["a", "b"])
+        self.assertEqual(output, "ab")
+
+        from types import SimpleNamespace
+
+        state = _StreamState()
+        observed: list[str] = []
+
+        def fragment(text: str) -> SimpleNamespace:
+            return SimpleNamespace(
+                partial=True,
+                content=SimpleNamespace(
+                    parts=[SimpleNamespace(text=text, function_call=None, function_response=None)]
+                ),
+                is_final_response=lambda: False,
+            )
+
+        def metadata() -> SimpleNamespace:
+            return SimpleNamespace(
+                partial=False,
+                turn_complete=False,
+                content=SimpleNamespace(parts=[]),
+                is_final_response=lambda: True,
+            )
+
+        def final(text: str) -> SimpleNamespace:
+            return SimpleNamespace(
+                partial=False,
+                turn_complete=True,
+                content=SimpleNamespace(
+                    parts=[SimpleNamespace(text=text, function_call=None, function_response=None)]
+                ),
+                is_final_response=lambda: True,
+            )
+
+        def tool_event(*, text: str = "", turn_complete: bool = True) -> SimpleNamespace:
+            return SimpleNamespace(
+                partial=False,
+                turn_complete=turn_complete,
+                content=SimpleNamespace(
+                    parts=[
+                        SimpleNamespace(
+                            text=text or None,
+                            function_call=SimpleNamespace(name="describe_workspai_context"),
+                            function_response=None,
+                        )
+                    ]
+                ),
+                is_final_response=lambda: False,
+            )
+
+        for event in [fragment("a"), metadata(), fragment("b"), final("ab")]:
+            _observe_stream_event(state, event, observed.append)
+        self.assertEqual(observed, ["a", "b"])
+        self.assertEqual(state.result(), "ab")
+
+        state = _StreamState()
+        observed = []
+        for event in [
+            fragment("looking"),
+            tool_event(text="should-not-display"),
+            final("done"),
+        ]:
+            _observe_stream_event(state, event, observed.append)
+        self.assertEqual(observed, ["looking", "done"])
+        self.assertEqual(state.result(), "done")
+
+        seen_tool: list[str] = []
+        tool_output = asyncio.run(
+            run_admitted_agent(
+                "stream",
+                model=ScriptedTurnLlm(
+                    [
+                        [
+                            part("looking", partial=True),
+                            function_call("describe_workspai_context"),
+                        ],
+                        [part("done", partial=False, turn_complete=True)],
+                    ]
+                ),
+                streaming=True,
+                on_text=seen_tool.append,
+            )
+        )
+        self.assertEqual(seen_tool, ["looking", "done"])
+        self.assertEqual(tool_output, "done")
 
 
 if __name__ == "__main__":

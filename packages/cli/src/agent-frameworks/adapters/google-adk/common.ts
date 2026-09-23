@@ -78,7 +78,7 @@ export function googleAdkCapabilities(
                     `Google ADK ${language} starter implements ${id} with the pinned SDK APIs and credentialless conformance.`,
                   ]
                 : [
-                    `Google ADK ${language} sets OTEL_SDK_DISABLED=true unless WORKSPAI_AGENT_TRACING=1, before the ADK SDK is imported. Credentialless runs keep tracing unset.`,
+                    `Google ADK ${language} sets OTEL_SDK_DISABLED=true unless WORKSPAI_AGENT_TRACING=1, before the ADK SDK is imported. Credentialless conformance observes a non-recording span in a process without opt-in and a recording span in a separate opted-in process.`,
                   ],
           prerequisites:
             id === 'telemetry'
@@ -99,14 +99,15 @@ export function googleAdkCapabilities(
                         'In-memory session state is local to the process. VertexAiSessionService, DatabaseSessionService, and Agent Engine sessions are unsupported.',
                       ]
                     : []),
+                  ...(id === 'telemetry'
+                    ? [
+                        'OTEL_SDK_DISABLED is process-global. The generated starter is an isolated CLI process; do not import it into a host that still needs OpenTelemetry.',
+                      ]
+                    : []),
                   ...(id === 'streaming'
-                    ? language === 'python'
-                      ? [
-                          'Python streaming writes each text delta to stdout as Runner.run_async yields it. Bidirectional live/voice streaming is unsupported.',
-                        ]
-                      : [
-                          'TypeScript streaming writes each text delta to stdout as Runner.runAsync yields it. Bidirectional live/voice streaming is unsupported.',
-                        ]
+                    ? [
+                        'Partial text events are emitted as display fragments. The SDK-recognized final response is retained as canonical text and is not re-emitted after streamed fragments. Bidirectional live/voice streaming is unsupported.',
+                      ]
                     : []),
                 ],
         },

@@ -26,11 +26,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   admission inventory before `--dry-run` and before any project or workspace
   filesystem mutation. Unpublished Google ADK kits show
   `preview · awaiting release admission` in the kit picker and create help.
-- Google ADK starters write each streaming text delta as the SDK yields it,
-  disable OpenTelemetry unless `WORKSPAI_AGENT_TRACING=1`, and consume the
-  shared `agent-frameworks/context-loaders` sources instead of OpenAI-owned
-  copies. Conformance path filters now include Create, Doctor, and planner
-  contract surfaces.
+- Google ADK starters emit `event.partial` fragments as display deltas and
+  keep the SDK-recognized final response as canonical streamed text without
+  re-emitting it after fragments. Intermediate metadata does not reset the
+  fragment window; tool-call and function-response events do. Python and
+  TypeScript both use the official final-response predicate. Telemetry stays
+  off unless `WORKSPAI_AGENT_TRACING=1` is set from process startup;
+  credentialless conformance observes a non-recording span without opt-in and
+  a recording span in a separate opted-in process with a test TracerProvider.
+  Starters consume the shared `agent-frameworks/context-loaders` sources
+  instead of OpenAI-owned copies. `OTEL_SDK_DISABLED` is process-global;
+  generated starters are isolated CLI processes. Conformance path filters now
+  include Create, Doctor, and planner contract surfaces.
 
 ## [0.77.0] - 2026-09-21
 

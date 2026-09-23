@@ -576,12 +576,13 @@ throw new Error('AbortSignal.timeout did not stop the Google ADK run');
 
 function pythonStreamingHarness(): string {
   return `import asyncio
+from types import SimpleNamespace
 
 from google.adk.models.base_llm import BaseLlm
 from google.adk.models.llm_response import LlmResponse
 from google.genai import types
 
-from main import run_admitted_agent
+from main import _StreamState, _observe_stream_event, run_admitted_agent
 
 
 class HandshakeLlm(BaseLlm):
@@ -590,12 +591,49 @@ class HandshakeLlm(BaseLlm):
 
     async def generate_content_async(self, llm_request, stream=False):
         yield LlmResponse(
-            content=types.Content(role="model", parts=[types.Part(text="STREAM_A")])
+            content=types.Content(role="model", parts=[types.Part(text="STREAM_A")]),
+            partial=True,
         )
         await asyncio.wait_for(released.wait(), timeout=2.0)
         yield LlmResponse(
-            content=types.Content(role="model", parts=[types.Part(text="STREAM_B")])
+            content=types.Content(role="model", parts=[types.Part(text="STREAM_B")]),
+            partial=True,
         )
+        yield LlmResponse(
+            content=types.Content(role="model", parts=[types.Part(text="STREAM_ASTREAM_B")]),
+            partial=False,
+            turn_complete=True,
+        )
+
+
+class ScriptedStreamLlm(BaseLlm):
+    def __init__(self, steps):
+        super().__init__(model="workspai-scripted")
+        object.__setattr__(self, "steps", steps)
+
+    async def generate_content_async(self, llm_request, stream=False):
+        for step in self.steps:
+            yield step
+
+
+class ScriptedTurnLlm(BaseLlm):
+    def __init__(self, turns):
+        super().__init__(model="workspai-scripted")
+        object.__setattr__(self, "turns", turns)
+        object.__setattr__(self, "calls", [])
+
+    async def generate_content_async(self, llm_request, stream=False):
+        self.calls.append(llm_request)
+        for step in self.turns[len(self.calls) - 1]:
+            yield step
+
+
+def part(text, partial, turn_complete=False):
+    return LlmResponse(
+        content=types.Content(role="model", parts=[types.Part(text=text)]),
+        partial=partial,
+        turn_complete=turn_complete,
+    )
 
 
 released = asyncio.Event()
@@ -615,13 +653,141 @@ async def main():
         streaming=True,
         on_text=on_text,
     )
-    joined = "".join(seen)
-    if "STREAM_A" not in joined:
-        raise SystemExit("first stream chunk was not delivered to on_text")
-    if "STREAM_B" not in output:
-        raise SystemExit("streamed run did not retain the later chunk")
+    if seen != ["STREAM_A", "STREAM_B"]:
+        raise SystemExit("partial fragments were not delivered in order: " + repr(seen))
+    if output != "STREAM_ASTREAM_B":
+        raise SystemExit("canonical stream text was not the non-partial aggregate")
     if not released.is_set():
         raise SystemExit("streaming handshake never released the model")
+
+    repeated_seen = []
+    repeated = await run_admitted_agent(
+        "repeated",
+        model=ScriptedStreamLlm(
+            [part("ha", True), part("ha", True), part("haha", False, True)]
+        ),
+        streaming=True,
+        on_text=repeated_seen.append,
+    )
+    if repeated_seen != ["ha", "ha"] or repeated != "haha":
+        raise SystemExit("repeated delta streaming was incorrect")
+
+    collision_seen = []
+    collision = await run_admitted_agent(
+        "collision",
+        model=ScriptedStreamLlm(
+            [part("a", True), part("abc", True), part("aabc", False, True)]
+        ),
+        streaming=True,
+        on_text=collision_seen.append,
+    )
+    if collision_seen != ["a", "abc"] or collision != "aabc":
+        raise SystemExit("prefix-collision streaming was incorrect")
+
+    interleaved_seen = []
+    interleaved = await run_admitted_agent(
+        "interleave",
+        model=ScriptedStreamLlm(
+            [
+                part("a", True),
+                LlmResponse(content=types.Content(role="model", parts=[]), partial=False),
+                part("b", True),
+                part("ab", False, True),
+            ]
+        ),
+        streaming=True,
+        on_text=interleaved_seen.append,
+    )
+    if interleaved_seen != ["a", "b"] or interleaved != "ab":
+        raise SystemExit("metadata-interleaved streaming was incorrect: " + repr(interleaved_seen))
+
+    state = _StreamState()
+    observed = []
+
+    def fragment(text):
+        return SimpleNamespace(
+            partial=True,
+            content=SimpleNamespace(
+                parts=[SimpleNamespace(text=text, function_call=None, function_response=None)]
+            ),
+            is_final_response=lambda: False,
+        )
+
+    def metadata():
+        return SimpleNamespace(
+            partial=False,
+            content=SimpleNamespace(parts=[]),
+            is_final_response=lambda: True,
+        )
+
+    def final(text):
+        return SimpleNamespace(
+            partial=False,
+            content=SimpleNamespace(
+                parts=[SimpleNamespace(text=text, function_call=None, function_response=None)]
+            ),
+            is_final_response=lambda: True,
+        )
+
+    def tool_event(text=""):
+        return SimpleNamespace(
+            partial=False,
+            turn_complete=True,
+            content=SimpleNamespace(
+                parts=[
+                    SimpleNamespace(
+                        text=text or None,
+                        function_call=SimpleNamespace(name="describe_workspai_context"),
+                        function_response=None,
+                    )
+                ]
+            ),
+            is_final_response=lambda: False,
+        )
+
+    for event in [fragment("a"), metadata(), fragment("b"), final("ab")]:
+        _observe_stream_event(state, event, observed.append)
+    if observed != ["a", "b"] or state.result() != "ab":
+        raise SystemExit("observer metadata-interleaving was incorrect: " + repr(observed))
+
+    tool_state = _StreamState()
+    tool_observed = []
+    for event in [fragment("looking"), tool_event("should-not-display"), final("done")]:
+        _observe_stream_event(tool_state, event, tool_observed.append)
+    if tool_observed != ["looking", "done"] or tool_state.result() != "done":
+        raise SystemExit("observer tool-boundary streaming was incorrect: " + repr(tool_observed))
+
+    tool_seen = []
+    tool_output = await run_admitted_agent(
+        "tools",
+        model=ScriptedTurnLlm(
+            [
+                [
+                    part("looking", True),
+                    LlmResponse(
+                        content=types.Content(
+                            role="model",
+                            parts=[
+                                types.Part(
+                                    function_call=types.FunctionCall(
+                                        name="describe_workspai_context", args={}
+                                    )
+                                )
+                            ],
+                        ),
+                        partial=False,
+                        turn_complete=True,
+                    ),
+                ],
+                [part("done", False, True)],
+            ]
+        ),
+        streaming=True,
+        on_text=tool_seen.append,
+    )
+    if tool_seen != ["looking", "done"] or tool_output != "done":
+        raise SystemExit("tool-boundary streaming was incorrect: " + repr(tool_seen))
+
     print("WORKSPAI_AGENT_STREAMING_OK")
 
 
@@ -631,23 +797,94 @@ asyncio.run(main())
 
 function pythonTelemetryHarness(): string {
   return `import os
+import subprocess
+import sys
 
+DISABLED = """
+import os
+os.environ.pop("WORKSPAI_AGENT_TRACING", None)
+os.environ.pop("OTEL_SDK_DISABLED", None)
 from agent import tracing_enabled
-
+from opentelemetry import trace
 if tracing_enabled():
     raise SystemExit("tracing was opted in by default")
 if os.environ.get("OTEL_SDK_DISABLED") != "true":
     raise SystemExit("OTEL_SDK_DISABLED was not set unless tracing is opted in")
+span = trace.get_tracer("workspai-conformance").start_span("probe")
+recording = span.is_recording()
+span.end()
+if recording:
+    raise SystemExit("OpenTelemetry created a recording span while tracing is disabled")
+print("WORKSPAI_AGENT_TELEMETRY_DISABLED_OK")
+"""
+
+OPT_IN = """
+import os
 os.environ["WORKSPAI_AGENT_TRACING"] = "1"
+os.environ.pop("OTEL_SDK_DISABLED", None)
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+trace.set_tracer_provider(TracerProvider())
+from agent import tracing_enabled
 if not tracing_enabled():
     raise SystemExit("WORKSPAI_AGENT_TRACING=1 did not enable tracing")
+if os.environ.get("OTEL_SDK_DISABLED") == "true":
+    raise SystemExit("OTEL_SDK_DISABLED was set despite opt-in")
+span = trace.get_tracer("workspai-conformance").start_span("probe")
+recording = span.is_recording()
+span.end()
+if not recording:
+    raise SystemExit("opt-in process did not create a recording span")
+print("WORKSPAI_AGENT_TELEMETRY_OPT_IN_OK")
+"""
+
+
+def child_env(*, opt_in: bool):
+    env = os.environ.copy()
+    env.pop("WORKSPAI_AGENT_TRACING", None)
+    env.pop("OTEL_SDK_DISABLED", None)
+    if opt_in:
+        env["WORKSPAI_AGENT_TRACING"] = "1"
+    return env
+
+
+disabled = subprocess.run(
+    [sys.executable, "-c", DISABLED],
+    cwd=os.getcwd(),
+    env=child_env(opt_in=False),
+    capture_output=True,
+    text=True,
+    check=False,
+)
+if disabled.returncode != 0:
+    raise SystemExit(disabled.stderr + disabled.stdout)
+if "WORKSPAI_AGENT_TELEMETRY_DISABLED_OK" not in disabled.stdout:
+    raise SystemExit("disabled telemetry process did not report success")
+
+opted = subprocess.run(
+    [sys.executable, "-c", OPT_IN],
+    cwd=os.getcwd(),
+    env=child_env(opt_in=True),
+    capture_output=True,
+    text=True,
+    check=False,
+)
+if opted.returncode != 0:
+    raise SystemExit(opted.stderr + opted.stdout)
+if "WORKSPAI_AGENT_TELEMETRY_OPT_IN_OK" not in opted.stdout:
+    raise SystemExit("opt-in telemetry process did not report success")
+
 print("WORKSPAI_AGENT_TELEMETRY_OK")
 `;
 }
 
 function typeScriptStreamingHarness(): string {
   return `import { BaseLlm } from '@google/adk';
-import { runAdmittedAgent } from './dist/src/agent.js';
+import {
+  createAdmittedStreamState,
+  observeAdmittedStreamEvent,
+  runAdmittedAgent,
+} from './dist/src/agent.js';
 
 let release = () => {};
 const released = new Promise((resolve) => {
@@ -660,7 +897,7 @@ class HandshakeLlm extends BaseLlm {
   }
   async *generateContentAsync(_llmRequest, _stream, abortSignal) {
     if (abortSignal?.aborted) throw abortSignal.reason ?? new Error('aborted');
-    yield { content: { role: 'model', parts: [{ text: 'STREAM_A' }] } };
+    yield { content: { role: 'model', parts: [{ text: 'STREAM_A' }] }, partial: true };
     await Promise.race([
       released,
       new Promise((_, reject) =>
@@ -670,12 +907,53 @@ class HandshakeLlm extends BaseLlm {
         )
       ),
     ]);
-    yield { content: { role: 'model', parts: [{ text: 'STREAM_B' }] } };
+    yield { content: { role: 'model', parts: [{ text: 'STREAM_B' }] }, partial: true };
+    yield {
+      content: { role: 'model', parts: [{ text: 'STREAM_ASTREAM_B' }] },
+      partial: false,
+      turnComplete: true,
+    };
   }
   connect() {
     return Promise.reject(new Error('Live connections are unsupported in this Workspai starter.'));
   }
 }
+
+class ScriptedStreamLlm extends BaseLlm {
+  constructor(steps) {
+    super({ model: 'workspai-scripted' });
+    this.steps = steps;
+  }
+  async *generateContentAsync(_llmRequest, _stream, abortSignal) {
+    if (abortSignal?.aborted) throw abortSignal.reason ?? new Error('aborted');
+    for (const step of this.steps) yield step;
+  }
+  connect() {
+    return Promise.reject(new Error('Live connections are unsupported in this Workspai starter.'));
+  }
+}
+
+class ScriptedTurnLlm extends BaseLlm {
+  constructor(turns) {
+    super({ model: 'workspai-scripted' });
+    this.turns = turns;
+    this.calls = [];
+  }
+  async *generateContentAsync(llmRequest, _stream, abortSignal) {
+    if (abortSignal?.aborted) throw abortSignal.reason ?? new Error('aborted');
+    this.calls.push(llmRequest);
+    for (const step of this.turns[this.calls.length - 1] ?? []) yield step;
+  }
+  connect() {
+    return Promise.reject(new Error('Live connections are unsupported in this Workspai starter.'));
+  }
+}
+
+const part = (text, partial, turnComplete = false) => ({
+  content: { role: 'model', parts: [{ text }] },
+  partial,
+  turnComplete,
+});
 
 const seen = [];
 const output = await runAdmittedAgent('stream', {
@@ -686,29 +964,176 @@ const output = await runAdmittedAgent('stream', {
     if (seen.join('').includes('STREAM_A')) release();
   },
 });
-if (!seen.join('').includes('STREAM_A')) {
-  throw new Error('first stream chunk was not delivered to onText');
+if (JSON.stringify(seen) !== JSON.stringify(['STREAM_A', 'STREAM_B'])) {
+  throw new Error('partial fragments were not delivered in order: ' + JSON.stringify(seen));
 }
-if (!output.includes('STREAM_B')) {
-  throw new Error('streamed run did not retain the later chunk');
+if (output !== 'STREAM_ASTREAM_B') {
+  throw new Error('canonical stream text was not the non-partial aggregate');
 }
+
+const repeatedSeen = [];
+const repeated = await runAdmittedAgent('repeated', {
+  model: new ScriptedStreamLlm([part('ha', true), part('ha', true), part('haha', false, true)]),
+  streaming: true,
+  onText: (delta) => repeatedSeen.push(delta),
+});
+if (JSON.stringify(repeatedSeen) !== JSON.stringify(['ha', 'ha']) || repeated !== 'haha') {
+  throw new Error('repeated delta streaming was incorrect');
+}
+
+const collisionSeen = [];
+const collision = await runAdmittedAgent('collision', {
+  model: new ScriptedStreamLlm([part('a', true), part('abc', true), part('aabc', false, true)]),
+  streaming: true,
+  onText: (delta) => collisionSeen.push(delta),
+});
+if (JSON.stringify(collisionSeen) !== JSON.stringify(['a', 'abc']) || collision !== 'aabc') {
+  throw new Error('prefix-collision streaming was incorrect');
+}
+
+const interleavedSeen = [];
+const interleaved = await runAdmittedAgent('interleave', {
+  model: new ScriptedStreamLlm([
+    part('a', true),
+    { content: { role: 'model', parts: [] }, partial: false },
+    part('b', true),
+    part('ab', false, true),
+  ]),
+  streaming: true,
+  onText: (delta) => interleavedSeen.push(delta),
+});
+if (JSON.stringify(interleavedSeen) !== JSON.stringify(['a', 'b']) || interleaved !== 'ab') {
+  throw new Error('metadata-interleaved streaming was incorrect: ' + JSON.stringify(interleavedSeen));
+}
+
+const state = createAdmittedStreamState();
+const observed = [];
+for (const event of [
+  { content: { role: 'model', parts: [{ text: 'a' }] }, partial: true, actions: {} },
+  { content: { role: 'model', parts: [] }, partial: false, actions: {} },
+  { content: { role: 'model', parts: [{ text: 'b' }] }, partial: true, actions: {} },
+  { content: { role: 'model', parts: [{ text: 'ab' }] }, partial: false, actions: {} },
+]) {
+  observeAdmittedStreamEvent(state, event, (delta) => observed.push(delta));
+}
+if (JSON.stringify(observed) !== JSON.stringify(['a', 'b']) || (state.finalText || state.displayed.join('')) !== 'ab') {
+  throw new Error('observer metadata-interleaving was incorrect: ' + JSON.stringify(observed));
+}
+
+const toolState = createAdmittedStreamState();
+const toolObserved = [];
+for (const event of [
+  { content: { role: 'model', parts: [{ text: 'looking' }] }, partial: true, actions: {} },
+  {
+    content: {
+      role: 'model',
+      parts: [{ text: 'should-not-display', functionCall: { name: 'describe_workspai_context', args: {} } }],
+    },
+    partial: false,
+    turnComplete: true,
+    actions: {},
+  },
+  { content: { role: 'model', parts: [{ text: 'done' }] }, partial: false, actions: {} },
+]) {
+  observeAdmittedStreamEvent(toolState, event, (delta) => toolObserved.push(delta));
+}
+if (JSON.stringify(toolObserved) !== JSON.stringify(['looking', 'done']) || toolState.finalText !== 'done') {
+  throw new Error('observer tool-boundary streaming was incorrect: ' + JSON.stringify(toolObserved));
+}
+
+const toolSeen = [];
+const toolOutput = await runAdmittedAgent('tools', {
+  model: new ScriptedTurnLlm([
+    [
+      part('looking', true),
+      {
+        content: {
+          role: 'model',
+          parts: [{ functionCall: { name: 'describe_workspai_context', args: {} } }],
+        },
+        partial: false,
+        turnComplete: true,
+      },
+    ],
+    [part('done', false, true)],
+  ]),
+  streaming: true,
+  onText: (delta) => toolSeen.push(delta),
+});
+if (JSON.stringify(toolSeen) !== JSON.stringify(['looking', 'done']) || toolOutput !== 'done') {
+  throw new Error('tool-boundary streaming was incorrect: ' + JSON.stringify(toolSeen));
+}
+
 process.stdout.write('WORKSPAI_AGENT_STREAMING_OK\\n');
 `;
 }
 
 function typeScriptTelemetryHarness(): string {
-  return `import { tracingEnabled } from './dist/src/tracing.js';
+  return `import { spawnSync } from 'node:child_process';
 
-if (tracingEnabled()) {
-  throw new Error('tracing was opted in by default');
+const baseEnv = Object.assign({}, process.env);
+delete baseEnv.WORKSPAI_AGENT_TRACING;
+delete baseEnv.OTEL_SDK_DISABLED;
+
+const disabled = spawnSync(
+  process.execPath,
+  [
+    '--input-type=module',
+    '-e',
+    [
+      "delete process.env.WORKSPAI_AGENT_TRACING;",
+      "delete process.env.OTEL_SDK_DISABLED;",
+      "const { tracingEnabled } = await import('./dist/src/tracing.js');",
+      "const { trace } = await import('@opentelemetry/api');",
+      "if (tracingEnabled()) throw new Error('tracing was opted in by default');",
+      "if (process.env.OTEL_SDK_DISABLED !== 'true') throw new Error('OTEL_SDK_DISABLED was not set unless tracing is opted in');",
+      "const span = trace.getTracer('workspai-conformance').startSpan('probe');",
+      "const recording = span.isRecording();",
+      "span.end();",
+      "if (recording) throw new Error('OpenTelemetry created a recording span while tracing is disabled');",
+      "process.stdout.write('WORKSPAI_AGENT_TELEMETRY_DISABLED_OK\\\\n');",
+    ].join(''),
+  ],
+  { cwd: process.cwd(), env: baseEnv, encoding: 'utf8' }
+);
+if (disabled.status !== 0) {
+  throw new Error(String(disabled.stderr || '') + String(disabled.stdout || ''));
 }
-if (process.env.OTEL_SDK_DISABLED !== 'true') {
-  throw new Error('OTEL_SDK_DISABLED was not set unless tracing is opted in');
+if (!String(disabled.stdout).includes('WORKSPAI_AGENT_TELEMETRY_DISABLED_OK')) {
+  throw new Error('disabled telemetry process did not report success');
 }
-process.env.WORKSPAI_AGENT_TRACING = '1';
-if (!tracingEnabled()) {
-  throw new Error('WORKSPAI_AGENT_TRACING=1 did not enable tracing');
+
+const optInEnv = Object.assign({}, baseEnv, { WORKSPAI_AGENT_TRACING: '1' });
+const opted = spawnSync(
+  process.execPath,
+  [
+    '--input-type=module',
+    '-e',
+    [
+      "process.env.WORKSPAI_AGENT_TRACING = '1';",
+      "delete process.env.OTEL_SDK_DISABLED;",
+      "const { BasicTracerProvider } = await import('@opentelemetry/sdk-trace-base');",
+      "const { trace } = await import('@opentelemetry/api');",
+      "trace.setGlobalTracerProvider(new BasicTracerProvider());",
+      "const { tracingEnabled } = await import('./dist/src/tracing.js');",
+      "if (!tracingEnabled()) throw new Error('WORKSPAI_AGENT_TRACING=1 did not enable tracing');",
+      "if (process.env.OTEL_SDK_DISABLED === 'true') throw new Error('OTEL_SDK_DISABLED was set despite opt-in');",
+      "const span = trace.getTracer('workspai-conformance').startSpan('probe');",
+      "const recording = span.isRecording();",
+      "span.end();",
+      "if (!recording) throw new Error('opt-in process did not create a recording span');",
+      "process.stdout.write('WORKSPAI_AGENT_TELEMETRY_OPT_IN_OK\\\\n');",
+    ].join(''),
+  ],
+  { cwd: process.cwd(), env: optInEnv, encoding: 'utf8' }
+);
+if (opted.status !== 0) {
+  throw new Error(String(opted.stderr || '') + String(opted.stdout || ''));
 }
+if (!String(opted.stdout).includes('WORKSPAI_AGENT_TELEMETRY_OPT_IN_OK')) {
+  throw new Error('opt-in telemetry process did not report success');
+}
+
 process.stdout.write('WORKSPAI_AGENT_TELEMETRY_OK\\n');
 `;
 }

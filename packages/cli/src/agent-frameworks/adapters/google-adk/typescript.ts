@@ -102,6 +102,8 @@ export function tracingEnabled(): boolean {
   return process.env.WORKSPAI_AGENT_TRACING === '1';
 }
 
+// Isolated CLI process contract: OTEL_SDK_DISABLED is process-global.
+// Do not import this module into a host that still needs OpenTelemetry.
 if (!tracingEnabled()) {
   process.env.OTEL_SDK_DISABLED ??= 'true';
 }
@@ -118,6 +120,7 @@ import {
   LlmAgent,
   Runner,
   StreamingMode,
+  isFinalResponse,
   type BaseLlm,
   type RunConfig,
 } from '@google/adk';
@@ -262,8 +265,62 @@ export function buildAgent(overrides?: { model?: string | BaseLlm }): LlmAgent {
   });
 }
 
+export type AdmittedStreamState = {
+  displayed: string[];
+  finalText: string;
+  sawPartial: boolean;
+};
+
+export function createAdmittedStreamState(): AdmittedStreamState {
+  return { displayed: [], finalText: '', sawPartial: false };
+}
+
+export function admittedStreamResult(state: AdmittedStreamState): string {
+  return state.finalText || state.displayed.join('');
+}
+
 function eventText(event: { content?: { parts?: Array<{ text?: string | null }> } }): string {
   return (event.content?.parts ?? []).map((part) => part.text ?? '').join('');
+}
+
+export function eventHasToolPayload(event: {
+  functionCalls?: unknown[];
+  functionResponses?: unknown[];
+  content?: { parts?: Array<{ functionCall?: unknown; functionResponse?: unknown }> };
+}): boolean {
+  if ((event.functionCalls?.length ?? 0) > 0 || (event.functionResponses?.length ?? 0) > 0) {
+    return true;
+  }
+  return (event.content?.parts ?? []).some((part) => part.functionCall || part.functionResponse);
+}
+
+function isPartialFragment(event: { partial?: boolean }): boolean {
+  return event.partial === true;
+}
+
+export function observeAdmittedStreamEvent(
+  state: AdmittedStreamState,
+  event: Parameters<typeof isFinalResponse>[0],
+  onText?: (delta: string) => void
+): void {
+  const text = eventText(event);
+  if (isPartialFragment(event)) {
+    if (text) {
+      state.sawPartial = true;
+      state.displayed.push(text);
+      onText?.(text);
+    }
+    return;
+  }
+  if (eventHasToolPayload(event)) {
+    state.sawPartial = false;
+    return;
+  }
+  if (text && isFinalResponse(event)) {
+    state.finalText = text;
+    if (!state.sawPartial) onText?.(text);
+    state.sawPartial = false;
+  }
 }
 
 function eventFailure(event: {
@@ -322,7 +379,7 @@ export async function runAdmittedAgent(
     maxLlmCalls: options?.maxLlmCalls ?? MAX_LLM_CALLS,
   };
   const abortSignal = options?.signal ?? AbortSignal.timeout(RUN_TIMEOUT_MS);
-  let last = '';
+  const state = createAdmittedStreamState();
   for await (const event of runner.runAsync({
     userId: session.userId,
     sessionId: session.id,
@@ -335,14 +392,10 @@ export async function runAdmittedAgent(
     if (failed) {
       throw new Error(redactSdkError(failed));
     }
-    const text = eventText(event);
-    if (!text) continue;
-    const delta = text.startsWith(last) ? text.slice(last.length) : text;
-    last = text.startsWith(last) ? text : last + text;
-    if (delta) options?.onText?.(delta);
+    observeAdmittedStreamEvent(state, event, options?.onText);
   }
   throwIfAborted(abortSignal);
-  return last;
+  return admittedStreamResult(state);
 }
 
 export { readUserPrompt };
@@ -589,14 +642,18 @@ test('rejects an external symlink without disclosing the target', async () => {
       `// Generated and managed by Workspai. This test performs no network calls.
 
 import assert from 'node:assert/strict';
+import { spawnSync } from 'node:child_process';
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { after, before, test } from 'node:test';
+import { fileURLToPath } from 'node:url';
 
 import { BaseLlm, InMemorySessionService, type LlmRequest, type LlmResponse } from '@google/adk';
 
 import {
+  createAdmittedStreamState,
+  observeAdmittedStreamEvent,
   requireModelName,
   requireProviderProfile,
   runAdmittedAgent,
@@ -766,6 +823,67 @@ test('tracing is disabled unless opted in', async () => {
   delete process.env.WORKSPAI_AGENT_TRACING;
 });
 
+test('tracing opt-in records in an isolated process', () => {
+  const agentRoot = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  const baseEnv = { ...process.env };
+  delete baseEnv.WORKSPAI_AGENT_TRACING;
+  delete baseEnv.OTEL_SDK_DISABLED;
+
+  const disabled = spawnSync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      [
+        "delete process.env.WORKSPAI_AGENT_TRACING;",
+        "delete process.env.OTEL_SDK_DISABLED;",
+        "const { tracingEnabled } = await import('./dist/src/tracing.js');",
+        "const { trace } = await import('@opentelemetry/api');",
+        "if (tracingEnabled()) throw new Error('tracing was opted in by default');",
+        "if (process.env.OTEL_SDK_DISABLED !== 'true') throw new Error('OTEL_SDK_DISABLED was not set unless tracing is opted in');",
+        "const span = trace.getTracer('workspai-conformance').startSpan('probe');",
+        "const recording = span.isRecording();",
+        "span.end();",
+        "if (recording) throw new Error('OpenTelemetry created a recording span while tracing is disabled');",
+        "process.stdout.write('WORKSPAI_AGENT_TELEMETRY_DISABLED_OK\\\\n');",
+      ].join(''),
+    ],
+    { cwd: agentRoot, env: baseEnv, encoding: 'utf8' }
+  );
+  assert.equal(disabled.status, 0, disabled.stderr + disabled.stdout);
+  assert.match(disabled.stdout, /WORKSPAI_AGENT_TELEMETRY_DISABLED_OK/);
+
+  const opted = spawnSync(
+    process.execPath,
+    [
+      '--input-type=module',
+      '-e',
+      [
+        "process.env.WORKSPAI_AGENT_TRACING = '1';",
+        "delete process.env.OTEL_SDK_DISABLED;",
+        "const { BasicTracerProvider } = await import('@opentelemetry/sdk-trace-base');",
+        "const { trace } = await import('@opentelemetry/api');",
+        "trace.setGlobalTracerProvider(new BasicTracerProvider());",
+        "const { tracingEnabled } = await import('./dist/src/tracing.js');",
+        "if (!tracingEnabled()) throw new Error('WORKSPAI_AGENT_TRACING=1 did not enable tracing');",
+        "if (process.env.OTEL_SDK_DISABLED === 'true') throw new Error('OTEL_SDK_DISABLED was set despite opt-in');",
+        "const span = trace.getTracer('workspai-conformance').startSpan('probe');",
+        "const recording = span.isRecording();",
+        "span.end();",
+        "if (!recording) throw new Error('opt-in process did not create a recording span');",
+        "process.stdout.write('WORKSPAI_AGENT_TELEMETRY_OPT_IN_OK\\\\n');",
+      ].join(''),
+    ],
+    {
+      cwd: agentRoot,
+      env: { ...baseEnv, WORKSPAI_AGENT_TRACING: '1' },
+      encoding: 'utf8',
+    }
+  );
+  assert.equal(opted.status, 0, opted.stderr + opted.stdout);
+  assert.match(opted.stdout, /WORKSPAI_AGENT_TELEMETRY_OPT_IN_OK/);
+});
+
 test('streaming delivers the first chunk before the model finishes', async () => {
   const contextPath = join(fixtureRoot, WORKSPAI_CONTEXT_PATH);
   await mkdir(dirname(contextPath), { recursive: true });
@@ -790,7 +908,7 @@ test('streaming delivers the first chunk before the model finishes', async () =>
       if (abortSignal?.aborted) {
         throw abortSignal.reason ?? new Error('aborted');
       }
-      yield { content: { role: 'model', parts: [{ text: 'STREAM_A' }] } };
+      yield { content: { role: 'model', parts: [{ text: 'STREAM_A' }] }, partial: true };
       await Promise.race([
         released,
         new Promise((_, reject) =>
@@ -801,7 +919,12 @@ test('streaming delivers the first chunk before the model finishes', async () =>
           )
         ),
       ]);
-      yield { content: { role: 'model', parts: [{ text: 'STREAM_B' }] } };
+      yield { content: { role: 'model', parts: [{ text: 'STREAM_B' }] }, partial: true };
+      yield {
+        content: { role: 'model', parts: [{ text: 'STREAM_ASTREAM_B' }] },
+        partial: false,
+        turnComplete: true,
+      };
     }
     connect(_llmRequest: LlmRequest): Promise<never> {
       return Promise.reject(new Error('Live connections are unsupported in this Workspai starter.'));
@@ -816,8 +939,178 @@ test('streaming delivers the first chunk before the model finishes', async () =>
       if (seen.join('').includes('STREAM_A')) release();
     },
   });
-  assert.match(seen.join(''), /STREAM_A/);
-  assert.match(output, /STREAM_B/);
+  assert.deepEqual(seen, ['STREAM_A', 'STREAM_B']);
+  assert.equal(output, 'STREAM_ASTREAM_B');
+});
+
+test('streaming semantics follow partial and final-response', async () => {
+  const contextPath = join(fixtureRoot, WORKSPAI_CONTEXT_PATH);
+  await mkdir(dirname(contextPath), { recursive: true });
+  await writeFile(
+    contextPath,
+    JSON.stringify({ schemaVersion: WORKSPAI_CONTEXT_SCHEMA_VERSION }),
+    'utf8'
+  );
+
+  class ScriptedStreamLlm extends BaseLlm {
+    constructor(private readonly steps: LlmResponse[]) {
+      super({ model: 'workspai-scripted' });
+    }
+    async *generateContentAsync(
+      _llmRequest: LlmRequest,
+      _stream?: boolean,
+      abortSignal?: AbortSignal
+    ): AsyncGenerator<LlmResponse, void> {
+      if (abortSignal?.aborted) {
+        throw abortSignal.reason ?? new Error('aborted');
+      }
+      for (const step of this.steps) {
+        yield step;
+      }
+    }
+    connect(_llmRequest: LlmRequest): Promise<never> {
+      return Promise.reject(new Error('Live connections are unsupported in this Workspai starter.'));
+    }
+  }
+
+  class ScriptedTurnLlm extends BaseLlm {
+    readonly calls: LlmRequest[] = [];
+    constructor(private readonly turns: LlmResponse[][]) {
+      super({ model: 'workspai-scripted' });
+    }
+    async *generateContentAsync(
+      llmRequest: LlmRequest,
+      _stream?: boolean,
+      abortSignal?: AbortSignal
+    ): AsyncGenerator<LlmResponse, void> {
+      if (abortSignal?.aborted) {
+        throw abortSignal.reason ?? new Error('aborted');
+      }
+      this.calls.push(llmRequest);
+      for (const step of this.turns[this.calls.length - 1] ?? []) {
+        yield step;
+      }
+    }
+    connect(_llmRequest: LlmRequest): Promise<never> {
+      return Promise.reject(new Error('Live connections are unsupported in this Workspai starter.'));
+    }
+  }
+
+  const part = (text: string, partial: boolean, turnComplete = false): LlmResponse => ({
+    content: { role: 'model', parts: [{ text }] },
+    partial,
+    turnComplete,
+  });
+
+  const runCase = async (steps: LlmResponse[]) => {
+    const seen: string[] = [];
+    const output = await runAdmittedAgent('stream', {
+      model: new ScriptedStreamLlm(steps),
+      streaming: true,
+      onText: (delta) => seen.push(delta),
+    });
+    return { seen, output };
+  };
+
+  let result = await runCase([
+    part('ha', true),
+    part('ha', true),
+    part('haha', false, true),
+  ]);
+  assert.deepEqual(result.seen, ['ha', 'ha']);
+  assert.equal(result.output, 'haha');
+
+  result = await runCase([
+    part('a', true),
+    part('abc', true),
+    part('aabc', false, true),
+  ]);
+  assert.deepEqual(result.seen, ['a', 'abc']);
+  assert.equal(result.output, 'aabc');
+
+  result = await runCase([
+    part('The weather', true),
+    part(' in Tokyo is', true),
+    part(' sunny.', true),
+    part('The weather in Tokyo is sunny.', false, true),
+  ]);
+  assert.deepEqual(result.seen, ['The weather', ' in Tokyo is', ' sunny.']);
+  assert.equal(result.output, 'The weather in Tokyo is sunny.');
+
+  result = await runCase([
+    part('a', true),
+    { content: { role: 'model', parts: [] }, partial: false },
+    part('b', true),
+    part('ab', false, true),
+  ]);
+  assert.deepEqual(result.seen, ['a', 'b']);
+  assert.equal(result.output, 'ab');
+
+  const streamEvent = (event: object) =>
+    event as Parameters<typeof observeAdmittedStreamEvent>[1];
+  const state = createAdmittedStreamState();
+  const observed: string[] = [];
+  for (const event of [
+    { content: { role: 'model', parts: [{ text: 'a' }] }, partial: true, actions: {} },
+    { content: { role: 'model', parts: [] }, partial: false, actions: {} },
+    { content: { role: 'model', parts: [{ text: 'b' }] }, partial: true, actions: {} },
+    {
+      content: { role: 'model', parts: [{ text: 'ab' }] },
+      partial: false,
+      actions: {},
+    },
+  ]) {
+    observeAdmittedStreamEvent(state, streamEvent(event), (delta) => observed.push(delta));
+  }
+  assert.deepEqual(observed, ['a', 'b']);
+  assert.equal(state.finalText || state.displayed.join(''), 'ab');
+
+  const toolState = createAdmittedStreamState();
+  const toolObserved: string[] = [];
+  for (const event of [
+    { content: { role: 'model', parts: [{ text: 'looking' }] }, partial: true, actions: {} },
+    {
+      content: {
+        role: 'model',
+        parts: [
+          {
+            text: 'should-not-display',
+            functionCall: { name: 'describe_workspai_context', args: {} },
+          },
+        ],
+      },
+      partial: false,
+      turnComplete: true,
+      actions: {},
+    },
+    { content: { role: 'model', parts: [{ text: 'done' }] }, partial: false, actions: {} },
+  ]) {
+    observeAdmittedStreamEvent(toolState, streamEvent(event), (delta) => toolObserved.push(delta));
+  }
+  assert.deepEqual(toolObserved, ['looking', 'done']);
+  assert.equal(toolState.finalText, 'done');
+
+  const toolSeen: string[] = [];
+  const toolOutput = await runAdmittedAgent('stream', {
+    model: new ScriptedTurnLlm([
+      [
+        part('looking', true),
+        {
+          content: {
+            role: 'model',
+            parts: [{ functionCall: { name: 'describe_workspai_context', args: {} } }],
+          },
+          partial: false,
+          turnComplete: true,
+        },
+      ],
+      [part('done', false, true)],
+    ]),
+    streaming: true,
+    onText: (delta) => toolSeen.push(delta),
+  });
+  assert.deepEqual(toolSeen, ['looking', 'done']);
+  assert.equal(toolOutput, 'done');
 });
 `
     ),
