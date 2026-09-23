@@ -683,6 +683,7 @@ async def main():
     )
     if collision_seen != ["a", "abc"] or collision != "aabc":
         raise SystemExit("prefix-collision streaming was incorrect")
+    print("WORKSPAI_AGENT_STREAMING_PARTIAL_OK")
 
     interleaved_seen = []
     interleaved = await run_admitted_agent(
@@ -749,6 +750,7 @@ async def main():
         _observe_stream_event(state, event, observed.append)
     if observed != ["a", "b"] or state.result() != "ab":
         raise SystemExit("observer metadata-interleaving was incorrect: " + repr(observed))
+    print("WORKSPAI_AGENT_STREAMING_METADATA_OK")
 
     tool_state = _StreamState()
     tool_observed = []
@@ -787,7 +789,7 @@ async def main():
     )
     if tool_seen != ["looking", "done"] or tool_output != "done":
         raise SystemExit("tool-boundary streaming was incorrect: " + repr(tool_seen))
-
+    print("WORKSPAI_AGENT_STREAMING_TOOL_BOUNDARY_OK")
     print("WORKSPAI_AGENT_STREAMING_OK")
 
 
@@ -860,6 +862,7 @@ if disabled.returncode != 0:
     raise SystemExit(disabled.stderr + disabled.stdout)
 if "WORKSPAI_AGENT_TELEMETRY_DISABLED_OK" not in disabled.stdout:
     raise SystemExit("disabled telemetry process did not report success")
+sys.stdout.write(disabled.stdout)
 
 opted = subprocess.run(
     [sys.executable, "-c", OPT_IN],
@@ -873,7 +876,7 @@ if opted.returncode != 0:
     raise SystemExit(opted.stderr + opted.stdout)
 if "WORKSPAI_AGENT_TELEMETRY_OPT_IN_OK" not in opted.stdout:
     raise SystemExit("opt-in telemetry process did not report success")
-
+sys.stdout.write(opted.stdout)
 print("WORKSPAI_AGENT_TELEMETRY_OK")
 `;
 }
@@ -990,6 +993,7 @@ const collision = await runAdmittedAgent('collision', {
 if (JSON.stringify(collisionSeen) !== JSON.stringify(['a', 'abc']) || collision !== 'aabc') {
   throw new Error('prefix-collision streaming was incorrect');
 }
+process.stdout.write('WORKSPAI_AGENT_STREAMING_PARTIAL_OK\\n');
 
 const interleavedSeen = [];
 const interleaved = await runAdmittedAgent('interleave', {
@@ -1019,6 +1023,7 @@ for (const event of [
 if (JSON.stringify(observed) !== JSON.stringify(['a', 'b']) || (state.finalText || state.displayed.join('')) !== 'ab') {
   throw new Error('observer metadata-interleaving was incorrect: ' + JSON.stringify(observed));
 }
+process.stdout.write('WORKSPAI_AGENT_STREAMING_METADATA_OK\\n');
 
 const toolState = createAdmittedStreamState();
 const toolObserved = [];
@@ -1063,7 +1068,7 @@ const toolOutput = await runAdmittedAgent('tools', {
 if (JSON.stringify(toolSeen) !== JSON.stringify(['looking', 'done']) || toolOutput !== 'done') {
   throw new Error('tool-boundary streaming was incorrect: ' + JSON.stringify(toolSeen));
 }
-
+process.stdout.write('WORKSPAI_AGENT_STREAMING_TOOL_BOUNDARY_OK\\n');
 process.stdout.write('WORKSPAI_AGENT_STREAMING_OK\\n');
 `;
 }
@@ -1102,6 +1107,7 @@ if (disabled.status !== 0) {
 if (!String(disabled.stdout).includes('WORKSPAI_AGENT_TELEMETRY_DISABLED_OK')) {
   throw new Error('disabled telemetry process did not report success');
 }
+process.stdout.write(String(disabled.stdout));
 
 const optInEnv = Object.assign({}, baseEnv, { WORKSPAI_AGENT_TRACING: '1' });
 const opted = spawnSync(
@@ -1133,7 +1139,7 @@ if (opted.status !== 0) {
 if (!String(opted.stdout).includes('WORKSPAI_AGENT_TELEMETRY_OPT_IN_OK')) {
   throw new Error('opt-in telemetry process did not report success');
 }
-
+process.stdout.write(String(opted.stdout));
 process.stdout.write('WORKSPAI_AGENT_TELEMETRY_OK\\n');
 `;
 }
@@ -1159,6 +1165,76 @@ function selectedReportDirectory(): string {
 
 function assertCondition(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
+}
+
+type StreamingTelemetryEvidence = {
+  streamingPartialSemantics: boolean;
+  streamingMetadataInterleaving: boolean;
+  streamingToolBoundary: boolean;
+  telemetryDefaultNonRecording: boolean;
+  telemetryOptInRecording: boolean;
+};
+
+function readMarker(stdout: string, marker: string): boolean {
+  return stdout.includes(marker);
+}
+
+function requireStreamingEvidence(
+  stdout: string,
+  runtimeLabel: string
+): {
+  streamingPartialSemantics: boolean;
+  streamingMetadataInterleaving: boolean;
+  streamingToolBoundary: boolean;
+} {
+  const streamingPartialSemantics = readMarker(stdout, 'WORKSPAI_AGENT_STREAMING_PARTIAL_OK');
+  const streamingMetadataInterleaving = readMarker(stdout, 'WORKSPAI_AGENT_STREAMING_METADATA_OK');
+  const streamingToolBoundary = readMarker(stdout, 'WORKSPAI_AGENT_STREAMING_TOOL_BOUNDARY_OK');
+  assertCondition(
+    streamingPartialSemantics,
+    `${runtimeLabel} streaming partial semantics were not recorded.`
+  );
+  assertCondition(
+    streamingMetadataInterleaving,
+    `${runtimeLabel} metadata-interleaved streaming was not recorded.`
+  );
+  assertCondition(
+    streamingToolBoundary,
+    `${runtimeLabel} tool-boundary streaming was not recorded.`
+  );
+  assertCondition(
+    readMarker(stdout, 'WORKSPAI_AGENT_STREAMING_OK'),
+    `${runtimeLabel} streaming did not deliver the first chunk before the model finished.`
+  );
+  return {
+    streamingPartialSemantics,
+    streamingMetadataInterleaving,
+    streamingToolBoundary,
+  };
+}
+
+function requireTelemetryEvidence(
+  stdout: string,
+  runtimeLabel: string
+): {
+  telemetryDefaultNonRecording: boolean;
+  telemetryOptInRecording: boolean;
+} {
+  const telemetryDefaultNonRecording = readMarker(stdout, 'WORKSPAI_AGENT_TELEMETRY_DISABLED_OK');
+  const telemetryOptInRecording = readMarker(stdout, 'WORKSPAI_AGENT_TELEMETRY_OPT_IN_OK');
+  assertCondition(
+    telemetryDefaultNonRecording,
+    `${runtimeLabel} telemetry default-disabled non-recording span was not recorded.`
+  );
+  assertCondition(
+    telemetryOptInRecording,
+    `${runtimeLabel} telemetry opt-in recording span was not recorded.`
+  );
+  assertCondition(
+    readMarker(stdout, 'WORKSPAI_AGENT_TELEMETRY_OK'),
+    `${runtimeLabel} isolated-process telemetry evidence was incomplete.`
+  );
+  return { telemetryDefaultNonRecording, telemetryOptInRecording };
 }
 
 function contained(root: string, candidate: string): boolean {
@@ -1389,8 +1465,13 @@ async function main(): Promise<void> {
   const checks: Check[] = [];
   let runtimeVersion = 'unavailable';
   let installedFrameworkPackages: Record<string, string> = {};
-  let streamingObserved = false;
-  let telemetryObserved = false;
+  let streamingEvidence: StreamingTelemetryEvidence = {
+    streamingPartialSemantics: false,
+    streamingMetadataInterleaving: false,
+    streamingToolBoundary: false,
+    telemetryDefaultNonRecording: false,
+    telemetryOptInRecording: false,
+  };
 
   const record = async (
     id: AgentFrameworkConformanceCheckId,
@@ -1915,11 +1996,8 @@ async function main(): Promise<void> {
           ['run', '--project', '.', 'python', streamingHarness],
           agentRoot
         );
-        assertCondition(
-          streamed.stdout.includes('WORKSPAI_AGENT_STREAMING_OK'),
-          'Python streaming did not deliver the first chunk before the model finished.'
-        );
-        streamingObserved = true;
+        const streamedEvidence = requireStreamingEvidence(streamed.stdout, 'Python');
+        streamingEvidence = { ...streamingEvidence, ...streamedEvidence };
         const telemetryHarness = path.join(agentRoot, 'credentialless-agent-telemetry.py');
         await fs.writeFile(telemetryHarness, pythonTelemetryHarness(), 'utf8');
         const telemetry = await run(
@@ -1927,11 +2005,8 @@ async function main(): Promise<void> {
           ['run', '--project', '.', 'python', telemetryHarness],
           agentRoot
         );
-        assertCondition(
-          telemetry.stdout.includes('WORKSPAI_AGENT_TELEMETRY_OK'),
-          'Python telemetry default-disabled behavior was not observed.'
-        );
-        telemetryObserved = true;
+        const telemetryFlags = requireTelemetryEvidence(telemetry.stdout, 'Python');
+        streamingEvidence = { ...streamingEvidence, ...telemetryFlags };
         const venvRoot = path.join(isolatedRoot, 'pip-venv');
         const bootstrapPython = process.platform === 'win32' ? 'python' : 'python3';
         await run(bootstrapPython, ['-m', 'venv', venvRoot], generatedRoot);
@@ -2063,19 +2138,13 @@ async function main(): Promise<void> {
         const streamingHarness = path.join(agentRoot, 'credentialless-agent-streaming.mjs');
         await fs.writeFile(streamingHarness, typeScriptStreamingHarness(), 'utf8');
         const streamed = await run(process.execPath, [streamingHarness], agentRoot);
-        assertCondition(
-          streamed.stdout.includes('WORKSPAI_AGENT_STREAMING_OK'),
-          'TypeScript streaming did not deliver the first chunk before the model finished.'
-        );
-        streamingObserved = true;
+        const streamedEvidence = requireStreamingEvidence(streamed.stdout, 'TypeScript');
+        streamingEvidence = { ...streamingEvidence, ...streamedEvidence };
         const telemetryHarness = path.join(agentRoot, 'credentialless-agent-telemetry.mjs');
         await fs.writeFile(telemetryHarness, typeScriptTelemetryHarness(), 'utf8');
         const telemetry = await run(process.execPath, [telemetryHarness], agentRoot);
-        assertCondition(
-          telemetry.stdout.includes('WORKSPAI_AGENT_TELEMETRY_OK'),
-          'TypeScript telemetry default-disabled behavior was not observed.'
-        );
-        telemetryObserved = true;
+        const telemetryFlags = requireTelemetryEvidence(telemetry.stdout, 'TypeScript');
+        streamingEvidence = { ...streamingEvidence, ...telemetryFlags };
         const modelErrorHarness = path.join(agentRoot, 'credentialless-agent-model-error.mjs');
         await fs.writeFile(modelErrorHarness, typeScriptModelErrorHarness(), 'utf8');
         const modelError = await run(process.execPath, [modelErrorHarness], agentRoot);
@@ -2121,8 +2190,11 @@ async function main(): Promise<void> {
           contextObserved: true,
           responseMarker: LIFECYCLE_RESPONSE_MARKER,
         },
-        streamingHandshake: streamingObserved,
-        telemetryDefaultDisabled: telemetryObserved,
+        streamingPartialSemantics: streamingEvidence.streamingPartialSemantics,
+        streamingMetadataInterleaving: streamingEvidence.streamingMetadataInterleaving,
+        streamingToolBoundary: streamingEvidence.streamingToolBoundary,
+        telemetryDefaultNonRecording: streamingEvidence.telemetryDefaultNonRecording,
+        telemetryOptInRecording: streamingEvidence.telemetryOptInRecording,
       };
     });
 
@@ -2172,15 +2244,23 @@ async function main(): Promise<void> {
         adapter.manifest.security.generatedCodeExecution === 'disabled-unless-explicitly-granted',
         'Generated code execution is not deny-first.'
       );
-      assertCondition(streamingObserved, 'Streaming handshake was not observed.');
-      assertCondition(telemetryObserved, 'Disabled-by-default telemetry was not observed.');
+      assertCondition(
+        streamingEvidence.streamingPartialSemantics &&
+          streamingEvidence.streamingMetadataInterleaving &&
+          streamingEvidence.streamingToolBoundary,
+        'Streaming handshake was not observed.'
+      );
+      assertCondition(
+        streamingEvidence.telemetryDefaultNonRecording && streamingEvidence.telemetryOptInRecording,
+        'Disabled-by-default telemetry was not observed.'
+      );
       return {
         networkDefault: adapter.manifest.security.network,
         generatedCodeExecutionDefault: adapter.manifest.security.generatedCodeExecution,
         planningAndRenderingRequireRuntimeExecution: false,
         runtimeVerificationNetworkWasExplicitlyGrantedByCiLane: true,
-        tracingDisabledUnlessOptedIn: telemetryObserved,
-        firstStreamChunkBeforeRunCompleted: streamingObserved,
+        tracingDisabledUnlessOptedIn: streamingEvidence.telemetryDefaultNonRecording,
+        firstStreamChunkBeforeRunCompleted: streamingEvidence.streamingPartialSemantics,
       };
     });
 

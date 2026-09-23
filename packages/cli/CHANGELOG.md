@@ -37,7 +37,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   Starters consume the shared `agent-frameworks/context-loaders` sources
   instead of OpenAI-owned copies. `OTEL_SDK_DISABLED` is process-global;
   generated starters are isolated CLI processes. Conformance path filters now
-  include Create, Doctor, and planner contract surfaces.
+  include Create, Doctor, and planner contract surfaces. Linux credentialless
+  evidence records `streamingPartialSemantics`, `streamingMetadataInterleaving`,
+  `streamingToolBoundary`, `telemetryDefaultNonRecording`, and
+  `telemetryOptInRecording` as distinct verification-binding fields.
+- Align the CLI bundle-size metrics gate with the existing 10000 KB limit
+  already set on the graph worktree. This ADK branch still inherited the stale
+  3000 KB `origin/main` value, which is why Linux metrics failed at 3068 KB.
 
 ## [0.77.0] - 2026-09-21
 

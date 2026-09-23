@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
@@ -65,7 +66,7 @@ function assertCompleteManifest(manifest: AgentFrameworkAdapterManifest) {
 }
 
 describe('Google ADK adapters', () => {
-  it('declares independent Python and TypeScript adapter manifests', () => {
+  it('declares independent Python and TypeScript adapter manifests', async () => {
     assertCompleteManifest(googleAdkPythonAdapter.manifest);
     assertCompleteManifest(googleAdkTypeScriptAdapter.manifest);
     expect(googleAdkPythonAdapter.manifest.adapter.id).toBe('google-adk-python');
@@ -117,6 +118,15 @@ describe('Google ADK adapters', () => {
     expect(
       googleAdkPythonAdapter.manifest.capabilities['single-agent']?.limitations.join(' ')
     ).not.toMatch(/graph Workflow Runtime is part/i);
+    const smoke = await fs.readFile(
+      fileURLToPath(new URL('../../scripts/smoke-google-adk-adapter.ts', import.meta.url)),
+      'utf8'
+    );
+    expect(smoke).toContain('streamingPartialSemantics');
+    expect(smoke).toContain('streamingMetadataInterleaving');
+    expect(smoke).toContain('streamingToolBoundary');
+    expect(smoke).toContain('telemetryDefaultNonRecording');
+    expect(smoke).toContain('telemetryOptInRecording');
   });
 
   it('detects authored google-adk PyPI evidence and ignores unrelated packages', async () => {

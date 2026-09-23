@@ -290,7 +290,10 @@ an explicit release-qualification operation: it compiles every built-in adapter 
 macOS, and Windows. Every full-qualification lane
 records all 18 mandatory checks, the exact runtime and framework baseline,
 digests of the adapter manifest and semantic implementation, and one bounded
-evidence file per check. Reports are retained as CI artifacts for review. A
+evidence file per check. Google ADK `verification-binding` evidence records
+`streamingPartialSemantics`, `streamingMetadataInterleaving`,
+`streamingToolBoundary`, `telemetryDefaultNonRecording`, and
+`telemetryOptInRecording` as distinct booleans. Reports are retained as CI artifacts for review. A
 final job validates every evidence path and emits an admission candidate only
 when all three operating-system lanes pass for every built-in adapter.
 Python conformance is pinned to 3.10.11, the final Python 3.10 release with
