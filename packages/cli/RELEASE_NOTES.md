@@ -5,6 +5,45 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
+## v0.78.0 (September 23, 2026)
+
+### Release-admitted Google ADK agents for Python and TypeScript
+
+Workspai 0.78.0 adds preview Google ADK starters whose exact Python and
+TypeScript baselines passed the complete Linux, macOS, and Windows
+qualification matrix and entered the reviewed v2 release inventory.
+
+**What's New:**
+
+- Enable `agent.google-adk.python` with `google-adk` `2.9.2` and
+  `agent.google-adk.typescript` with `@google/adk` `2.1.0` for governed Create
+  and Attach.
+- Keep Gemini Developer API and Vertex AI as explicit provider profiles while
+  Google ADK remains the framework identity.
+- Stream official ADK partial events without losing repeated fragments or
+  appending the canonical final response twice.
+- Keep telemetry off by default and verify recording only in a separately
+  opted-in process.
+- Bind packaged CLI availability to the same exact six-adapter reviewed
+  inventory used by source execution.
+
+**Compatibility:** Existing commands and schema versions remain supported.
+Google ADK remains `preview`; OpenAI Agents SDK remains `stable`; Microsoft
+Agent Framework remains `preview`; OpenRouter gateways remain source-ready.
+
+**Publication status:** Released September 23, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.78.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.78.0/packages/cli/releases/RELEASE_NOTES_v0.78.0.md)
+
+---
+
 ## v0.77.0 (September 21, 2026)
 
 ### Source-ready OpenRouter AI Gateway kits

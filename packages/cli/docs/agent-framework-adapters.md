@@ -260,15 +260,16 @@ same baseline document. `@google/adk-devtools` is not a v1 dependency. Do not
 run unqualified `npx adk`.
 
 Adapters are labeled `preview`. Create kits are `agent.google-adk.python` and
-`agent.google-adk.typescript`. Create and Attach stay fail-closed until the
-reviewed v2 inventory includes these adapters from Linux, macOS, and Windows
-evidence. Create refuses unpublished kits before `--dry-run` and before any
-filesystem or workspace mutation. Streaming emits \`event.partial\` fragments as
+`agent.google-adk.typescript`. The reviewed v2 inventory admits both exact
+baselines from Linux, macOS, and Windows evidence, so Create and Attach are
+enabled. The generic admission boundary still refuses any unpublished or
+drifted kit before `--dry-run` and before filesystem or workspace mutation.
+Streaming emits `event.partial` fragments as
 display deltas. The SDK-recognized final response is retained as canonical text
 and is not re-emitted after streamed fragments. Intermediate metadata does not
 close the fragment window; tool-call and function-response events do. Telemetry
-stays off unless \`WORKSPAI_AGENT_TRACING=1\` is set from process startup;
-otherwise the starter sets \`OTEL_SDK_DISABLED=true\` before importing ADK. That
+stays off unless `WORKSPAI_AGENT_TRACING=1` is set from process startup;
+otherwise the starter sets `OTEL_SDK_DISABLED=true` before importing ADK. That
 env var is process-global, so the generated starter is an isolated CLI process
 and must not be imported into a host that still needs OpenTelemetry.
 Credentialless conformance observes a non-recording span in a process without
@@ -341,8 +342,8 @@ npx workspai agent framework plan \
 When more than one published framework shares a runtime, pass `--framework`
 explicitly. Workspai does not guess or fall back. `--runtime python` without
 `--framework` requires an explicit choice because Microsoft Agent Framework,
-OpenAI Agents SDK, and Google ADK are all published. Google ADK remains
-Create/Attach blocked until release admission.
+OpenAI Agents SDK, and Google ADK are all published and release-admitted at
+their exact reviewed baselines.
 
 The interactive attach command displays the same plan and asks before granting
 its filesystem effect. Automation must opt in with `--yes` and records the
@@ -449,12 +450,12 @@ and unadvertised runtimes fail closed.
 
 The generic boundary was hardened against two deliberately different
 integration shapes: a filesystem-first Node.js framework and the
-multi-language Microsoft Agent Framework. OpenAI Agents SDK Python and
-TypeScript adapters now share that same create, attach, detection, ownership,
-and verification host. They are selectable for Create and Attach only after
-their exact manifest digest, framework baseline, runtime, and platform list
-enter the reviewed release-admission inventory. Microsoft adapters remain
-selectable while their current inventory entries stay valid.
+multi-language Microsoft Agent Framework. OpenAI Agents SDK and Google ADK
+Python and TypeScript adapters share that same create, attach, detection,
+ownership, and verification host. They are selectable for Create and Attach
+only while their exact manifest digest, framework baseline, runtime, and
+platform list remain in the reviewed release-admission inventory. Microsoft
+adapters remain selectable while their current inventory entries stay valid.
 
 ## Implementation sequence
 
@@ -463,8 +464,9 @@ selectable while their current inventory entries stay valid.
 2. Use the framework-neutral registry, detector, and bounded manifest loader.
 3. Review the Microsoft Python and .NET digest-bound evidence produced by the
    full conformance matrix.
-4. Review the OpenAI Python and TypeScript digest-bound evidence produced by
-   the same matrix; do not treat local Linux success as multi-OS admission.
+4. Review the OpenAI and Google Python and TypeScript digest-bound evidence
+   produced by the same matrix; do not treat local Linux success as multi-OS
+   admission.
 5. Keep automated upstream discovery separate from release authority: report
    newer registry versions, then update pins only through a reviewed change.
    Re-run the full matrix before treating a new pin as independently proven.

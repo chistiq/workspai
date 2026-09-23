@@ -397,8 +397,8 @@ project metadata and performs the selected workspace registration.
 | `agent.microsoft.dotnet` | .NET    | `Microsoft.Agents.AI` `1.21.0`, Foundry `1.21.0-preview.260911.1` | Isolated `agents/<instance>/` with the executable project plus a dedicated test project |
 | `agent.openai.python` | Python | `openai-agents` `0.22.2` | Isolated `agents/<instance>/` with pip-editable `pyproject.toml`, credentialless `unittest`, and `.env.example` |
 | `agent.openai.typescript` | Node.js | `@openai/agents` `0.18.0`, `zod` `4.6.5` | Isolated `agents/<instance>/` with `package.json`, credentialless `node:test`, and `.env.example` |
-| `agent.google-adk.python` | Python | Pin from `version-baselines.v1.json` (`google-adk`) | Isolated `agents/<instance>/` with pip-editable `pyproject.toml`, credentialless `unittest`, provider profiles `gemini-api` / `vertex-ai`. Preview; Create refuses the kit before dry-run and filesystem mutation until release admission. |
-| `agent.google-adk.typescript` | Node.js | Pin from `version-baselines.v1.json` (`@google/adk`) | Isolated `agents/<instance>/` with `package.json`, credentialless `node:test`, provider profiles `gemini-api` / `vertex-ai`. Preview; Create refuses the kit before dry-run and filesystem mutation until release admission. Independent from the Python runtime. |
+| `agent.google-adk.python` | Python | `google-adk` `2.9.2` | Isolated `agents/<instance>/` with pip-editable `pyproject.toml`, credentialless `unittest`, and provider profiles `gemini-api` / `vertex-ai`. Preview and release-admitted. |
+| `agent.google-adk.typescript` | Node.js | `@google/adk` `2.1.0`, `zod` `4.6.5` | Isolated `agents/<instance>/` with `package.json`, credentialless `node:test`, and provider profiles `gemini-api` / `vertex-ai`. Preview, release-admitted, and independent from the Python runtime. |
 
 Interactive `workspai create` shows these kits under **AI Agent** after
 reviewed release admission. Agent kits require Workspace governance and therefore do not

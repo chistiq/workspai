@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.78.0] - 2026-09-23
+
 ### Added
 
 - Implemented Google Agent Development Kit adapters for Python (`google-adk`)
@@ -15,17 +17,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `agent.google-adk.typescript`. Adapters are labeled `preview`. Gemini
   Developer API (`gemini-api`) and Vertex AI (`vertex-ai`) are provider
   profiles, not gateway kits. OpenRouter remains a separate Gateway category.
-  Create and Attach stay fail-closed until the reviewed v2 inventory is
-  promoted from Linux, macOS, and Windows evidence for this SHA. Sequential,
-  parallel, loop, graph Workflow Runtime, A2A, MCP, Agent Engine, and hosted
-  Google tools stay unsupported.
+  The reviewed v2 release inventory now admits both adapters from the complete
+  Linux, macOS, and Windows qualification matrix. Sequential, parallel, loop,
+  graph Workflow Runtime, A2A, MCP, Agent Engine, and hosted Google tools stay
+  unsupported.
 
 ### Changed
 
-- Agent Framework Create now refuses kits that are not in the reviewed v2
-  admission inventory before `--dry-run` and before any project or workspace
-  filesystem mutation. Unpublished Google ADK kits show
-  `preview · awaiting release admission` in the kit picker and create help.
+- Agent Framework Create refuses any kit that is absent from the reviewed v2
+  admission inventory before `--dry-run` and before project or workspace
+  filesystem mutation. The admitted Google ADK kits remain labeled `preview`
+  while Create and Attach are enabled for their exact reviewed baselines.
 - Google ADK starters emit `event.partial` fragments as display deltas and
   keep the SDK-recognized final response as canonical streamed text without
   re-emitting it after fragments. Intermediate metadata does not reset the
@@ -44,6 +46,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Align the CLI bundle-size metrics gate with the existing 10000 KB limit
   already set on the graph worktree. This ADK branch still inherited the stale
   3000 KB `origin/main` value, which is why Linux metrics failed at 3068 KB.
+
+### Fixed
+
+- Require the packed enterprise CLI to expose the exact six-adapter release
+  inventory, including Google ADK Python and TypeScript, so package smoke
+  verifies the same admission state as source execution.
+- Allow the generated OpenRouter TypeScript starter install enough time for a
+  cold registry cache without weakening install or credentialless verification
+  failures.
 
 ## [0.77.0] - 2026-09-21
 
