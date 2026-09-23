@@ -15,7 +15,7 @@ import {
 import { detectAgentFramework } from '../../detection.js';
 import { PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH } from '../../../utils/workspace-paths.js';
 import { microsoftAgentFrameworkManifest } from './common.js';
-import { WORKSPAI_CONTEXT_SCHEMA_VERSION } from '../openai-agents/typescript-context-source.js';
+import { WORKSPAI_CONTEXT_SCHEMA_VERSION } from '../../context-loaders/typescript.js';
 import { MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE, packageVersion } from '../../version-policy.js';
 
 const FOUNDRY_PACKAGE_VERSION = packageVersion(

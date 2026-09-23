@@ -84,6 +84,12 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
     expect(runSpy).not.toHaveBeenCalled();
     const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join('\n');
     expect(output).toContain('Usage: npx workspai create project');
+    expect(output).toContain(
+      'agent.google-adk.python Google Agent Development Kit · Python (preview · awaiting release admission)'
+    );
+    expect(output).toContain(
+      'agent.google-adk.typescript Google Agent Development Kit · TypeScript (preview · awaiting release admission)'
+    );
     expect(output).not.toContain('Usage: rapidkit create project');
   });
 
@@ -158,7 +164,25 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
     const workspacePath = path.join(tmpDir, 'agent-workspace');
     process.chdir(workspacePath);
     const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const snapshotWorkspace = async () =>
+      (await fsExtra.readdir(path.join(workspacePath, '.workspai'), { recursive: true })).sort();
+    const beforeWorkspace = await snapshotWorkspace();
 
+    const dryRun = await index.handleCreateOrFallback([
+      'create',
+      'project',
+      'agent.google-adk.python',
+      'google-python-agent',
+      '--dry-run',
+    ]);
+    expect(dryRun).toBe(1);
+    expect(await fsExtra.pathExists(path.join(workspacePath, 'google-python-agent'))).toBe(false);
+    expect(await snapshotWorkspace()).toEqual(beforeWorkspace);
+    expect(stderrSpy.mock.calls.map((call) => String(call[0])).join('')).toMatch(
+      /not release-admitted/i
+    );
+
+    stderrSpy.mockClear();
     const code = await index.handleCreateOrFallback([
       'create',
       'project',
@@ -170,6 +194,7 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
 
     expect(code).toBe(1);
     expect(await fsExtra.pathExists(path.join(workspacePath, 'google-python-agent'))).toBe(false);
+    expect(await snapshotWorkspace()).toEqual(beforeWorkspace);
     expect(stderrSpy.mock.calls.map((call) => String(call[0])).join('')).toMatch(
       /not release-admitted/i
     );

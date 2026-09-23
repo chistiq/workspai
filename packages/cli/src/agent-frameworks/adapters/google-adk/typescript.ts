@@ -13,7 +13,7 @@ import {
   type AgentFrameworkRenderResult,
 } from '../../adapter.js';
 import { detectAgentFramework } from '../../detection.js';
-import { openaiAgentsTypeScriptContextSource } from '../openai-agents/typescript-context-source.js';
+import { agentFrameworkTypeScriptContextSource } from '../../context-loaders/typescript.js';
 import { GOOGLE_ADK_TYPESCRIPT_BASELINE, packageVersion } from '../../version-policy.js';
 import {
   GOOGLE_ADK_REQUIRED_ENVIRONMENT,
@@ -61,6 +61,7 @@ function pathsFor(instanceName: string) {
     root: `agents/${slug}`,
     entrypoint: `agents/${slug}/src/main.ts`,
     context: `agents/${slug}/src/workspai-context.ts`,
+    tracing: `agents/${slug}/src/tracing.ts`,
     agent: `agents/${slug}/src/agent.ts`,
     dependencyManifest: `agents/${slug}/package.json`,
     tsconfig: `agents/${slug}/tsconfig.json`,
@@ -92,11 +93,25 @@ function attachBlockers(
 function renderTypeScriptFiles(input: AgentFrameworkAdapterInput) {
   const target = pathsFor(input.instanceName);
   return [
-    managedFile(target.context, openaiAgentsTypeScriptContextSource()),
+    managedFile(target.context, agentFrameworkTypeScriptContextSource()),
+    managedFile(
+      target.tracing,
+      `// Generated and managed by Workspai. Do not place secrets in this file.
+
+export function tracingEnabled(): boolean {
+  return process.env.WORKSPAI_AGENT_TRACING === '1';
+}
+
+if (!tracingEnabled()) {
+  process.env.OTEL_SDK_DISABLED ??= 'true';
+}
+`
+    ),
     managedFile(
       target.agent,
       `// Generated and managed by Workspai. Do not place secrets in this file.
 
+import { tracingEnabled } from './tracing.js';
 import {
   FunctionTool,
   InMemorySessionService,
@@ -116,6 +131,7 @@ import {
   redactSecretShapedValues,
 } from './workspai-context.js';
 
+export { tracingEnabled };
 export const MAX_LLM_CALLS = 8;
 export const RUN_TIMEOUT_MS = 30_000;
 export const PROVIDER_GEMINI = 'gemini-api';
@@ -276,6 +292,7 @@ export async function runAdmittedAgent(
     streaming?: boolean;
     maxLlmCalls?: number;
     signal?: AbortSignal;
+    onText?: (delta: string) => void;
   }
 ): Promise<string> {
   requireNode2019();
@@ -305,7 +322,7 @@ export async function runAdmittedAgent(
     maxLlmCalls: options?.maxLlmCalls ?? MAX_LLM_CALLS,
   };
   const abortSignal = options?.signal ?? AbortSignal.timeout(RUN_TIMEOUT_MS);
-  const chunks: string[] = [];
+  let last = '';
   for await (const event of runner.runAsync({
     userId: session.userId,
     sessionId: session.id,
@@ -313,22 +330,29 @@ export async function runAdmittedAgent(
     runConfig,
     abortSignal,
   })) {
+    throwIfAborted(abortSignal);
     const failed = eventFailure(event);
     if (failed) {
       throw new Error(redactSdkError(failed));
     }
     const text = eventText(event);
-    if (text) chunks.push(text);
+    if (!text) continue;
+    const delta = text.startsWith(last) ? text.slice(last.length) : text;
+    last = text.startsWith(last) ? text : last + text;
+    if (delta) options?.onText?.(delta);
   }
   throwIfAborted(abortSignal);
-  return chunks.join('');
+  return last;
 }
 
 export { readUserPrompt };
 
+function writeStdoutDelta(delta: string): void {
+  process.stdout.write(delta);
+}
+
 export async function streamAdmittedAgent(prompt: string): Promise<void> {
-  const output = await runAdmittedAgent(prompt, { streaming: true });
-  process.stdout.write(output);
+  await runAdmittedAgent(prompt, { streaming: true, onText: writeStdoutDelta });
   process.stdout.write('\\n');
 }
 `
@@ -337,6 +361,7 @@ export async function streamAdmittedAgent(prompt: string): Promise<void> {
       target.entrypoint,
       `// Generated and managed by Workspai. Do not place secrets in this file.
 
+import './tracing.js';
 import { readUserPrompt, redactSdkError, streamAdmittedAgent } from './agent.js';
 
 async function main(): Promise<void> {
@@ -636,6 +661,7 @@ before(async () => {
     'GOOGLE_CLOUD_PROJECT',
     'GOOGLE_CLOUD_LOCATION',
     'NEXT_PUBLIC_GOOGLE_API_KEY',
+    'WORKSPAI_AGENT_TRACING',
   ]) {
     delete process.env[key];
   }
@@ -729,6 +755,69 @@ test('in-memory session continues for the same session id', async () => {
   assert.equal(first, 'TURN_1');
   assert.equal(second, 'TURN_2');
   assert.equal(model.calls.length, 2);
+});
+
+test('tracing is disabled unless opted in', async () => {
+  const { tracingEnabled } = await import('../src/tracing.js');
+  assert.equal(tracingEnabled(), false);
+  assert.equal(process.env.OTEL_SDK_DISABLED, 'true');
+  process.env.WORKSPAI_AGENT_TRACING = '1';
+  assert.equal(tracingEnabled(), true);
+  delete process.env.WORKSPAI_AGENT_TRACING;
+});
+
+test('streaming delivers the first chunk before the model finishes', async () => {
+  const contextPath = join(fixtureRoot, WORKSPAI_CONTEXT_PATH);
+  await mkdir(dirname(contextPath), { recursive: true });
+  await writeFile(
+    contextPath,
+    JSON.stringify({ schemaVersion: WORKSPAI_CONTEXT_SCHEMA_VERSION }),
+    'utf8'
+  );
+  let release: () => void = () => undefined;
+  const released = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  class HandshakeLlm extends BaseLlm {
+    constructor() {
+      super({ model: 'workspai-scripted' });
+    }
+    async *generateContentAsync(
+      _llmRequest: LlmRequest,
+      _stream?: boolean,
+      abortSignal?: AbortSignal
+    ): AsyncGenerator<LlmResponse, void> {
+      if (abortSignal?.aborted) {
+        throw abortSignal.reason ?? new Error('aborted');
+      }
+      yield { content: { role: 'model', parts: [{ text: 'STREAM_A' }] } };
+      await Promise.race([
+        released,
+        new Promise((_, reject) =>
+          setTimeout(
+            () =>
+              reject(new Error('first stream chunk was not delivered before the model finished')),
+            2000
+          )
+        ),
+      ]);
+      yield { content: { role: 'model', parts: [{ text: 'STREAM_B' }] } };
+    }
+    connect(_llmRequest: LlmRequest): Promise<never> {
+      return Promise.reject(new Error('Live connections are unsupported in this Workspai starter.'));
+    }
+  }
+  const seen: string[] = [];
+  const output = await runAdmittedAgent('stream', {
+    model: new HandshakeLlm(),
+    streaming: true,
+    onText: (delta) => {
+      seen.push(delta);
+      if (seen.join('').includes('STREAM_A')) release();
+    },
+  });
+  assert.match(seen.join(''), /STREAM_A/);
+  assert.match(output, /STREAM_B/);
 });
 `
     ),

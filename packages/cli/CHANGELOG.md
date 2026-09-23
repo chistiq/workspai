@@ -20,6 +20,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   parallel, loop, graph Workflow Runtime, A2A, MCP, Agent Engine, and hosted
   Google tools stay unsupported.
 
+### Changed
+
+- Agent Framework Create now refuses kits that are not in the reviewed v2
+  admission inventory before `--dry-run` and before any project or workspace
+  filesystem mutation. Unpublished Google ADK kits show
+  `preview · awaiting release admission` in the kit picker and create help.
+- Google ADK starters write each streaming text delta as the SDK yields it,
+  disable OpenTelemetry unless `WORKSPAI_AGENT_TRACING=1`, and consume the
+  shared `agent-frameworks/context-loaders` sources instead of OpenAI-owned
+  copies. Conformance path filters now include Create, Doctor, and planner
+  contract surfaces.
+
 ## [0.77.0] - 2026-09-21
 
 ### Added

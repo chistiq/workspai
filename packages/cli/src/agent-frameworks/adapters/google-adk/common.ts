@@ -78,7 +78,7 @@ export function googleAdkCapabilities(
                     `Google ADK ${language} starter implements ${id} with the pinned SDK APIs and credentialless conformance.`,
                   ]
                 : [
-                    `Google ADK ${language} includes OpenTelemetry packages; the Workspai starter does not opt into exported traces unless WORKSPAI_AGENT_TRACING=1.`,
+                    `Google ADK ${language} sets OTEL_SDK_DISABLED=true unless WORKSPAI_AGENT_TRACING=1, before the ADK SDK is imported. Credentialless runs keep tracing unset.`,
                   ],
           prerequisites:
             id === 'telemetry'
@@ -102,10 +102,10 @@ export function googleAdkCapabilities(
                   ...(id === 'streaming'
                     ? language === 'python'
                       ? [
-                          'Python streaming is SSE text via RunConfig. Bidirectional live/voice streaming is unsupported.',
+                          'Python streaming writes each text delta to stdout as Runner.run_async yields it. Bidirectional live/voice streaming is unsupported.',
                         ]
                       : [
-                          'TypeScript streaming is SSE via RunConfig. Bidirectional live/voice streaming is unsupported.',
+                          'TypeScript streaming writes each text delta to stdout as Runner.runAsync yields it. Bidirectional live/voice streaming is unsupported.',
                         ]
                     : []),
                 ],

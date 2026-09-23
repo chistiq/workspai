@@ -14,8 +14,8 @@ import {
 } from '../../adapter.js';
 import { detectAgentFramework } from '../../detection.js';
 import { getDefaultPythonCommand } from '../../../utils/platform-capabilities.js';
-import { openaiAgentsPythonContextSource } from '../openai-agents/python-context-source.js';
-import { WORKSPAI_CONTEXT_SCHEMA_VERSION } from '../openai-agents/typescript-context-source.js';
+import { agentFrameworkPythonContextSource } from '../../context-loaders/python.js';
+import { WORKSPAI_CONTEXT_SCHEMA_VERSION } from '../../context-loaders/typescript.js';
 import { GOOGLE_ADK_PYTHON_BASELINE, packageVersion } from '../../version-policy.js';
 import {
   GOOGLE_ADK_REQUIRED_ENVIRONMENT,
@@ -97,7 +97,7 @@ function renderPythonFiles(input: AgentFrameworkAdapterInput) {
   const agentId = pythonIdentifier(target.slug);
   const python = getDefaultPythonCommand();
   return [
-    managedFile(target.context, openaiAgentsPythonContextSource()),
+    managedFile(target.context, agentFrameworkPythonContextSource()),
     managedFile(
       target.agent,
       `# Generated and managed by Workspai. Do not place secrets in this file.
@@ -106,6 +106,14 @@ from __future__ import annotations
 
 import os
 from typing import Any
+
+
+def tracing_enabled() -> bool:
+    return os.environ.get("WORKSPAI_AGENT_TRACING") == "1"
+
+
+if not tracing_enabled():
+    os.environ.setdefault("OTEL_SDK_DISABLED", "true")
 
 from google.adk.agents import LlmAgent
 
@@ -207,10 +215,6 @@ def build_agent(*, model: Any | None = None) -> LlmAgent:
         instruction=TOOL_FIRST_INSTRUCTIONS,
         tools=tools,
     )
-
-
-def tracing_enabled() -> bool:
-    return os.environ.get("WORKSPAI_AGENT_TRACING") == "1"
 `
     ),
     managedFile(
@@ -221,12 +225,8 @@ from __future__ import annotations
 
 import asyncio
 import sys
+from collections.abc import Callable
 from typing import Any
-
-from google.adk.agents.run_config import RunConfig, StreamingMode
-from google.adk.runners import Runner
-from google.adk.sessions import InMemorySessionService
-from google.genai import types
 
 from agent import (
     MAX_LLM_CALLS,
@@ -235,6 +235,10 @@ from agent import (
     require_model_name,
     require_provider_profile,
 )
+from google.adk.agents.run_config import RunConfig, StreamingMode
+from google.adk.runners import Runner
+from google.adk.sessions import InMemorySessionService
+from google.genai import types
 from workspai_context import read_user_prompt, redact_secret_shaped_values
 
 APP_USER = "workspai"
@@ -259,6 +263,7 @@ async def run_admitted_agent(
     streaming: bool = False,
     max_llm_calls: int | None = None,
     timeout_seconds: float | None = None,
+    on_text: Callable[[str], None] | None = None,
 ) -> str:
     if model is None:
         require_provider_profile()
@@ -280,31 +285,45 @@ async def run_admitted_agent(
         max_llm_calls=MAX_LLM_CALLS if max_llm_calls is None else max_llm_calls,
     )
     message = types.Content(role="user", parts=[types.Part(text=prompt)])
+    last = ""
+    pieces: list[str] = []
+
+    def _note(text: str) -> None:
+        nonlocal last
+        if not text:
+            return
+        delta = text[len(last) :] if text.startswith(last) else text
+        last = text if text.startswith(last) else last + text
+        if delta:
+            pieces.append(delta)
+            if on_text is not None:
+                on_text(delta)
 
     async def _consume() -> str:
-        chunks: list[str] = []
         async for event in runner.run_async(
             user_id=APP_USER,
             session_id=session.id,
             new_message=message,
             run_config=config,
         ):
-            text = _event_text(event)
-            final = getattr(event, "is_final_response", None)
-            if text and (final() if callable(final) else True):
-                chunks.append(text)
-        return "".join(chunks)
+            _note(_event_text(event))
+        return "".join(pieces)
 
     timeout = RUN_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
     return await asyncio.wait_for(_consume(), timeout=timeout)
 
 
+def _write_stdout_delta(delta: str) -> None:
+    sys.stdout.write(delta)
+    sys.stdout.flush()
+
+
 async def stream_admitted_agent(prompt: str) -> None:
     require_provider_profile()
     require_model_name()
-    output = await run_admitted_agent(prompt, streaming=True)
-    sys.stdout.write(output)
+    await run_admitted_agent(prompt, streaming=True, on_text=_write_stdout_delta)
     sys.stdout.write("\\n")
+    sys.stdout.flush()
 
 
 async def main() -> None:
@@ -533,6 +552,7 @@ class RequiredFrameworkLoopTests(unittest.TestCase):
             "GOOGLE_CLOUD_PROJECT",
             "GOOGLE_CLOUD_LOCATION",
             "NEXT_PUBLIC_GOOGLE_API_KEY",
+            "WORKSPAI_AGENT_TRACING",
         ):
             os.environ.pop(key, None)
 
@@ -667,6 +687,70 @@ class RequiredFrameworkLoopTests(unittest.TestCase):
         self.assertEqual(first, "TURN_1")
         self.assertEqual(second, "TURN_2")
         self.assertEqual(len(model.calls), 2)
+
+    def test_tracing_is_disabled_unless_opted_in(self) -> None:
+        try:
+            from agent import tracing_enabled
+        except ImportError as error:
+            self.fail(f"google-adk is required for this Google ADK kit: {error}")
+        self.assertFalse(tracing_enabled())
+        self.assertEqual(os.environ.get("OTEL_SDK_DISABLED"), "true")
+        os.environ["WORKSPAI_AGENT_TRACING"] = "1"
+        self.addCleanup(os.environ.pop, "WORKSPAI_AGENT_TRACING", None)
+        self.assertTrue(tracing_enabled())
+
+    def test_streaming_delivers_the_first_chunk_before_the_model_finishes(self) -> None:
+        try:
+            from google.adk.models.base_llm import BaseLlm
+            from google.adk.models.llm_response import LlmResponse
+            from google.genai import types
+            from main import run_admitted_agent
+        except ImportError as error:
+            self.fail(f"google-adk is required for this Google ADK kit: {error}")
+
+        released = asyncio.Event()
+
+        class HandshakeLlm(BaseLlm):
+            def __init__(self) -> None:
+                super().__init__(model="workspai-scripted")
+
+            async def generate_content_async(self, llm_request, stream=False):
+                yield LlmResponse(
+                    content=types.Content(
+                        role="model",
+                        parts=[types.Part(text="STREAM_A")],
+                    )
+                )
+                await asyncio.wait_for(released.wait(), timeout=2.0)
+                yield LlmResponse(
+                    content=types.Content(
+                        role="model",
+                        parts=[types.Part(text="STREAM_B")],
+                    )
+                )
+
+        seen: list[str] = []
+
+        def on_text(delta: str) -> None:
+            seen.append(delta)
+            if "STREAM_A" in "".join(seen):
+                released.set()
+
+        self._context_path().write_text(
+            json.dumps({"schemaVersion": CONTEXT_SCHEMA_VERSION}),
+            encoding="utf-8",
+        )
+        output = asyncio.run(
+            run_admitted_agent(
+                "stream",
+                model=HandshakeLlm(),
+                streaming=True,
+                on_text=on_text,
+            )
+        )
+        self.assertIn("STREAM_A", "".join(seen))
+        self.assertIn("STREAM_B", output)
+        self.assertTrue(released.is_set())
 
 
 if __name__ == "__main__":

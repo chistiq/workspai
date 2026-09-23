@@ -9,6 +9,8 @@ import {
   googleAdkPythonAdapter,
   googleAdkTypeScriptAdapter,
 } from '../agent-frameworks/index.js';
+import { agentFrameworkPythonContextSource } from '../agent-frameworks/context-loaders/python.js';
+import { agentFrameworkTypeScriptContextSource } from '../agent-frameworks/context-loaders/typescript.js';
 import {
   GOOGLE_ADK_PYTHON_BASELINE,
   GOOGLE_ADK_TYPESCRIPT_BASELINE,
@@ -78,6 +80,18 @@ describe('Google ADK adapters', () => {
     ]);
     expect(googleAdkPythonAdapter.manifest.capabilities.streaming?.limitations.join(' ')).toMatch(
       /no AbortSignal/i
+    );
+    expect(googleAdkPythonAdapter.manifest.capabilities.streaming?.limitations.join(' ')).toMatch(
+      /writes each text delta/i
+    );
+    expect(
+      googleAdkTypeScriptAdapter.manifest.capabilities.streaming?.limitations.join(' ')
+    ).toMatch(/AbortSignal/);
+    expect(
+      googleAdkTypeScriptAdapter.manifest.capabilities.streaming?.limitations.join(' ')
+    ).toMatch(/writes each text delta/i);
+    expect(googleAdkPythonAdapter.manifest.capabilities.telemetry?.evidence.join(' ')).toMatch(
+      /OTEL_SDK_DISABLED/
     );
     expect(
       googleAdkTypeScriptAdapter.manifest.capabilities.streaming?.limitations.join(' ')
@@ -199,6 +213,19 @@ describe('Google ADK adapters', () => {
     expect(generatedFrameworkTests).toContain('google-adk is required for this Google ADK kit');
     expect(generatedFrameworkTests).toContain('ScriptedLlm');
     expect(generatedFrameworkTests).toContain('in_memory_session_continues');
+    expect(generatedFrameworkTests).toContain('first_chunk_before_the_model_finishes');
+    expect(generatedFrameworkTests).toContain('tracing_is_disabled_unless_opted_in');
+    expect(agent).toContain('def tracing_enabled');
+    expect(agent.indexOf('def tracing_enabled')).toBeLessThan(agent.indexOf('from google.adk'));
+    expect(agent).toContain('OTEL_SDK_DISABLED');
+    expect(entrypoint).toContain('on_text');
+    expect(entrypoint.indexOf('from agent import')).toBeLessThan(
+      entrypoint.indexOf('from google.adk')
+    );
+    expect(first.files.find((file) => file.path.endsWith('/workspai_context.py'))?.content).toBe(
+      agentFrameworkPythonContextSource()
+    );
+    expect(first.files.every((file) => !file.content.includes('openai-agents'))).toBe(true);
     expect(generatedTests).not.toContain('ScriptedLlm');
     expect(environment).toContain('WORKSPAI_ADK_PROVIDER=');
     expect(environment).not.toMatch(/(?:api[_-]?key|token|secret)\s*[:=]\s*["'][^"'$][^"']+/i);
@@ -222,6 +249,7 @@ describe('Google ADK adapters', () => {
     });
     expect(rendered.files.map((file) => file.path)).toEqual([
       'agents/release-reviewer/src/workspai-context.ts',
+      'agents/release-reviewer/src/tracing.ts',
       'agents/release-reviewer/src/agent.ts',
       'agents/release-reviewer/src/main.ts',
       'agents/release-reviewer/package.json',
@@ -259,6 +287,18 @@ describe('Google ADK adapters', () => {
     expect(generatedTests).toContain('bindWorkspaiProjectRootForTests');
     expect(generatedFrameworkTests).toContain('ScriptedLlm');
     expect(generatedFrameworkTests).toContain('in-memory session continues');
+    expect(generatedFrameworkTests).toContain('first chunk before the model finishes');
+    expect(generatedFrameworkTests).toContain('tracing is disabled unless opted in');
+    expect(agent).toContain("from './tracing.js'");
+    expect(agent.indexOf("from './tracing.js'")).toBeLessThan(agent.indexOf("from '@google/adk'"));
+    expect(agent).toContain('onText');
+    expect(rendered.files.find((file) => file.path.endsWith('/tracing.ts'))?.content).toContain(
+      'OTEL_SDK_DISABLED'
+    );
+    expect(rendered.files.find((file) => file.path.endsWith('/workspai-context.ts'))?.content).toBe(
+      agentFrameworkTypeScriptContextSource()
+    );
+    expect(rendered.files.every((file) => !file.content.includes('openai-agents'))).toBe(true);
     expect(manifest).toContain(
       `"@google/adk": "${packageVersion(GOOGLE_ADK_TYPESCRIPT_BASELINE, '@google/adk')}"`
     );

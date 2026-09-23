@@ -55,8 +55,8 @@ import {
   isAgentFrameworkProjectKit,
   lookupAgentFrameworkProjectKit,
   describeAgentFrameworkProjectKits,
+  isAdmittedAgentFrameworkProjectKit,
   prepareAgentFrameworkAttachment,
-  resolveAgentFrameworkProjectKit,
 } from './agent-frameworks/index.js';
 import {
   generateModelGatewayProject,
@@ -1226,8 +1226,7 @@ async function runAgentFrameworkProjectCreate(args: string[]): Promise<number> {
   if (args[0] !== 'create' || args[1] !== 'project') return 1;
   const requestedKit = lookupAgentFrameworkProjectKit(args[2]);
   if (!requestedKit) return 1;
-  const kit = resolveAgentFrameworkProjectKit(args[2]);
-  if (!kit) {
+  if (!isAdmittedAgentFrameworkProjectKit(requestedKit)) {
     const admission = createBuiltinAgentFrameworkRegistry(
       {},
       { trustReviewedReleaseAdmissions: true }
@@ -1237,6 +1236,7 @@ async function runAgentFrameworkProjectCreate(args: string[]): Promise<number> {
     );
     return 1;
   }
+  const kit = requestedKit;
   const projectName = args[3];
   if (!projectName) {
     process.stderr.write(
@@ -1702,7 +1702,14 @@ function printCreateProjectHelp(): void {
         `  npx workspai create project ${kit.id} ${kit.runtime === 'python' ? 'support-agent' : kit.runtime === 'dotnet' ? 'operations-agent' : 'research-agent'} --skip-git`
     )
     .join('\n');
-  const agentKitLines = agentKits.map((kit) => `  ${kit.id.padEnd(23)} ${kit.label}`).join('\n');
+  const agentKitLines = agentKits
+    .map((kit) => {
+      const admission = isAdmittedAgentFrameworkProjectKit(kit)
+        ? ''
+        : ` (${kit.stability} · awaiting release admission)`;
+      return `  ${kit.id.padEnd(23)} ${kit.label}${admission}`;
+    })
+    .join('\n');
   console.log(`Usage: npx workspai create project <kit> <name> [options]
 
 Scaffold a project and register it with Workspace Intelligence.

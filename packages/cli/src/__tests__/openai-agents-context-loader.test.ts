@@ -13,7 +13,7 @@ import {
   openaiAgentsTypeScriptAdapter,
   type AgentFrameworkManagedFile,
 } from '../agent-frameworks/index.js';
-import { WORKSPAI_CONTEXT_SCHEMA_VERSION } from '../agent-frameworks/adapters/openai-agents/typescript-context-source.js';
+import { WORKSPAI_CONTEXT_SCHEMA_VERSION } from '../agent-frameworks/context-loaders/typescript.js';
 
 const temporaryRoots: string[] = [];
 const tsxLoader = pathToFileURL(createRequire(import.meta.url).resolve('tsx')).href;

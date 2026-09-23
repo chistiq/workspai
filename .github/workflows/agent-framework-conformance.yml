@@ -7,6 +7,14 @@ on:
       - "packages/cli/src/contracts/agent-framework-contract.ts"
       - "packages/cli/src/proof-carrying-change.ts"
       - "packages/cli/src/utils/json-schema-contract.ts"
+      - "packages/cli/src/index.ts"
+      - "packages/cli/src/doctor.ts"
+      - "packages/cli/src/utils/backend-framework-contract.ts"
+      - "packages/cli/src/utils/project-kind.ts"
+      - "packages/cli/src/utils/workspace-contract.ts"
+      - "packages/cli/src/cli-ui/kit-picker-choices.ts"
+      - "packages/cli/src/contracts/create-planner-capabilities-contract.ts"
+      - "packages/cli/src/contracts/runtime-command-surface-contract.ts"
       - "packages/cli/src/utils/workspace-paths.ts"
       - "packages/cli/src/__tests__/agent-framework-*.test.ts"
       - "packages/cli/src/__tests__/agent-framework-lifecycle.test.ts"
@@ -21,6 +29,8 @@ on:
       - "packages/cli/src/__tests__/google-adk-lifecycle.test.ts"
       - "packages/cli/src/__tests__/agent-framework-selection.test.ts"
       - "packages/cli/src/__tests__/contracts/agent-framework-contract.test.ts"
+      - "packages/cli/src/__tests__/handle-create-flags.test.ts"
+      - "packages/cli/src/__tests__/kit-picker-choices.test.ts"
       - "packages/cli/scripts/smoke-microsoft-agent-framework-adapter.ts"
       - "packages/cli/scripts/smoke-openai-agents-adapter.ts"
       - "packages/cli/scripts/smoke-google-adk-adapter.ts"
@@ -30,8 +40,12 @@ on:
       - "packages/cli/scripts/promote-agent-framework-release-admission.ts"
       - "packages/cli/package.json"
       - "packages/cli/contracts/agent-framework-capabilities.v1.json"
+      - "packages/cli/contracts/create-planner-capabilities.v1.json"
+      - "packages/cli/contracts/runtime-command-surface.v1.json"
       - "packages/cli/contracts/workspace-intelligence/agent-framework-*.v*.json"
       - "contracts/agent-framework-capabilities.v1.json"
+      - "contracts/create-planner-capabilities.v1.json"
+      - "contracts/runtime-command-surface.v1.json"
       - "contracts/workspace-intelligence/agent-framework-*.v*.json"
       - ".github/workflows/agent-framework-conformance.yml"
       - ".github/workflows/agent-framework-version-discovery.yml"
@@ -84,6 +98,18 @@ jobs:
               - 'packages/cli/src/proof-carrying-change.ts'
               - 'packages/cli/src/utils/json-schema-contract.ts'
               - 'packages/cli/src/utils/workspace-paths.ts'
+              - 'packages/cli/src/index.ts'
+              - 'packages/cli/src/doctor.ts'
+              - 'packages/cli/src/utils/backend-framework-contract.ts'
+              - 'packages/cli/src/utils/project-kind.ts'
+              - 'packages/cli/src/utils/workspace-contract.ts'
+              - 'packages/cli/src/cli-ui/kit-picker-choices.ts'
+              - 'packages/cli/src/contracts/create-planner-capabilities-contract.ts'
+              - 'packages/cli/src/contracts/runtime-command-surface-contract.ts'
+              - 'packages/cli/contracts/create-planner-capabilities.v1.json'
+              - 'packages/cli/contracts/runtime-command-surface.v1.json'
+              - 'contracts/create-planner-capabilities.v1.json'
+              - 'contracts/runtime-command-surface.v1.json'
               - 'packages/cli/scripts/verify-agent-framework-conformance.ts'
               - 'packages/cli/scripts/promote-agent-framework-release-admission.ts'
               - 'packages/cli/package.json'
@@ -100,6 +126,18 @@ jobs:
               - 'packages/cli/src/proof-carrying-change.ts'
               - 'packages/cli/src/utils/json-schema-contract.ts'
               - 'packages/cli/src/utils/workspace-paths.ts'
+              - 'packages/cli/src/index.ts'
+              - 'packages/cli/src/doctor.ts'
+              - 'packages/cli/src/utils/backend-framework-contract.ts'
+              - 'packages/cli/src/utils/project-kind.ts'
+              - 'packages/cli/src/utils/workspace-contract.ts'
+              - 'packages/cli/src/cli-ui/kit-picker-choices.ts'
+              - 'packages/cli/src/contracts/create-planner-capabilities-contract.ts'
+              - 'packages/cli/src/contracts/runtime-command-surface-contract.ts'
+              - 'packages/cli/contracts/create-planner-capabilities.v1.json'
+              - 'packages/cli/contracts/runtime-command-surface.v1.json'
+              - 'contracts/create-planner-capabilities.v1.json'
+              - 'contracts/runtime-command-surface.v1.json'
               - 'packages/cli/scripts/verify-agent-framework-conformance.ts'
               - 'packages/cli/scripts/promote-agent-framework-release-admission.ts'
               - 'packages/cli/package.json'
@@ -116,6 +154,18 @@ jobs:
               - 'packages/cli/src/proof-carrying-change.ts'
               - 'packages/cli/src/utils/json-schema-contract.ts'
               - 'packages/cli/src/utils/workspace-paths.ts'
+              - 'packages/cli/src/index.ts'
+              - 'packages/cli/src/doctor.ts'
+              - 'packages/cli/src/utils/backend-framework-contract.ts'
+              - 'packages/cli/src/utils/project-kind.ts'
+              - 'packages/cli/src/utils/workspace-contract.ts'
+              - 'packages/cli/src/cli-ui/kit-picker-choices.ts'
+              - 'packages/cli/src/contracts/create-planner-capabilities-contract.ts'
+              - 'packages/cli/src/contracts/runtime-command-surface-contract.ts'
+              - 'packages/cli/contracts/create-planner-capabilities.v1.json'
+              - 'packages/cli/contracts/runtime-command-surface.v1.json'
+              - 'contracts/create-planner-capabilities.v1.json'
+              - 'contracts/runtime-command-surface.v1.json'
               - 'packages/cli/scripts/verify-agent-framework-conformance.ts'
               - 'packages/cli/scripts/promote-agent-framework-release-admission.ts'
               - 'packages/cli/package.json'

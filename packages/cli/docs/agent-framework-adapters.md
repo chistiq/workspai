@@ -262,7 +262,12 @@ run unqualified `npx adk`.
 Adapters are labeled `preview`. Create kits are `agent.google-adk.python` and
 `agent.google-adk.typescript`. Create and Attach stay fail-closed until the
 reviewed v2 inventory includes these adapters from Linux, macOS, and Windows
-evidence. Sequential, parallel, loop, graph workflow, A2A, MCP, Agent Engine,
+evidence. Create refuses unpublished kits before `--dry-run` and before any
+filesystem or workspace mutation. Streaming writes each text delta as the SDK
+yields it. Telemetry stays off unless `WORKSPAI_AGENT_TRACING=1`; otherwise the
+starter sets `OTEL_SDK_DISABLED=true` before importing ADK. Context loaders live
+in `src/agent-frameworks/context-loaders/` and are shared by Google, OpenAI, and
+Microsoft adapters. Sequential, parallel, loop, graph workflow, A2A, MCP, Agent Engine,
 Cloud Run, GKE, Google Search, voice, browser agents, and remote agents are
 unsupported. In-memory sessions are process-local, not durable persistence.
 
@@ -270,10 +275,10 @@ Credentialless conformance subclasses the public `BaseLlm` surface. It does not
 monkey-patch private SDK internals and does not call Gemini or Vertex.
 
 A path-filtered PR gate compiles only the affected Microsoft, OpenAI, or Google
-adapter family on Linux. Shared lifecycle, security, registry, admission, and
-contract changes select the affected families; documentation-only edits do not
-run adapter conformance. The complete matrix is an explicit release-
-qualification operation: it compiles every built-in adapter runtime on Linux,
+adapter family on Linux. Shared lifecycle, security, registry, admission,
+Create/Doctor integration, and contract changes select the affected families;
+documentation-only edits do not run adapter conformance. The complete matrix is
+an explicit release-qualification operation: it compiles every built-in adapter runtime on Linux,
 macOS, and Windows. Every full-qualification lane
 records all 18 mandatory checks, the exact runtime and framework baseline,
 digests of the adapter manifest and semantic implementation, and one bounded

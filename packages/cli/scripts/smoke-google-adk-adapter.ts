@@ -574,6 +574,145 @@ throw new Error('AbortSignal.timeout did not stop the Google ADK run');
 `;
 }
 
+function pythonStreamingHarness(): string {
+  return `import asyncio
+
+from google.adk.models.base_llm import BaseLlm
+from google.adk.models.llm_response import LlmResponse
+from google.genai import types
+
+from main import run_admitted_agent
+
+
+class HandshakeLlm(BaseLlm):
+    def __init__(self):
+        super().__init__(model="workspai-scripted")
+
+    async def generate_content_async(self, llm_request, stream=False):
+        yield LlmResponse(
+            content=types.Content(role="model", parts=[types.Part(text="STREAM_A")])
+        )
+        await asyncio.wait_for(released.wait(), timeout=2.0)
+        yield LlmResponse(
+            content=types.Content(role="model", parts=[types.Part(text="STREAM_B")])
+        )
+
+
+released = asyncio.Event()
+seen = []
+
+
+def on_text(delta):
+    seen.append(delta)
+    if "STREAM_A" in "".join(seen):
+        released.set()
+
+
+async def main():
+    output = await run_admitted_agent(
+        "stream",
+        model=HandshakeLlm(),
+        streaming=True,
+        on_text=on_text,
+    )
+    joined = "".join(seen)
+    if "STREAM_A" not in joined:
+        raise SystemExit("first stream chunk was not delivered to on_text")
+    if "STREAM_B" not in output:
+        raise SystemExit("streamed run did not retain the later chunk")
+    if not released.is_set():
+        raise SystemExit("streaming handshake never released the model")
+    print("WORKSPAI_AGENT_STREAMING_OK")
+
+
+asyncio.run(main())
+`;
+}
+
+function pythonTelemetryHarness(): string {
+  return `import os
+
+from agent import tracing_enabled
+
+if tracing_enabled():
+    raise SystemExit("tracing was opted in by default")
+if os.environ.get("OTEL_SDK_DISABLED") != "true":
+    raise SystemExit("OTEL_SDK_DISABLED was not set unless tracing is opted in")
+os.environ["WORKSPAI_AGENT_TRACING"] = "1"
+if not tracing_enabled():
+    raise SystemExit("WORKSPAI_AGENT_TRACING=1 did not enable tracing")
+print("WORKSPAI_AGENT_TELEMETRY_OK")
+`;
+}
+
+function typeScriptStreamingHarness(): string {
+  return `import { BaseLlm } from '@google/adk';
+import { runAdmittedAgent } from './dist/src/agent.js';
+
+let release = () => {};
+const released = new Promise((resolve) => {
+  release = resolve;
+});
+
+class HandshakeLlm extends BaseLlm {
+  constructor() {
+    super({ model: 'workspai-scripted' });
+  }
+  async *generateContentAsync(_llmRequest, _stream, abortSignal) {
+    if (abortSignal?.aborted) throw abortSignal.reason ?? new Error('aborted');
+    yield { content: { role: 'model', parts: [{ text: 'STREAM_A' }] } };
+    await Promise.race([
+      released,
+      new Promise((_, reject) =>
+        setTimeout(
+          () => reject(new Error('first stream chunk was not delivered before the model finished')),
+          2000
+        )
+      ),
+    ]);
+    yield { content: { role: 'model', parts: [{ text: 'STREAM_B' }] } };
+  }
+  connect() {
+    return Promise.reject(new Error('Live connections are unsupported in this Workspai starter.'));
+  }
+}
+
+const seen = [];
+const output = await runAdmittedAgent('stream', {
+  model: new HandshakeLlm(),
+  streaming: true,
+  onText: (delta) => {
+    seen.push(delta);
+    if (seen.join('').includes('STREAM_A')) release();
+  },
+});
+if (!seen.join('').includes('STREAM_A')) {
+  throw new Error('first stream chunk was not delivered to onText');
+}
+if (!output.includes('STREAM_B')) {
+  throw new Error('streamed run did not retain the later chunk');
+}
+process.stdout.write('WORKSPAI_AGENT_STREAMING_OK\\n');
+`;
+}
+
+function typeScriptTelemetryHarness(): string {
+  return `import { tracingEnabled } from './dist/src/tracing.js';
+
+if (tracingEnabled()) {
+  throw new Error('tracing was opted in by default');
+}
+if (process.env.OTEL_SDK_DISABLED !== 'true') {
+  throw new Error('OTEL_SDK_DISABLED was not set unless tracing is opted in');
+}
+process.env.WORKSPAI_AGENT_TRACING = '1';
+if (!tracingEnabled()) {
+  throw new Error('WORKSPAI_AGENT_TRACING=1 did not enable tracing');
+}
+process.stdout.write('WORKSPAI_AGENT_TELEMETRY_OK\\n');
+`;
+}
+
 function argument(name: string): string | undefined {
   const index = process.argv.indexOf(name);
   return index >= 0 ? process.argv[index + 1] : undefined;
@@ -825,6 +964,8 @@ async function main(): Promise<void> {
   const checks: Check[] = [];
   let runtimeVersion = 'unavailable';
   let installedFrameworkPackages: Record<string, string> = {};
+  let streamingObserved = false;
+  let telemetryObserved = false;
 
   const record = async (
     id: AgentFrameworkConformanceCheckId,
@@ -937,12 +1078,44 @@ async function main(): Promise<void> {
         conditionalWithoutPrerequisites.length === 0,
         'Conditional capabilities lack prerequisites.'
       );
+      const generatedSources = rendered.files
+        .filter(
+          (file) =>
+            file.path.endsWith('.py') ||
+            file.path.endsWith('.ts') ||
+            file.path.endsWith('.mjs') ||
+            file.path.endsWith('.js')
+        )
+        .map((file) => file.content)
+        .join('\n');
+      assertCondition(
+        !generatedSources.includes('openai-agents') &&
+          !generatedSources.includes('openaiAgentsTypeScriptContextSource') &&
+          !generatedSources.includes('openaiAgentsPythonContextSource'),
+        'Google generated sources still depend on the OpenAI adapter path.'
+      );
+      assertCondition(
+        adapter.manifest.capabilities.streaming.support !== 'native' ||
+          generatedSources.includes('on_text') ||
+          generatedSources.includes('onText'),
+        'Native streaming does not expose an incremental text callback.'
+      );
+      assertCondition(
+        adapter.manifest.capabilities.telemetry.support !== 'conditional' ||
+          ((generatedSources.includes('tracing_enabled') ||
+            generatedSources.includes('tracingEnabled')) &&
+            generatedSources.includes('OTEL_SDK_DISABLED')),
+        'Conditional telemetry is not wired to WORKSPAI_AGENT_TRACING/OTEL_SDK_DISABLED.'
+      );
       return {
         declarations: Object.fromEntries(
           Object.entries(adapter.manifest.capabilities).map(([id, value]) => [id, value.support])
         ),
         supportedWithoutEvidence,
         conditionalWithoutPrerequisites,
+        streamingCallbackWired:
+          generatedSources.includes('on_text') || generatedSources.includes('onText'),
+        telemetryEnvWired: generatedSources.includes('OTEL_SDK_DISABLED'),
       };
     });
 
@@ -1310,6 +1483,30 @@ async function main(): Promise<void> {
           timedOut.stdout.includes('WORKSPAI_AGENT_TIMEOUT_OK'),
           'Python asyncio.wait_for timeout did not stop the Google ADK run.'
         );
+        const streamingHarness = path.join(agentRoot, 'credentialless-agent-streaming.py');
+        await fs.writeFile(streamingHarness, pythonStreamingHarness(), 'utf8');
+        const streamed = await run(
+          'uv',
+          ['run', '--project', '.', 'python', streamingHarness],
+          agentRoot
+        );
+        assertCondition(
+          streamed.stdout.includes('WORKSPAI_AGENT_STREAMING_OK'),
+          'Python streaming did not deliver the first chunk before the model finished.'
+        );
+        streamingObserved = true;
+        const telemetryHarness = path.join(agentRoot, 'credentialless-agent-telemetry.py');
+        await fs.writeFile(telemetryHarness, pythonTelemetryHarness(), 'utf8');
+        const telemetry = await run(
+          'uv',
+          ['run', '--project', '.', 'python', telemetryHarness],
+          agentRoot
+        );
+        assertCondition(
+          telemetry.stdout.includes('WORKSPAI_AGENT_TELEMETRY_OK'),
+          'Python telemetry default-disabled behavior was not observed.'
+        );
+        telemetryObserved = true;
         const venvRoot = path.join(isolatedRoot, 'pip-venv');
         const bootstrapPython = process.platform === 'win32' ? 'python' : 'python3';
         await run(bootstrapPython, ['-m', 'venv', venvRoot], generatedRoot);
@@ -1438,6 +1635,22 @@ async function main(): Promise<void> {
           timedOut.stdout.includes('WORKSPAI_AGENT_TIMEOUT_OK'),
           'TypeScript AbortSignal.timeout did not stop the Google ADK run.'
         );
+        const streamingHarness = path.join(agentRoot, 'credentialless-agent-streaming.mjs');
+        await fs.writeFile(streamingHarness, typeScriptStreamingHarness(), 'utf8');
+        const streamed = await run(process.execPath, [streamingHarness], agentRoot);
+        assertCondition(
+          streamed.stdout.includes('WORKSPAI_AGENT_STREAMING_OK'),
+          'TypeScript streaming did not deliver the first chunk before the model finished.'
+        );
+        streamingObserved = true;
+        const telemetryHarness = path.join(agentRoot, 'credentialless-agent-telemetry.mjs');
+        await fs.writeFile(telemetryHarness, typeScriptTelemetryHarness(), 'utf8');
+        const telemetry = await run(process.execPath, [telemetryHarness], agentRoot);
+        assertCondition(
+          telemetry.stdout.includes('WORKSPAI_AGENT_TELEMETRY_OK'),
+          'TypeScript telemetry default-disabled behavior was not observed.'
+        );
+        telemetryObserved = true;
         const modelErrorHarness = path.join(agentRoot, 'credentialless-agent-model-error.mjs');
         await fs.writeFile(modelErrorHarness, typeScriptModelErrorHarness(), 'utf8');
         const modelError = await run(process.execPath, [modelErrorHarness], agentRoot);
@@ -1483,6 +1696,8 @@ async function main(): Promise<void> {
           contextObserved: true,
           responseMarker: LIFECYCLE_RESPONSE_MARKER,
         },
+        streamingHandshake: streamingObserved,
+        telemetryDefaultDisabled: telemetryObserved,
       };
     });
 
@@ -1532,12 +1747,15 @@ async function main(): Promise<void> {
         adapter.manifest.security.generatedCodeExecution === 'disabled-unless-explicitly-granted',
         'Generated code execution is not deny-first.'
       );
+      assertCondition(streamingObserved, 'Streaming handshake was not observed.');
+      assertCondition(telemetryObserved, 'Disabled-by-default telemetry was not observed.');
       return {
         networkDefault: adapter.manifest.security.network,
         generatedCodeExecutionDefault: adapter.manifest.security.generatedCodeExecution,
         planningAndRenderingRequireRuntimeExecution: false,
         runtimeVerificationNetworkWasExplicitlyGrantedByCiLane: true,
-        tracingDisabledUnlessOptedIn: true,
+        tracingDisabledUnlessOptedIn: telemetryObserved,
+        firstStreamChunkBeforeRunCompleted: streamingObserved,
       };
     });
 

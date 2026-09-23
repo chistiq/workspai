@@ -123,6 +123,15 @@ describe('kit picker choices', () => {
     expect(buildKitPickerChoices('agent').every((choice) => choice.category === 'agent')).toBe(
       true
     );
+    expect(
+      buildKitPickerChoices('agent').find((choice) => choice.value === 'agent.google-adk.python')
+        ?.hint
+    ).toBe('python · preview · awaiting release admission');
+    expect(
+      buildKitPickerChoices('agent').find(
+        (choice) => choice.value === 'agent.google-adk.typescript'
+      )?.hint
+    ).toBe('node · preview · awaiting release admission');
     expect(buildKitPickerChoices('gateway')).toHaveLength(2);
     expect(buildKitPickerChoices('gateway').map((choice) => choice.value)).toEqual([
       'gateway.openrouter.python',
