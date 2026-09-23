@@ -16,7 +16,11 @@ import { buildWorkspaceModel, writeWorkspaceModel } from '../workspace-model.js'
 import { runWorkspaceIntelligenceChain } from '../workspace-intelligence-runner.js';
 
 const roots: string[] = [];
-const releaseAdmitted = listBundledAgentFrameworkReleaseAdmissions().length === 4;
+const releaseAdmissions = listBundledAgentFrameworkReleaseAdmissions();
+const releaseAdmitted = releaseAdmissions.some(
+  (admission) => admission.id === 'microsoft-agent-framework-python'
+);
+const googleAdmitted = releaseAdmissions.some((admission) => admission.id === 'google-adk-python');
 
 async function fixture(
   options: { secondProject?: boolean; extraProjects?: string[] } = {}
@@ -115,7 +119,7 @@ describe.skipIf(releaseAdmitted)('agent framework user flow fail-closed', () => 
   });
 });
 
-describe('Google ADK user flow fail-closed', () => {
+describe.skipIf(googleAdmitted)('Google ADK user flow fail-closed', () => {
   it('refuses prepare while Google adapters remain outside the reviewed admission inventory', async () => {
     const { workspacePath } = await fixture();
     await expect(
@@ -127,6 +131,26 @@ describe('Google ADK user flow fail-closed', () => {
         instanceName: 'primary',
       })
     ).rejects.toThrow(/not release-admitted/i);
+  });
+});
+
+describe.skipIf(!googleAdmitted)('Google ADK user flow', () => {
+  it('prepares a governed attachment from the reviewed admission', async () => {
+    const { workspacePath } = await fixture();
+    await expect(
+      prepareAgentFrameworkAttachment({
+        workspacePath,
+        project: 'api',
+        runtime: 'python',
+        framework: 'google-adk',
+        instanceName: 'primary',
+      })
+    ).resolves.toMatchObject({
+      status: 'planned',
+      frameworkId: 'google-adk',
+      adapterId: 'google-adk-python',
+      runtime: 'python',
+    });
   });
 });
 

@@ -9,9 +9,11 @@ import {
 } from '../agent-frameworks/index.js';
 
 describe('agent framework release admission', () => {
-  it('admits exactly the four Microsoft and OpenAI adapters promoted from the reviewed v2 matrix', () => {
+  it('admits all six adapters promoted from the reviewed v2 matrix', () => {
     const admissions = listBundledAgentFrameworkReleaseAdmissions();
     expect(admissions.map((admission) => admission.id).sort()).toEqual([
+      'google-adk-python',
+      'google-adk-typescript',
       'microsoft-agent-framework-dotnet',
       'microsoft-agent-framework-python',
       'openai-agents-python',
@@ -30,10 +32,6 @@ describe('agent framework release admission', () => {
 
     for (const adapter of BUILTIN_AGENT_FRAMEWORK_ADAPTERS) {
       const resolution = assessBundledAgentFrameworkRelease(adapter);
-      if (adapter.manifest.framework.id === 'google-adk') {
-        expect(resolution.status).toBe('blocked');
-        continue;
-      }
       expect(resolution.status).toBe('admitted');
       expect(resolution.blockers).toEqual([]);
     }
@@ -96,7 +94,7 @@ describe('agent framework release admission', () => {
     ).not.toHaveProperty('releaseAdapter');
   });
 
-  it('keeps stable-labeled OpenAI adapters visible and admitted after promotion', () => {
+  it('keeps admitted adapters visible with their declared stability after promotion', () => {
     const registry = createBuiltinAgentFrameworkRegistry(
       {},
       { trustReviewedReleaseAdmissions: true }
@@ -106,7 +104,7 @@ describe('agent framework release admission', () => {
       status: registry.resolveAdapter(entry.manifest.adapter.id).status,
       stability: entry.manifest.adapter.stability,
     }));
-    expect(adapters.filter((adapter) => adapter.status === 'admitted')).toHaveLength(4);
+    expect(adapters.filter((adapter) => adapter.status === 'admitted')).toHaveLength(6);
     expect(
       adapters
         .filter((adapter) => adapter.id.startsWith('openai-agents-'))
@@ -115,7 +113,7 @@ describe('agent framework release admission', () => {
     expect(
       adapters
         .filter((adapter) => adapter.id.startsWith('google-adk-'))
-        .every((adapter) => adapter.status === 'blocked' && adapter.stability === 'preview')
+        .every((adapter) => adapter.status === 'admitted' && adapter.stability === 'preview')
     ).toBe(true);
     expect(
       createBuiltinAgentFrameworkRegistry().resolveAdapter('openai-agents-python').status

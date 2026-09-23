@@ -15,7 +15,9 @@ import { readProjectMetadata } from '../utils/project-metadata.js';
 import { listBundledAgentFrameworkReleaseAdmissions } from '../agent-frameworks/release-admission.js';
 
 const roots: string[] = [];
-const releaseAdmitted = listBundledAgentFrameworkReleaseAdmissions().length === 4;
+const admittedAdapterIds = new Set(
+  listBundledAgentFrameworkReleaseAdmissions().map((admission) => admission.id)
+);
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => fsExtra.remove(root)));
@@ -55,14 +57,22 @@ describe('agent framework project kits', () => {
     expect(resolveAgentFrameworkProjectKit('agent.google-adk.python')?.adapterId).toBe(
       'google-adk-python'
     );
-    expect(isAdmittedAgentFrameworkProjectKit('agent.openai.python')).toBe(releaseAdmitted);
-    expect(isAdmittedAgentFrameworkProjectKit('agent.openai.typescript')).toBe(releaseAdmitted);
-    expect(isAdmittedAgentFrameworkProjectKit('agent.google-adk.python')).toBe(false);
-    expect(isAdmittedAgentFrameworkProjectKit('agent.google-adk.typescript')).toBe(false);
+    expect(isAdmittedAgentFrameworkProjectKit('agent.openai.python')).toBe(
+      admittedAdapterIds.has('openai-agents-python')
+    );
+    expect(isAdmittedAgentFrameworkProjectKit('agent.openai.typescript')).toBe(
+      admittedAdapterIds.has('openai-agents-typescript')
+    );
+    expect(isAdmittedAgentFrameworkProjectKit('agent.google-adk.python')).toBe(
+      admittedAdapterIds.has('google-adk-python')
+    );
+    expect(isAdmittedAgentFrameworkProjectKit('agent.google-adk.typescript')).toBe(
+      admittedAdapterIds.has('google-adk-typescript')
+    );
     expect(
-      kits
-        .filter((kit) => kit.frameworkId !== 'google-adk')
-        .every((kit) => isAdmittedAgentFrameworkProjectKit(kit) === releaseAdmitted)
+      kits.every(
+        (kit) => isAdmittedAgentFrameworkProjectKit(kit) === admittedAdapterIds.has(kit.adapterId)
+      )
     ).toBe(true);
   });
 
