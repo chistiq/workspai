@@ -358,6 +358,8 @@ function assertCliContracts() {
     .map((adapter) => adapter.id)
     .sort();
   const expectedAdapterIds = [
+    'google-adk-python',
+    'google-adk-typescript',
     'microsoft-agent-framework-dotnet',
     'microsoft-agent-framework-python',
     'openai-agents-python',
@@ -393,10 +395,11 @@ function assertCliContracts() {
       fail(`published CLI is missing implemented Google ADK adapter ${googleId}`);
     }
     if (google.stability !== 'preview') {
-      fail(`${googleId} must remain preview until same-SHA qualification (observed: ${google.stability ?? 'missing'})`);
-    }
-    if (google.status === 'admitted') {
-      fail(`${googleId} must not be release-admitted without reviewed Linux/macOS/Windows evidence`);
+      fail(
+        `${googleId} must retain its preview stability label after release admission (observed: ${
+          google.stability ?? 'missing'
+        })`
+      );
     }
   }
 
