@@ -11,7 +11,11 @@ import * as frontendProject from '../frontend-project.js';
 import * as officialProject from '../official-project.js';
 import { listBundledAgentFrameworkReleaseAdmissions } from '../agent-frameworks/release-admission.js';
 
-const releaseAdmitted = listBundledAgentFrameworkReleaseAdmissions().length === 4;
+const releaseAdmissions = listBundledAgentFrameworkReleaseAdmissions();
+const releaseAdmitted = releaseAdmissions.some(
+  (admission) => admission.id === 'openai-agents-python'
+);
+const googleAdmitted = releaseAdmissions.some((admission) => admission.id === 'google-adk-python');
 
 describe('handleCreateOrFallback - wrapper flags handling', () => {
   let tmpDir: string;
@@ -84,11 +88,9 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
     expect(runSpy).not.toHaveBeenCalled();
     const output = stdoutSpy.mock.calls.map((call) => String(call[0])).join('\n');
     expect(output).toContain('Usage: npx workspai create project');
+    expect(output).toContain('agent.google-adk.python Google Agent Development Kit · Python');
     expect(output).toContain(
-      'agent.google-adk.python Google Agent Development Kit · Python (preview · awaiting release admission)'
-    );
-    expect(output).toContain(
-      'agent.google-adk.typescript Google Agent Development Kit · TypeScript (preview · awaiting release admission)'
+      'agent.google-adk.typescript Google Agent Development Kit · TypeScript'
     );
     expect(output).not.toContain('Usage: rapidkit create project');
   });
@@ -153,52 +155,104 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
     60_000
   );
 
-  it('refuses Google ADK kits until their adapters are release-admitted', async () => {
-    await create.createProject('agent-workspace', {
-      parentDirectory: tmpDir,
-      profile: 'minimal',
-      skipPythonEngine: true,
-      skipGit: true,
-      yes: true,
-    });
-    const workspacePath = path.join(tmpDir, 'agent-workspace');
-    process.chdir(workspacePath);
-    const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
-    const snapshotWorkspace = async () =>
-      (await fsExtra.readdir(path.join(workspacePath, '.workspai'), { recursive: true })).sort();
-    const beforeWorkspace = await snapshotWorkspace();
+  it.skipIf(googleAdmitted)(
+    'refuses Google ADK kits until their adapters are release-admitted',
+    async () => {
+      await create.createProject('agent-workspace', {
+        parentDirectory: tmpDir,
+        profile: 'minimal',
+        skipPythonEngine: true,
+        skipGit: true,
+        yes: true,
+      });
+      const workspacePath = path.join(tmpDir, 'agent-workspace');
+      process.chdir(workspacePath);
+      const stderrSpy = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+      const snapshotWorkspace = async () =>
+        (await fsExtra.readdir(path.join(workspacePath, '.workspai'), { recursive: true })).sort();
+      const beforeWorkspace = await snapshotWorkspace();
 
-    const dryRun = await index.handleCreateOrFallback([
-      'create',
-      'project',
-      'agent.google-adk.python',
-      'google-python-agent',
-      '--dry-run',
-    ]);
-    expect(dryRun).toBe(1);
-    expect(await fsExtra.pathExists(path.join(workspacePath, 'google-python-agent'))).toBe(false);
-    expect(await snapshotWorkspace()).toEqual(beforeWorkspace);
-    expect(stderrSpy.mock.calls.map((call) => String(call[0])).join('')).toMatch(
-      /not release-admitted/i
-    );
+      const dryRun = await index.handleCreateOrFallback([
+        'create',
+        'project',
+        'agent.google-adk.python',
+        'google-python-agent',
+        '--dry-run',
+      ]);
+      expect(dryRun).toBe(1);
+      expect(await fsExtra.pathExists(path.join(workspacePath, 'google-python-agent'))).toBe(false);
+      expect(await snapshotWorkspace()).toEqual(beforeWorkspace);
+      expect(stderrSpy.mock.calls.map((call) => String(call[0])).join('')).toMatch(
+        /not release-admitted/i
+      );
 
-    stderrSpy.mockClear();
-    const code = await index.handleCreateOrFallback([
-      'create',
-      'project',
-      'agent.google-adk.python',
-      'google-python-agent',
-      '--skip-git',
-      '--yes',
-    ]);
+      stderrSpy.mockClear();
+      const code = await index.handleCreateOrFallback([
+        'create',
+        'project',
+        'agent.google-adk.python',
+        'google-python-agent',
+        '--skip-git',
+        '--yes',
+      ]);
 
-    expect(code).toBe(1);
-    expect(await fsExtra.pathExists(path.join(workspacePath, 'google-python-agent'))).toBe(false);
-    expect(await snapshotWorkspace()).toEqual(beforeWorkspace);
-    expect(stderrSpy.mock.calls.map((call) => String(call[0])).join('')).toMatch(
-      /not release-admitted/i
-    );
-  }, 60_000);
+      expect(code).toBe(1);
+      expect(await fsExtra.pathExists(path.join(workspacePath, 'google-python-agent'))).toBe(false);
+      expect(await snapshotWorkspace()).toEqual(beforeWorkspace);
+      expect(stderrSpy.mock.calls.map((call) => String(call[0])).join('')).toMatch(
+        /not release-admitted/i
+      );
+    },
+    60_000
+  );
+
+  it.skipIf(!googleAdmitted)(
+    'creates admitted Google ADK Python and TypeScript projects',
+    async () => {
+      await create.createProject('agent-workspace', {
+        parentDirectory: tmpDir,
+        profile: 'minimal',
+        skipPythonEngine: true,
+        skipGit: true,
+        yes: true,
+      });
+      const workspacePath = path.join(tmpDir, 'agent-workspace');
+      process.chdir(workspacePath);
+
+      expect(
+        await index.handleCreateOrFallback([
+          'create',
+          'project',
+          'agent.google-adk.python',
+          'google-python-agent',
+          '--skip-git',
+          '--yes',
+        ])
+      ).toBe(0);
+      expect(
+        await fsExtra.pathExists(
+          path.join(workspacePath, 'google-python-agent', 'agents', 'primary', 'main.py')
+        )
+      ).toBe(true);
+
+      expect(
+        await index.handleCreateOrFallback([
+          'create',
+          'project',
+          'agent.google-adk.typescript',
+          'google-typescript-agent',
+          '--skip-git',
+          '--yes',
+        ])
+      ).toBe(0);
+      expect(
+        await fsExtra.pathExists(
+          path.join(workspacePath, 'google-typescript-agent', 'agents', 'primary', 'src', 'main.ts')
+        )
+      ).toBe(true);
+    },
+    60_000
+  );
 
   it.skipIf(!releaseAdmitted)(
     'creates a governed agent project through the admitted scaffold lifecycle',
