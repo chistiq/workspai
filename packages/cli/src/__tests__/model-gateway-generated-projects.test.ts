@@ -16,6 +16,7 @@ import { getDefaultPythonCommand } from '../utils/platform-capabilities.js';
 import { buildCleanGitEnv } from '../utils/git-worktree.js';
 
 const roots: string[] = [];
+const NPM_INSTALL_TIMEOUT_MS = 240_000;
 
 afterEach(async () => {
   for (const root of roots.splice(0)) {
@@ -119,7 +120,7 @@ describe('generated OpenRouter gateway projects', () => {
       kit,
     });
     const npm = npmCommand();
-    run(npm.command, [...npm.prefix, 'install'], root, 120_000, cacheRoot);
+    run(npm.command, [...npm.prefix, 'install'], root, NPM_INSTALL_TIMEOUT_MS, cacheRoot);
     run(npm.command, [...npm.prefix, 'run', 'typecheck'], root, 120_000, cacheRoot);
     run(npm.command, [...npm.prefix, 'run', 'build'], root, 120_000, cacheRoot);
     const testOutput = run(npm.command, [...npm.prefix, 'test'], root, 120_000, cacheRoot);
@@ -135,7 +136,7 @@ describe('generated OpenRouter gateway projects', () => {
     );
     expect(startFailure).toMatch(/OPENROUTER_API_KEY|OPENROUTER_MODEL/);
     expect(startFailure.toLowerCase()).not.toContain('sk-or-live');
-  }, 300_000);
+  }, 420_000);
 
   it('installs and verifies the Python starter without a live API key', async () => {
     const kit = listModelGatewayProjectKits().find(
