@@ -119,6 +119,7 @@ describe('Microsoft Agent Framework adapters', () => {
     expect(entrypoint).toContain('redact');
     expect(entrypoint).toContain('read_user_prompt');
     expect(entrypoint).toContain('run_stream');
+    expect(entrypoint).toContain('async with agent');
     expect(agent).toContain('describe_workspai_context');
     expect(agent).toContain('read_workspai_project_summary');
     expect(agent).toContain('list_workspai_supported_commands');

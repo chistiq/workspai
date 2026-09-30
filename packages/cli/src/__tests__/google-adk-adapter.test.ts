@@ -230,6 +230,9 @@ describe('Google ADK adapters', () => {
     expect(agent).not.toContain('openrouter');
     expect(agent).not.toContain('<workspai-context>');
     expect(entrypoint).toContain('run_admitted_agent');
+    expect(entrypoint).toContain('from google.adk.apps import App');
+    expect(entrypoint).toContain('Runner(app=app');
+    expect(entrypoint).toContain('async with runner');
     expect(entrypoint).toContain('InMemorySessionService');
     expect(entrypoint).toContain('get_session');
     expect(entrypoint).toContain('max_llm_calls');

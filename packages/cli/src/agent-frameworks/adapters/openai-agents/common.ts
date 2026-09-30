@@ -21,8 +21,8 @@ const CONDITIONAL_CAPABILITIES = new Set<AgentFrameworkCapabilityId>([
 
 const LANGUAGE_LIMITATIONS: Record<'python' | 'typescript', string[]> = {
   python: [
-    'Generated projects pin openai-agents 0.22.2 and require Python >=3.10.',
-    'Tracing defaults off. openai-agents 0.22.2 DefaultTraceProvider treats OPENAI_AGENTS_DISABLE_TRACING=1|true as disabled until set_tracing_disabled is called; the starter therefore never calls set_tracing_disabled(False) when that env is set.',
+    'Generated projects pin openai-agents 0.22.3 and require Python >=3.10.',
+    'Tracing defaults off. openai-agents 0.22.3 DefaultTraceProvider treats OPENAI_AGENTS_DISABLE_TRACING=1|true as disabled until set_tracing_disabled is called; the starter therefore never calls set_tracing_disabled(False) when that env is set.',
     'Cancellation uses Runner.max_turns and ModelSettings.timeout from this SDK version. ModelSettings.timeout is per model request, not a host-owned deadline for the whole run.',
     'Context containment uses lstat, realpath, O_NOFOLLOW open when available, and a capped fd read. That is not an atomic path walk and does not prove a TOCTOU-free open against a concurrent replacement of a hop.',
   ],
@@ -63,7 +63,7 @@ export function openaiAgentsCapabilities(
             id === 'telemetry'
               ? language === 'python'
                 ? [
-                    'Opt in with WORKSPAI_AGENT_TRACING=1. OPENAI_AGENTS_DISABLE_TRACING=1|true keeps tracing off even if that opt-in is set. openai-agents 0.22.2 reads OPENAI_AGENTS_DISABLE_TRACING on first trace unless set_tracing_disabled was already called.',
+                    'Opt in with WORKSPAI_AGENT_TRACING=1. OPENAI_AGENTS_DISABLE_TRACING=1|true keeps tracing off even if that opt-in is set. openai-agents 0.22.3 reads OPENAI_AGENTS_DISABLE_TRACING on first trace unless set_tracing_disabled was already called.',
                   ]
                 : [
                     'Opt in with WORKSPAI_AGENT_TRACING=1. OPENAI_AGENTS_DISABLE_TRACING=1|true keeps tracing off even if that opt-in is set. Credentialless runs set the disable env and pass Runner({ tracingDisabled: true }).',
@@ -71,7 +71,7 @@ export function openaiAgentsCapabilities(
               : id === 'provider-neutral-models'
                 ? language === 'python'
                   ? [
-                      'Install and configure a documented non-OpenAI model integration for openai-agents 0.22.2. The starter only reads OPENAI_MODEL or OPENAI_DEFAULT_MODEL.',
+                      'Install and configure a documented non-OpenAI model integration for openai-agents 0.22.3. The starter only reads OPENAI_MODEL or OPENAI_DEFAULT_MODEL.',
                     ]
                   : [
                       'Supply a documented non-OpenAI model implementation for @openai/agents 0.18.0. The starter only reads OPENAI_MODEL or OPENAI_DEFAULT_MODEL.',

@@ -179,25 +179,29 @@ def redact(message: str) -> str:
 async def main() -> None:
     prompt = read_user_prompt()
     agent = build_agent()
-    run_stream = getattr(agent, "run_stream", None)
-    if callable(run_stream):
-        wrote = False
-        async for update in run_stream(prompt):
-            text = getattr(update, "text", None)
-            if isinstance(text, str) and text:
-                sys.stdout.write(text)
-                sys.stdout.flush()
-                wrote = True
-            elif update is not None and text is None:
-                rendered = str(update)
-                if rendered:
-                    sys.stdout.write(rendered)
+    # Agent owns the Foundry client's async lifecycle. The framework's documented
+    # context-manager boundary closes client and tool resources on success, error,
+    # or cancellation.
+    async with agent:
+        run_stream = getattr(agent, "run_stream", None)
+        if callable(run_stream):
+            wrote = False
+            async for update in run_stream(prompt):
+                text = getattr(update, "text", None)
+                if isinstance(text, str) and text:
+                    sys.stdout.write(text)
                     sys.stdout.flush()
                     wrote = True
-        if wrote:
-            sys.stdout.write("\\n")
-            return
-    print(await agent.run(prompt))
+                elif update is not None and text is None:
+                    rendered = str(update)
+                    if rendered:
+                        sys.stdout.write(rendered)
+                        sys.stdout.flush()
+                        wrote = True
+            if wrote:
+                sys.stdout.write("\\n")
+                return
+        print(await agent.run(prompt))
 
 
 if __name__ == "__main__":
@@ -519,7 +523,7 @@ Export \`FOUNDRY_PROJECT_ENDPOINT\` and \`FOUNDRY_MODEL\` in your shell. \`Defau
 
 \`${python} ${target.entrypoint}\`
 
-The starter is a single Foundry agent with three read-only typed tools: \`describe_workspai_context\`, \`read_workspai_project_summary\`, and \`list_workspai_supported_commands\`. It streams stdout through \`run_stream\` when the runtime exposes that method and falls back to \`run\`. Pass a prompt as argv or stdin; a TTY with no argv uses the default summarize prompt. The agent does not paste admitted JSON into instructions. \`boundedGraphSearch\` is a pointer, not a shell. It does not install extra workflow, MCP, sandbox, or hosted-tool packages. Multi-agent orchestration, human-approval loops, and durable sessions are not part of this scaffold.
+The starter is a single Foundry agent with three read-only typed tools: \`describe_workspai_context\`, \`read_workspai_project_summary\`, and \`list_workspai_supported_commands\`. It enters the framework's documented \`async with agent\` lifecycle boundary so client and tool resources close on success, failure, or cancellation. It streams stdout through \`run_stream\` when the runtime exposes that method and falls back to \`run\`. Pass a prompt as argv or stdin; a TTY with no argv uses the default summarize prompt. The agent does not paste admitted JSON into instructions. \`boundedGraphSearch\` is a pointer, not a shell. It does not install extra workflow, MCP, sandbox, or hosted-tool packages. Multi-agent orchestration, human-approval loops, and durable sessions are not part of this scaffold.
 
 Workspai still owns mutation admission and verification. A successful model run is not verified evidence.
 `

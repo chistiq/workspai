@@ -86,7 +86,7 @@ describe('model gateway version discovery', () => {
         'pypi.org/pypi/openrouter/json': pypiPayload(python.version),
         'OpenRouterTeam/typescript-sdk/releases': [githubRelease(`v${typescript.version}`)],
         'OpenRouterTeam/python-sdk/releases': [githubRelease(`v${python.version}`)],
-        'proxy.golang.org': goProxy('v0.8.11'),
+        'proxy.golang.org': goProxy('v0.8.32'),
       }),
     });
     expect(discovery.outcome).toBe('current');
@@ -108,7 +108,7 @@ describe('model gateway version discovery', () => {
         'pypi.org/pypi/openrouter/json': pypiPayload(python.version),
         'OpenRouterTeam/typescript-sdk/releases': [githubRelease(`v${nextTs}`)],
         'OpenRouterTeam/python-sdk/releases': [githubRelease(`v${python.version}`)],
-        'proxy.golang.org': goProxy('v0.8.11'),
+        'proxy.golang.org': goProxy('v0.8.32'),
       }),
     });
     expect(discovery.outcome).toBe('update-available');
@@ -126,7 +126,7 @@ describe('model gateway version discovery', () => {
         'pypi.org/pypi/openrouter/json': pypiPayload(python.version),
         'OpenRouterTeam/typescript-sdk/releases': [githubRelease(`v${typescript.version}`)],
         'OpenRouterTeam/python-sdk/releases': [githubRelease(`v${python.version}`)],
-        'proxy.golang.org': goProxy('v0.8.11'),
+        'proxy.golang.org': goProxy('v0.8.32'),
       }),
     });
     expect(discovery.outcome).toBe('disagreement');
@@ -143,7 +143,7 @@ describe('model gateway version discovery', () => {
           githubRelease('v9.9.9-rc.1', { prerelease: true }),
         ],
         'OpenRouterTeam/python-sdk/releases': [githubRelease(`v${python.version}`)],
-        'proxy.golang.org': goProxy('v0.8.11'),
+        'proxy.golang.org': goProxy('v0.8.32'),
       }),
     });
     expect(prerelease.outcome).toBe('invalid');
@@ -154,7 +154,7 @@ describe('model gateway version discovery', () => {
         'pypi.org/pypi/openrouter/json': pypiPayload('9.9.9', true),
         'OpenRouterTeam/typescript-sdk/releases': [githubRelease(`v${typescript.version}`)],
         'OpenRouterTeam/python-sdk/releases': [githubRelease('v9.9.9')],
-        'proxy.golang.org': goProxy('v0.8.11'),
+        'proxy.golang.org': goProxy('v0.8.32'),
       }),
     });
     expect(
@@ -169,7 +169,7 @@ describe('model gateway version discovery', () => {
         'pypi.org/pypi/openrouter/json': pypiPayload(python.version),
         'OpenRouterTeam/typescript-sdk/releases': [githubRelease('v9.9.9')],
         'OpenRouterTeam/python-sdk/releases': [githubRelease(`v${python.version}`)],
-        'proxy.golang.org': goProxy('v0.8.11'),
+        'proxy.golang.org': goProxy('v0.8.32'),
       }),
     });
     expect(deprecated.outcome).toBe('invalid');
@@ -178,7 +178,7 @@ describe('model gateway version discovery', () => {
       fetcher: mockedFetch({
         'pypi.org/pypi/openrouter/json': pypiPayload(python.version),
         'OpenRouterTeam/python-sdk/releases': [githubRelease(`v${python.version}`)],
-        'proxy.golang.org': goProxy('v0.8.11'),
+        'proxy.golang.org': goProxy('v0.8.32'),
       }),
     });
     expect(unavailable.outcome).toBe('unavailable');

@@ -70,7 +70,7 @@ describe('agent framework version policy', () => {
     expect(formatAgentFrameworkVersionPolicy(OPENAI_AGENTS_TYPESCRIPT_BASELINE)).toBe(
       `${OPENAI_AGENTS_TYPESCRIPT_BASELINE.frameworkVersion} · Workspai verified stable baseline`
     );
-    expect(packageVersion(OPENAI_AGENTS_PYTHON_BASELINE, 'openai-agents')).toBe('0.22.2');
+    expect(packageVersion(OPENAI_AGENTS_PYTHON_BASELINE, 'openai-agents')).toBe('0.22.3');
     expect(packageVersion(OPENAI_AGENTS_TYPESCRIPT_BASELINE, '@openai/agents')).toBe('0.18.0');
     expect(packageVersion(OPENAI_AGENTS_TYPESCRIPT_BASELINE, 'zod')).toBe('4.6.5');
     expect(formatAgentFrameworkVersionPolicy(GOOGLE_ADK_PYTHON_BASELINE)).toBe(

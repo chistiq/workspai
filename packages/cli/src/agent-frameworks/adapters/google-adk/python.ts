@@ -237,6 +237,7 @@ from agent import (
     require_model_name,
     require_provider_profile,
 )
+from google.adk.apps import App
 from google.adk.agents.run_config import RunConfig, StreamingMode
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
@@ -344,34 +345,38 @@ async def run_admitted_agent(
     service = session_service or InMemorySessionService()
     agent = build_agent(model=model)
     app_name = agent.name
-    runner = Runner(agent=agent, app_name=app_name, session_service=service)
-    existing = (
-        await service.get_session(app_name=app_name, user_id=APP_USER, session_id=session_id)
-        if session_id
-        else None
-    )
-    session = existing or await service.create_session(
-        app_name=app_name, user_id=APP_USER, session_id=session_id
-    )
-    config = RunConfig(
-        streaming_mode=StreamingMode.SSE if streaming else StreamingMode.NONE,
-        max_llm_calls=MAX_LLM_CALLS if max_llm_calls is None else max_llm_calls,
-    )
-    message = types.Content(role="user", parts=[types.Part(text=prompt)])
-    state = _StreamState()
+    app = App(name=app_name, root_agent=agent)
+    runner = Runner(app=app, session_service=service)
+    # Runner is the ADK lifecycle boundary. Its async context closes plugins and
+    # flushes services even when the host timeout cancels event consumption.
+    async with runner:
+        existing = (
+            await service.get_session(app_name=app_name, user_id=APP_USER, session_id=session_id)
+            if session_id
+            else None
+        )
+        session = existing or await service.create_session(
+            app_name=app_name, user_id=APP_USER, session_id=session_id
+        )
+        config = RunConfig(
+            streaming_mode=StreamingMode.SSE if streaming else StreamingMode.NONE,
+            max_llm_calls=MAX_LLM_CALLS if max_llm_calls is None else max_llm_calls,
+        )
+        message = types.Content(role="user", parts=[types.Part(text=prompt)])
+        state = _StreamState()
 
-    async def _consume() -> str:
-        async for event in runner.run_async(
-            user_id=APP_USER,
-            session_id=session.id,
-            new_message=message,
-            run_config=config,
-        ):
-            _observe_stream_event(state, event, on_text)
-        return state.result()
+        async def _consume() -> str:
+            async for event in runner.run_async(
+                user_id=APP_USER,
+                session_id=session.id,
+                new_message=message,
+                run_config=config,
+            ):
+                _observe_stream_event(state, event, on_text)
+            return state.result()
 
-    timeout = RUN_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
-    return await asyncio.wait_for(_consume(), timeout=timeout)
+        timeout = RUN_TIMEOUT_SECONDS if timeout_seconds is None else timeout_seconds
+        return await asyncio.wait_for(_consume(), timeout=timeout)
 
 
 def _write_stdout_delta(delta: str) -> None:
@@ -1172,7 +1177,7 @@ Export \`WORKSPAI_ADK_PROVIDER\`, \`ADK_MODEL\`, and the matching provider crede
 
 \`${python} ${target.entrypoint}\`
 
-Do not depend on a globally installed \`adk\` CLI. The live path uses \`Runner.run_async\` with \`RunConfig(max_llm_calls=8)\` and \`asyncio.wait_for(..., 30)\`. The pinned Python SDK has no AbortSignal on \`run_async\`; host cancellation uses asyncio task cancel.
+Do not depend on a globally installed \`adk\` CLI. The live path creates an \`App(root_agent=...)\`, constructs \`Runner(app=...)\`, and enters the runner's async context so plugin and service lifecycle cleanup also runs after cancellation. It uses \`Runner.run_async\` with \`RunConfig(max_llm_calls=8)\` and \`asyncio.wait_for(..., 30)\`. The pinned Python SDK has no AbortSignal on \`run_async\`; host cancellation uses asyncio task cancel.
 `
     ),
     managedFile(

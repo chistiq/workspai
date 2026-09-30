@@ -2,14 +2,9 @@ import { describe, expect, it } from 'vitest';
 
 import {
   createBuiltinAgentFrameworkRegistry,
-  listBundledAgentFrameworkReleaseAdmissions,
   parseAgentFrameworkRuntime,
   resolveAgentFrameworkSelection,
 } from '../agent-frameworks/index.js';
-
-const admittedAdapterIds = new Set(
-  listBundledAgentFrameworkReleaseAdmissions().map((admission) => admission.id)
-);
 
 describe('agent framework selection', () => {
   it('refuses to guess Python when Microsoft and OpenAI are both published', () => {
@@ -29,7 +24,7 @@ describe('agent framework selection', () => {
     ).toMatchObject({
       adapterId: 'microsoft-agent-framework-python',
       frameworkId: 'microsoft-agent-framework',
-      admitted: admittedAdapterIds.has('microsoft-agent-framework-python'),
+      admitted: false,
     });
   });
 
@@ -78,7 +73,7 @@ describe('agent framework selection', () => {
     ).toMatchObject({
       adapterId: 'openai-agents-python',
       frameworkId: 'openai-agents',
-      admitted: admittedAdapterIds.has('openai-agents-python'),
+      admitted: false,
     });
     expect(
       resolveAgentFrameworkSelection({
@@ -89,11 +84,11 @@ describe('agent framework selection', () => {
     ).toMatchObject({
       adapterId: 'openai-agents-typescript',
       frameworkId: 'openai-agents',
-      admitted: admittedAdapterIds.has('openai-agents-typescript'),
+      admitted: true,
     });
   });
 
-  it('selects admitted Google ADK adapters by framework id without guessing', () => {
+  it('selects Google ADK adapters by framework id and reports reviewed admission exactly', () => {
     const registry = createBuiltinAgentFrameworkRegistry(
       {},
       { trustReviewedReleaseAdmissions: true }
@@ -107,7 +102,7 @@ describe('agent framework selection', () => {
     ).toMatchObject({
       adapterId: 'google-adk-python',
       frameworkId: 'google-adk',
-      admitted: admittedAdapterIds.has('google-adk-python'),
+      admitted: false,
     });
     expect(
       resolveAgentFrameworkSelection({
@@ -118,7 +113,7 @@ describe('agent framework selection', () => {
     ).toMatchObject({
       adapterId: 'google-adk-typescript',
       frameworkId: 'google-adk',
-      admitted: admittedAdapterIds.has('google-adk-typescript'),
+      admitted: true,
     });
   });
 });

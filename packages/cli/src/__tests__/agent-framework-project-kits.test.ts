@@ -12,12 +12,7 @@ import {
   resolveAgentFrameworkProjectKit,
 } from '../agent-frameworks/project-kits.js';
 import { readProjectMetadata } from '../utils/project-metadata.js';
-import { listBundledAgentFrameworkReleaseAdmissions } from '../agent-frameworks/release-admission.js';
-
 const roots: string[] = [];
-const admittedAdapterIds = new Set(
-  listBundledAgentFrameworkReleaseAdmissions().map((admission) => admission.id)
-);
 
 afterEach(async () => {
   await Promise.all(roots.splice(0).map((root) => fsExtra.remove(root)));
@@ -57,23 +52,14 @@ describe('agent framework project kits', () => {
     expect(resolveAgentFrameworkProjectKit('agent.google-adk.python')?.adapterId).toBe(
       'google-adk-python'
     );
-    expect(isAdmittedAgentFrameworkProjectKit('agent.openai.python')).toBe(
-      admittedAdapterIds.has('openai-agents-python')
-    );
-    expect(isAdmittedAgentFrameworkProjectKit('agent.openai.typescript')).toBe(
-      admittedAdapterIds.has('openai-agents-typescript')
-    );
-    expect(isAdmittedAgentFrameworkProjectKit('agent.google-adk.python')).toBe(
-      admittedAdapterIds.has('google-adk-python')
-    );
-    expect(isAdmittedAgentFrameworkProjectKit('agent.google-adk.typescript')).toBe(
-      admittedAdapterIds.has('google-adk-typescript')
-    );
-    expect(
-      kits.every(
-        (kit) => isAdmittedAgentFrameworkProjectKit(kit) === admittedAdapterIds.has(kit.adapterId)
-      )
-    ).toBe(true);
+    // Version discovery updates the visible generator baseline, but reviewed release admission
+    // stays bound to its original commit and cross-platform evidence until promotion runs.
+    expect(isAdmittedAgentFrameworkProjectKit('agent.microsoft.python')).toBe(false);
+    expect(isAdmittedAgentFrameworkProjectKit('agent.microsoft.dotnet')).toBe(false);
+    expect(isAdmittedAgentFrameworkProjectKit('agent.openai.python')).toBe(false);
+    expect(isAdmittedAgentFrameworkProjectKit('agent.openai.typescript')).toBe(true);
+    expect(isAdmittedAgentFrameworkProjectKit('agent.google-adk.python')).toBe(false);
+    expect(isAdmittedAgentFrameworkProjectKit('agent.google-adk.typescript')).toBe(true);
   });
 
   it('resolves stable aliases without exposing mutable registry state', () => {
