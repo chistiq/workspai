@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.79.0] - 2026-09-30
+
 ### Changed
 
 - Updated tested Agent Framework baselines to Microsoft Agent Framework Python
@@ -25,12 +27,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Release admission, Create hints, and framework user-flow tests now assess
   the current adapter manifest and version baseline instead of treating the
-  presence of stale inventory evidence as authorization. Microsoft Python and
-  .NET, OpenAI Python, and Google ADK Python therefore remain fail-closed until
-  fresh Linux, macOS, and Windows evidence is reviewed and promoted; the
-  unchanged OpenAI and Google TypeScript baselines remain admitted.
+  presence of stale inventory evidence as authorization. The complete six-kit
+  baseline is now admitted from Agent Framework Adapter Matrix run 88 after all
+  Linux, macOS, and Windows lanes passed.
 - Validate and normalize an agent instance name before release-admission
   lookup so malformed path-shaped input fails deterministically.
+- Resolve the September 30 security audit findings by pinning
+  `brace-expansion` `5.0.12` and refreshing the AJV transitive dependency to
+  `fast-uri` `3.1.8`.
 
 ## [0.78.0] - 2026-09-23
 

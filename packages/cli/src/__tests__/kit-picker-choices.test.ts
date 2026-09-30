@@ -126,7 +126,7 @@ describe('kit picker choices', () => {
     expect(
       buildKitPickerChoices('agent').find((choice) => choice.value === 'agent.google-adk.python')
         ?.hint
-    ).toBe('python · preview · awaiting release admission');
+    ).toBe('python · release-admitted baseline');
     expect(
       buildKitPickerChoices('agent').find(
         (choice) => choice.value === 'agent.google-adk.typescript'

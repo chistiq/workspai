@@ -38,11 +38,11 @@ describe('agent framework release admission', () => {
         ])
       )
     ).toEqual({
-      'microsoft-agent-framework-python': 'blocked',
-      'microsoft-agent-framework-dotnet': 'blocked',
-      'openai-agents-python': 'blocked',
+      'microsoft-agent-framework-python': 'admitted',
+      'microsoft-agent-framework-dotnet': 'admitted',
+      'openai-agents-python': 'admitted',
       'openai-agents-typescript': 'admitted',
-      'google-adk-python': 'blocked',
+      'google-adk-python': 'admitted',
       'google-adk-typescript': 'admitted',
     });
   });
@@ -107,7 +107,7 @@ describe('agent framework release admission', () => {
     ).not.toHaveProperty('releaseAdapter');
   });
 
-  it('keeps admitted adapters visible with their declared stability after promotion', () => {
+  it('keeps every promoted adapter visible with its declared stability', () => {
     const registry = createBuiltinAgentFrameworkRegistry(
       {},
       { trustReviewedReleaseAdmissions: true }
@@ -117,25 +117,16 @@ describe('agent framework release admission', () => {
       status: registry.resolveAdapter(entry.manifest.adapter.id).status,
       stability: entry.manifest.adapter.stability,
     }));
-    expect(adapters.filter((adapter) => adapter.status === 'admitted')).toHaveLength(2);
+    expect(adapters.filter((adapter) => adapter.status === 'admitted')).toHaveLength(6);
     expect(
       adapters
         .filter((adapter) => adapter.id.startsWith('openai-agents-'))
-        .every(
-          (adapter) =>
-            adapter.status ===
-              (adapter.id === 'openai-agents-typescript' ? 'admitted' : 'blocked') &&
-            adapter.stability === 'stable'
-        )
+        .every((adapter) => adapter.status === 'admitted' && adapter.stability === 'stable')
     ).toBe(true);
     expect(
       adapters
         .filter((adapter) => adapter.id.startsWith('google-adk-'))
-        .every(
-          (adapter) =>
-            adapter.status === (adapter.id === 'google-adk-typescript' ? 'admitted' : 'blocked') &&
-            adapter.stability === 'preview'
-        )
+        .every((adapter) => adapter.status === 'admitted' && adapter.stability === 'preview')
     ).toBe(true);
     expect(
       createBuiltinAgentFrameworkRegistry().resolveAdapter('openai-agents-python').status

@@ -235,10 +235,8 @@ workspace profile. A later adapter-manifest change must not hide a kit.
 Create and Attach still refuse a kit whose adapter is not release-admitted;
 visibility in the picker is not permission to write a blocked adapter.
 Attach still requires `--framework openai-agents` when the
-runtime is shared. OpenAI adapters are labeled `stable`; release admission
-remains valid for the unchanged TypeScript `0.18.0` baseline. The updated
-Python `0.22.3` baseline remains blocked until its exact v2 cross-platform
-candidate is reviewed and promoted.
+runtime is shared. OpenAI adapters are labeled `stable`; Python `0.22.3` and
+TypeScript `0.18.0` are release-admitted from the complete reviewed matrix.
 Handoffs, MCP, sessions, voice, sandbox, and approval loops stay unsupported.
 Microsoft adapters remain `preview`.
 
@@ -265,11 +263,9 @@ The Python baseline is `google-adk` `2.10.0`. The TypeScript baseline is
 run unqualified `npx adk`.
 
 Adapters are labeled `preview`. Create kits are `agent.google-adk.python` and
-`agent.google-adk.typescript`. The unchanged TypeScript baseline remains
-admitted by the reviewed v2 Linux, macOS, and Windows evidence. The updated
-Python `2.10.0` baseline is visible in the catalog but Create and Attach remain
-blocked until fresh three-platform evidence is reviewed and promoted. The
-generic admission boundary refuses any unpublished or drifted kit before
+`agent.google-adk.typescript`. Python `2.10.0` and TypeScript `2.1.0` are
+admitted by the reviewed v2 Linux, macOS, and Windows evidence. The generic
+admission boundary refuses any unpublished or drifted kit before
 `--dry-run` and before filesystem or workspace mutation. Generated Python code
 uses the current ADK lifecycle: construct `App(root_agent=...)`, pass that app
 to `Runner`, and enter the runner as an async context manager.
@@ -464,10 +460,8 @@ multi-language Microsoft Agent Framework. OpenAI Agents SDK and Google ADK
 Python and TypeScript adapters share that same create, attach, detection,
 ownership, and verification host. They are selectable for Create and Attach
 only while their exact manifest digest, framework baseline, runtime, and
-platform list remain in the reviewed release-admission inventory. At the
-current baselines, OpenAI TypeScript and Google TypeScript remain admitted;
-Microsoft Python and .NET, OpenAI Python, and Google Python remain blocked
-until new three-platform evidence is promoted.
+platform list remain in the reviewed release-admission inventory. All six
+current baselines are admitted by Agent Framework Adapter Matrix run 88.
 
 ## Implementation sequence
 

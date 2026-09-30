@@ -52,13 +52,12 @@ describe('agent framework project kits', () => {
     expect(resolveAgentFrameworkProjectKit('agent.google-adk.python')?.adapterId).toBe(
       'google-adk-python'
     );
-    // Version discovery updates the visible generator baseline, but reviewed release admission
-    // stays bound to its original commit and cross-platform evidence until promotion runs.
-    expect(isAdmittedAgentFrameworkProjectKit('agent.microsoft.python')).toBe(false);
-    expect(isAdmittedAgentFrameworkProjectKit('agent.microsoft.dotnet')).toBe(false);
-    expect(isAdmittedAgentFrameworkProjectKit('agent.openai.python')).toBe(false);
+    // Promotion binds every visible baseline to the reviewed cross-platform evidence.
+    expect(isAdmittedAgentFrameworkProjectKit('agent.microsoft.python')).toBe(true);
+    expect(isAdmittedAgentFrameworkProjectKit('agent.microsoft.dotnet')).toBe(true);
+    expect(isAdmittedAgentFrameworkProjectKit('agent.openai.python')).toBe(true);
     expect(isAdmittedAgentFrameworkProjectKit('agent.openai.typescript')).toBe(true);
-    expect(isAdmittedAgentFrameworkProjectKit('agent.google-adk.python')).toBe(false);
+    expect(isAdmittedAgentFrameworkProjectKit('agent.google-adk.python')).toBe(true);
     expect(isAdmittedAgentFrameworkProjectKit('agent.google-adk.typescript')).toBe(true);
   });
 

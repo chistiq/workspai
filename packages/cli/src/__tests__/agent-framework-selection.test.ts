@@ -24,7 +24,7 @@ describe('agent framework selection', () => {
     ).toMatchObject({
       adapterId: 'microsoft-agent-framework-python',
       frameworkId: 'microsoft-agent-framework',
-      admitted: false,
+      admitted: true,
     });
   });
 
@@ -73,7 +73,7 @@ describe('agent framework selection', () => {
     ).toMatchObject({
       adapterId: 'openai-agents-python',
       frameworkId: 'openai-agents',
-      admitted: false,
+      admitted: true,
     });
     expect(
       resolveAgentFrameworkSelection({
@@ -102,7 +102,7 @@ describe('agent framework selection', () => {
     ).toMatchObject({
       adapterId: 'google-adk-python',
       frameworkId: 'google-adk',
-      admitted: false,
+      admitted: true,
     });
     expect(
       resolveAgentFrameworkSelection({

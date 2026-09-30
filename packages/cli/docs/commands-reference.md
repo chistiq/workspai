@@ -281,11 +281,9 @@ agent runtime. `list` exposes every built-in adapter and its release-admission
 state. In this CLI version Microsoft Python `1.19.0` and .NET `1.22.0` remain
 `preview`. OpenAI Agents SDK Python `0.22.3` and TypeScript `0.18.0` are
 labeled `stable`. Google ADK Python `2.10.0` and TypeScript `2.1.0` remain
-labeled `preview`. The unchanged OpenAI and Google TypeScript baselines remain
-admitted. Updated Microsoft Python and .NET, OpenAI Python, and Google ADK
-Python baselines await fresh Linux, macOS, and Windows release evidence, so
-Create and Attach fail closed for those four adapters. Create and Attach
-require the reviewed v2 release inventory,
+labeled `preview`. All six current baselines are admitted by the complete
+Linux, macOS, and Windows evidence from Agent Framework Adapter Matrix run 88.
+Create and Attach require the reviewed v2 release inventory,
 whose manifest, framework baseline, runtime, and platform claims were promoted
 from the Linux, macOS, and Windows release matrix. Semantic implementation
 digests remain audit provenance rather than runtime authorization. `plan`

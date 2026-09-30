@@ -13,7 +13,7 @@ Map of GitHub Actions workflows in this repository. Use this when editing CI to 
 | Official generator smoke  | `.github/workflows/frontend-generator-smoke.yml`          | Contract-driven official-generator drift gate                                             |
 | Agent Framework matrix    | `.github/workflows/agent-framework-conformance.yml`       | Affected-family Linux PR gate plus manual twelve-lane release qualification and admission |
 | Agent Framework discovery | `.github/workflows/agent-framework-version-discovery.yml` | Weekly PyPI/NuGet candidate report; no commit, PR, or contract rewrite                    |
-| Model Gateway matrix      | `.github/workflows/model-gateway-qualification.yml`       | Three-OS generated-project and lifecycle qualification; manual fast mode stays on Linux |
+| Model Gateway matrix      | `.github/workflows/model-gateway-qualification.yml`       | Three-OS generated-project and lifecycle qualification; manual fast mode stays on Linux   |
 | Model Gateway discovery   | `.github/workflows/model-gateway-version-discovery.yml`   | Weekly npm/PyPI/GitHub candidate report; no baseline write, commit, or PR                 |
 | Security                  | `.github/workflows/security.yml`                          | Path-aware scanning plus the always-resolved `Security Gate`                              |
 | Manual npm release        | `.github/workflows/release-npm-manual.yml`                | Maintainer-only release gate and publish workflow                                         |
@@ -139,7 +139,7 @@ Validate or preview the current CLI announcement locally:
 npm --workspace workspai run check:release-announcement
 npm --workspace workspai run release:announcement -- \
   --product workspai-cli \
-  --tag v0.78.0 \
+  --tag v0.79.0 \
   --markdown-output /tmp/workspai-discord-announcement.md
 ```
 

@@ -5,6 +5,45 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
+## v0.79.0 (September 30, 2026)
+
+### Current agent SDK baselines, fully release-admitted
+
+Workspai 0.79.0 updates the Microsoft, OpenAI Python, Google ADK Python, and
+OpenRouter SDK baselines. Agent Framework Adapter Matrix run 88 passed all
+Linux, macOS, and Windows lanes, so the exact six-adapter candidate is now in
+the reviewed release inventory.
+
+**What's New:**
+
+- Admit Microsoft Agent Framework Python `1.19.0` and .NET `1.22.0`, OpenAI
+  Agents Python `0.22.3`, Google ADK Python `2.10.0`, and the unchanged OpenAI
+  and Google TypeScript baselines.
+- Align Microsoft and Google generated Python code with their current async
+  lifecycle contracts.
+- Update source-ready OpenRouter Client SDK baselines to TypeScript `1.3.33`
+  and Python `1.2.32`.
+- Resolve the September 30 npm audit advisories with `brace-expansion`
+  `5.0.12` and `fast-uri` `3.1.8`.
+
+**Compatibility:** Existing commands and schema versions remain supported.
+OpenAI adapters remain stable; Microsoft and Google ADK adapters remain
+preview; all six exact Agent Framework baselines are release-admitted.
+OpenRouter gateways remain source-ready.
+
+**Publication status:** Released September 30, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.79.0
+workspai --version
+```
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.79.0/packages/cli/releases/RELEASE_NOTES_v0.79.0.md)
+
+---
+
 ## v0.78.0 (September 23, 2026)
 
 ### Release-admitted Google ADK agents for Python and TypeScript

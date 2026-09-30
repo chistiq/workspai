@@ -1,115 +1,91 @@
 {
   "schemaVersion": "workspai.agent-framework-release-admissions.v2",
-  "reviewedAt": "2026-09-23T16:11:23.057Z",
+  "reviewedAt": "2026-09-30T08:35:35.131Z",
   "source": {
     "repository": "chistiq/workspai",
-    "commit": "e382ee7f05e092e71ba605daec442265c6f0657c",
-    "workflowRunId": 35885971480,
-    "workflowUrl": "https://github.com/chistiq/workspai/actions/runs/35885971480",
+    "commit": "532a8e91831682cf679e616916a6c9fe34de4c7b",
+    "workflowRunId": 36690151085,
+    "workflowUrl": "https://github.com/chistiq/workspai/actions/runs/36690151085",
     "conclusion": "success"
   },
   "adapters": [
     {
       "id": "microsoft-agent-framework-python",
       "version": "0.1.0",
-      "manifestSha256": "e4dfa55256ec2ed7f43927d109b09b541a13217f8a4df964f678fd036bcef060",
+      "manifestSha256": "e2f9d02b634bcf160e893484dee26320f0325f21812d8b6ff3a87a694502dbe1",
       "implementationSha256ByPlatform": {
-        "darwin": "828d1fce4903fdfb3f57c219a299ca10dcd88f819be1d4216b3f64e144decff7",
-        "linux": "828d1fce4903fdfb3f57c219a299ca10dcd88f819be1d4216b3f64e144decff7",
-        "win32": "c6d803516c5c4f8836a474c6e5f6e29d8894e21d1a915d816c713fa522b57e1f"
+        "darwin": "ad2e50a89a34ecf83de867295e938434988ac964552c1f4b8c5714e170f49994",
+        "linux": "ad2e50a89a34ecf83de867295e938434988ac964552c1f4b8c5714e170f49994",
+        "win32": "a1bc5c4e28f20ed93e815bba50bc05f4ba0e52b86ee7e17baaf9bd9e722e460e"
       },
-      "frameworkVersion": "1.18.0",
+      "frameworkVersion": "1.19.0",
       "runtime": "python",
-      "platforms": [
-        "darwin",
-        "linux",
-        "win32"
-      ]
+      "platforms": ["darwin", "linux", "win32"]
     },
     {
       "id": "microsoft-agent-framework-dotnet",
       "version": "0.1.0",
-      "manifestSha256": "1efa079735d51cc3cbbd2d2fe55815850d8aa39f87de4bac4589d9fbfaf2e8e9",
+      "manifestSha256": "8b40a5876fc105e4cc3d55a93f5628937f113ad8ecdb642f9b6dda553b556d2e",
       "implementationSha256ByPlatform": {
-        "darwin": "1217f28fdcdacacb2af6bfb9b62053bb4e30fb5a78c41df8e4cb27e03c1aefae",
-        "linux": "1217f28fdcdacacb2af6bfb9b62053bb4e30fb5a78c41df8e4cb27e03c1aefae",
-        "win32": "1217f28fdcdacacb2af6bfb9b62053bb4e30fb5a78c41df8e4cb27e03c1aefae"
+        "darwin": "44fd6f71791c7f257b2717c21f39087385a4a1b8361a3047799b47d2a21a6c3f",
+        "linux": "44fd6f71791c7f257b2717c21f39087385a4a1b8361a3047799b47d2a21a6c3f",
+        "win32": "44fd6f71791c7f257b2717c21f39087385a4a1b8361a3047799b47d2a21a6c3f"
       },
-      "frameworkVersion": "1.21.0",
+      "frameworkVersion": "1.22.0",
       "runtime": "dotnet",
-      "platforms": [
-        "darwin",
-        "linux",
-        "win32"
-      ]
+      "platforms": ["darwin", "linux", "win32"]
     },
     {
       "id": "openai-agents-python",
       "version": "0.1.0",
-      "manifestSha256": "f76c9973e07b1a3c7807efc489374cdede84038692d0012e03b530db4bcbba55",
+      "manifestSha256": "9c1d3bb75d3273285c4f7f4f609a795f8fe04cad3ff1c7fe6e5b7eeff7acaca1",
       "implementationSha256ByPlatform": {
-        "darwin": "cb707b5264728afba17f81639a6551ca4252316773560fe9cde66436c4318b44",
-        "linux": "cb707b5264728afba17f81639a6551ca4252316773560fe9cde66436c4318b44",
-        "win32": "ecf4451ed364532f17a0a1677753a4c55f9a16e2f924d9033e270c926a552811"
+        "darwin": "40173b86c8bfd87bc6372585647c9374d87b70e77d9521880142a81a987305ba",
+        "linux": "40173b86c8bfd87bc6372585647c9374d87b70e77d9521880142a81a987305ba",
+        "win32": "c56c03b8b64eb60ce14d12fc6e3fb28539e75e25812488db436fc1e498ecdd1a"
       },
-      "frameworkVersion": "0.22.2",
+      "frameworkVersion": "0.22.3",
       "runtime": "python",
-      "platforms": [
-        "darwin",
-        "linux",
-        "win32"
-      ]
+      "platforms": ["darwin", "linux", "win32"]
     },
     {
       "id": "openai-agents-typescript",
       "version": "0.1.0",
       "manifestSha256": "35b4e04cda42e227ea8d352e3c87ec1ed7c5f53b39aafb734e895d456a32c38f",
       "implementationSha256ByPlatform": {
-        "darwin": "36f76afbf7f9aa06535cb9261a0600dfc61f41658d7a7c9f755d416ae748ba61",
-        "linux": "36f76afbf7f9aa06535cb9261a0600dfc61f41658d7a7c9f755d416ae748ba61",
-        "win32": "36f76afbf7f9aa06535cb9261a0600dfc61f41658d7a7c9f755d416ae748ba61"
+        "darwin": "df11882aa104230b308c838e4c0f0ea399aa4383f6b51a37e15bd978e8229e90",
+        "linux": "df11882aa104230b308c838e4c0f0ea399aa4383f6b51a37e15bd978e8229e90",
+        "win32": "df11882aa104230b308c838e4c0f0ea399aa4383f6b51a37e15bd978e8229e90"
       },
       "frameworkVersion": "0.18.0",
       "runtime": "node",
-      "platforms": [
-        "darwin",
-        "linux",
-        "win32"
-      ]
+      "platforms": ["darwin", "linux", "win32"]
     },
     {
       "id": "google-adk-python",
       "version": "0.1.0",
-      "manifestSha256": "228ea38c9bd16604420c54701c5c6784979a86aeb965a2254894dadd1fb91059",
+      "manifestSha256": "93cf8d3f654b8dd0256874ace35ade182c409025ca5100aabbb67a3ab57c77ea",
       "implementationSha256ByPlatform": {
-        "darwin": "fa66e924feaaebc3eaab6767ca3c59a3efe2b3a8c3e9c4bd3c1b561bcc177b8f",
-        "linux": "fa66e924feaaebc3eaab6767ca3c59a3efe2b3a8c3e9c4bd3c1b561bcc177b8f",
-        "win32": "06fcdaeab5ddf223c48f77b2f14f6462605778e64c5ac53ddbfb8a8df3029979"
+        "darwin": "f79a22ff2bb150e3e2b4669dad1923bd2abf62902f99f39abd604256cc8d7eca",
+        "linux": "f79a22ff2bb150e3e2b4669dad1923bd2abf62902f99f39abd604256cc8d7eca",
+        "win32": "a2b5d5d72df66a2f9fc00d5a833e37b567d5310d11c656e1c07068497202a793"
       },
-      "frameworkVersion": "2.9.2",
+      "frameworkVersion": "2.10.0",
       "runtime": "python",
-      "platforms": [
-        "darwin",
-        "linux",
-        "win32"
-      ]
+      "platforms": ["darwin", "linux", "win32"]
     },
     {
       "id": "google-adk-typescript",
       "version": "0.1.0",
       "manifestSha256": "be9927f4a04a28632b7396b7fa445c1e3b0da4057179e2665c229ab07332a57d",
       "implementationSha256ByPlatform": {
-        "darwin": "ca7a6d7eae2f14fc9ff071b0972f62c80fc9076c2ed5d5ea240267d59a2cdd3a",
-        "linux": "ca7a6d7eae2f14fc9ff071b0972f62c80fc9076c2ed5d5ea240267d59a2cdd3a",
-        "win32": "ca7a6d7eae2f14fc9ff071b0972f62c80fc9076c2ed5d5ea240267d59a2cdd3a"
+        "darwin": "8665efbe36433a01da927d655aa92ed4c9de9d5dc567e68852808b71885eb2db",
+        "linux": "8665efbe36433a01da927d655aa92ed4c9de9d5dc567e68852808b71885eb2db",
+        "win32": "8665efbe36433a01da927d655aa92ed4c9de9d5dc567e68852808b71885eb2db"
       },
       "frameworkVersion": "2.1.0",
       "runtime": "node",
-      "platforms": [
-        "darwin",
-        "linux",
-        "win32"
-      ]
+      "platforms": ["darwin", "linux", "win32"]
     }
   ]
 }
