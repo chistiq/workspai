@@ -45,7 +45,7 @@ by Workspai and then registered in Workspace Intelligence:
 - Astro: `npm create astro@latest <name>`
 - SvelteKit: `npx sv@latest create <name>`
 - Tauri: `npm create tauri-app@latest <name> -- --template vanilla-ts`
-- Electron Forge: `npx create-electron-app@latest <name> --template=vite-typescript`
+- Electron Forge: `npx create-electron-app@latest <name> --template vite --typescript`
 - VS Code Extension: `npx --package yo@latest --package generator-code@latest -- yo code <name> ...`
 - Laravel: `composer create-project --no-interaction --prefer-dist --stability=stable laravel/laravel <name>`
 

@@ -146,10 +146,10 @@ const OFFICIAL_PROJECT_GENERATORS: OfficialProjectGeneratorDefinition[] = [
         guidance: 'Install Git and make it available on PATH, then retry.',
       },
     ],
-    commandDisplay: (name) => `npx create-electron-app@latest ${name} --template=vite-typescript`,
+    commandDisplay: (name) => `npx create-electron-app@latest ${name} --template vite --typescript`,
     commandExec: (name) => ({
       command: 'npx',
-      args: ['--yes', 'create-electron-app@latest', name, '--template=vite-typescript'],
+      args: ['--yes', 'create-electron-app@latest', name, '--template', 'vite', '--typescript'],
     }),
     requiredArtifacts: ['package.json'],
   },

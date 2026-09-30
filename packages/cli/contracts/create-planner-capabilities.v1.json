@@ -518,7 +518,7 @@
       "canExecuteCreate": true,
       "versionPolicy": "latest-stable",
       "officialCommands": [
-        "npx create-electron-app@latest <name> --template=vite-typescript"
+        "npx create-electron-app@latest <name> --template vite --typescript"
       ],
       "adoptAfterCreate": true,
       "category": "desktop"

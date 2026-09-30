@@ -328,7 +328,14 @@ describe('project taxonomy and expanded kit families', () => {
     const electron = resolveOfficialProjectGenerator('desktop.electron');
     expect(electron?.commandExec('nova-desktop', { skipGit: false, skipInstall: false })).toEqual({
       command: 'npx',
-      args: ['--yes', 'create-electron-app@latest', 'nova-desktop', '--template=vite-typescript'],
+      args: [
+        '--yes',
+        'create-electron-app@latest',
+        'nova-desktop',
+        '--template',
+        'vite',
+        '--typescript',
+      ],
     });
 
     const tauri = resolveOfficialProjectGenerator('desktop.tauri');
