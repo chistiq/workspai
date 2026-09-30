@@ -100,15 +100,15 @@ verified from the Microsoft source tree:
 
 | Adapter                            | Tested framework | Runtime         | Authored detection                         |
 | ---------------------------------- | ---------------- | --------------- | ------------------------------------------ |
-| `microsoft-agent-framework-python` | `1.18.0`         | Python `>=3.10` | `agent-framework` PyPI package family      |
-| `microsoft-agent-framework-dotnet` | `1.21.0`         | .NET `>=8.0`    | `Microsoft.Agents.AI` NuGet package family |
+| `microsoft-agent-framework-python` | `1.19.0`         | Python `>=3.10` | `agent-framework` PyPI package family      |
+| `microsoft-agent-framework-dotnet` | `1.22.0`         | .NET `>=8.0`    | `Microsoft.Agents.AI` NuGet package family |
 
 The first provider profile pins its integration independently: Python uses
-`agent-framework-foundry` `1.13.0`, while .NET uses
-`Microsoft.Agents.AI.Foundry` `1.21.0-preview.260911.1` over the stable
-`Microsoft.Agents.AI` `1.21.0` core. Preview integration status is not
+`agent-framework-foundry` `1.13.1`, while .NET uses
+`Microsoft.Agents.AI.Foundry` `1.22.0-preview.260918.1` over the stable
+`Microsoft.Agents.AI` `1.22.0` core. Preview integration status is not
 misrepresented as framework stability. The dedicated .NET test project pins
-`Microsoft.NET.Test.Sdk` `18.10.0` and `xunit.v3.mtp-v2` `4.0.1`.
+`Microsoft.NET.Test.Sdk` `18.10.1` and `xunit.v3.mtp-v2` `4.0.1`.
 
 Each adapter implements detection, scaffold and attach planning, managed-file
 rendering, project context, validation, and runtime resolution. It never
@@ -129,7 +129,9 @@ Loaders share the OpenAI containment contract: canonical path walk, regular-file
 open, 128 KiB cap, UTF-8 JSON, and `schemaVersion: project-context-agent.v1`.
 The Python starter is pip-editable (`[build-system]` + setuptools modules) and
 uses the official Foundry hello-world `Agent(client=FoundryChatClient(...))`
-pattern with three read-only documented tools: `describe_workspai_context`,
+pattern. Agent execution enters the SDK agent as an async context manager so
+framework resources are closed according to the current upstream lifecycle.
+The starter exposes three read-only documented tools: `describe_workspai_context`,
 `read_workspai_project_summary`, and `list_workspai_supported_commands`. The
 .NET starter uses `AIProjectClient.AsAIAgent` plus `AIFunctionFactory.Create`,
 enables `RestorePackagesWithLockFile`, and does not emit invented NuGet lock
@@ -168,11 +170,11 @@ not reuse Microsoft detection, kits, or model-provider defaults.
 
 | Adapter                    | Tested framework | Runtime         | Authored detection                 |
 | -------------------------- | ---------------- | --------------- | ---------------------------------- |
-| `openai-agents-python`     | `0.22.2`         | Python `>=3.10` | exact PyPI package `openai-agents` |
+| `openai-agents-python`     | `0.22.3`         | Python `>=3.10` | exact PyPI package `openai-agents` |
 | `openai-agents-typescript` | `0.18.0`         | Node.js `>=22`  | exact npm package `@openai/agents` |
 
-The TypeScript starter also pins peer `zod` `4.6.5`, TypeScript `5.9.3`, and
-`@types/node` `22.20.3`. The `openai` PyPI or npm package alone is not this
+The TypeScript starter also pins peer `zod` `4.6.5`, TypeScript `7.0.2`, and
+`@types/node` `26.6.3`. The `openai` PyPI or npm package alone is not this
 framework. Generated markers under `.workspai/agent-frameworks/` cannot select
 it.
 
@@ -205,7 +207,7 @@ Claimed capabilities are conservative and independently evidenced:
   hosted tools, and human-approval loops
 
 Python cancellation uses `Runner.max_turns` and `ModelSettings.timeout` from
-`openai-agents` `0.22.2`. `ModelSettings.timeout` is a per-model-request
+`openai-agents` `0.22.3`. `ModelSettings.timeout` is a per-model-request
 timeout applied only on the live model path. Injected `ScriptedModel` runs omit
 it because that setting hung the official test double on Python 3.13.
 TypeScript cancellation uses `maxTurns` plus `AbortSignal` from
@@ -234,7 +236,9 @@ Create and Attach still refuse a kit whose adapter is not release-admitted;
 visibility in the picker is not permission to write a blocked adapter.
 Attach still requires `--framework openai-agents` when the
 runtime is shared. OpenAI adapters are labeled `stable`; release admission
-remains blocked until the exact v2 cross-platform candidate is promoted.
+remains valid for the unchanged TypeScript `0.18.0` baseline. The updated
+Python `0.22.3` baseline remains blocked until its exact v2 cross-platform
+candidate is reviewed and promoted.
 Handoffs, MCP, sessions, voice, sandbox, and approval loops stay unsupported.
 Microsoft adapters remain `preview`.
 
@@ -250,20 +254,25 @@ Exact pins live in `src/agent-frameworks/version-baselines.v1.json`. Discovery
 must re-prove registry and GitHub agreement on the day it runs; TypeScript 2.0
 graph Workflow Runtime is not generalized to Python.
 
-| Adapter                 | Runtime           | Authored detection            |
-| ----------------------- | ----------------- | ----------------------------- |
+| Adapter                 | Runtime           | Authored detection              |
+| ----------------------- | ----------------- | ------------------------------- |
 | `google-adk-python`     | Python `>=3.10`   | exact PyPI package `google-adk` |
 | `google-adk-typescript` | Node.js `>=20.19` | exact npm package `@google/adk` |
 
-The TypeScript starter also pins `zod`, TypeScript, and `@types/node` from the
-same baseline document. `@google/adk-devtools` is not a v1 dependency. Do not
+The Python baseline is `google-adk` `2.10.0`. The TypeScript baseline is
+`@google/adk` `2.1.0` with `zod` `4.6.5`, TypeScript `7.0.2`, and
+`@types/node` `26.6.3`. `@google/adk-devtools` is not a v1 dependency. Do not
 run unqualified `npx adk`.
 
 Adapters are labeled `preview`. Create kits are `agent.google-adk.python` and
-`agent.google-adk.typescript`. The reviewed v2 inventory admits both exact
-baselines from Linux, macOS, and Windows evidence, so Create and Attach are
-enabled. The generic admission boundary still refuses any unpublished or
-drifted kit before `--dry-run` and before filesystem or workspace mutation.
+`agent.google-adk.typescript`. The unchanged TypeScript baseline remains
+admitted by the reviewed v2 Linux, macOS, and Windows evidence. The updated
+Python `2.10.0` baseline is visible in the catalog but Create and Attach remain
+blocked until fresh three-platform evidence is reviewed and promoted. The
+generic admission boundary refuses any unpublished or drifted kit before
+`--dry-run` and before filesystem or workspace mutation. Generated Python code
+uses the current ADK lifecycle: construct `App(root_agent=...)`, pass that app
+to `Runner`, and enter the runner as an async context manager.
 Streaming emits `event.partial` fragments as
 display deltas. The SDK-recognized final response is retained as canonical text
 and is not re-emitted after streamed fragments. Intermediate metadata does not
@@ -342,8 +351,8 @@ npx workspai agent framework plan \
 When more than one published framework shares a runtime, pass `--framework`
 explicitly. Workspai does not guess or fall back. `--runtime python` without
 `--framework` requires an explicit choice because Microsoft Agent Framework,
-OpenAI Agents SDK, and Google ADK are all published and release-admitted at
-their exact reviewed baselines.
+OpenAI Agents SDK, and Google ADK are all published. A published choice may
+still be blocked when its current baseline is not release-admitted.
 
 The interactive attach command displays the same plan and asks before granting
 its filesystem effect. Automation must opt in with `--yes` and records the
@@ -372,7 +381,8 @@ consequences rather than unrelated surprises. A blocked or no-op
 request created without an external Goal closes its generated Change and Goal
 instead of leaving actionable lifecycle state behind.
 
-The same admitted lifecycle is available for a new project:
+The same admission-governed lifecycle is available for a new project when the
+selected baseline is currently admitted:
 
 ```bash
 npx workspai create project agent.microsoft.python support-agent
@@ -454,8 +464,10 @@ multi-language Microsoft Agent Framework. OpenAI Agents SDK and Google ADK
 Python and TypeScript adapters share that same create, attach, detection,
 ownership, and verification host. They are selectable for Create and Attach
 only while their exact manifest digest, framework baseline, runtime, and
-platform list remain in the reviewed release-admission inventory. Microsoft
-adapters remain selectable while their current inventory entries stay valid.
+platform list remain in the reviewed release-admission inventory. At the
+current baselines, OpenAI TypeScript and Google TypeScript remain admitted;
+Microsoft Python and .NET, OpenAI Python, and Google Python remain blocked
+until new three-platform evidence is promoted.
 
 ## Implementation sequence
 

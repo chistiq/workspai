@@ -7,6 +7,31 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- Updated tested Agent Framework baselines to Microsoft Agent Framework Python
+  `1.19.0` with Foundry `1.13.1`, Microsoft Agent Framework .NET `1.22.0`
+  with Foundry `1.22.0-preview.260918.1`, OpenAI Agents Python `0.22.3`, and
+  Google ADK Python `2.10.0`. TypeScript agent starters now pin TypeScript
+  `7.0.2` and `@types/node` `26.6.3`.
+- Aligned generated Python lifecycle code with current upstream contracts:
+  Microsoft agents are entered as async context managers, while Google ADK
+  constructs an `App`, passes it to `Runner`, and closes the runner through
+  its async context.
+- Updated source-ready OpenRouter Client SDK baselines to TypeScript `1.3.33`
+  and Python `1.2.32`. The beta Go SDK remains excluded at `v0.8.32`.
+
+### Fixed
+
+- Release admission, Create hints, and framework user-flow tests now assess
+  the current adapter manifest and version baseline instead of treating the
+  presence of stale inventory evidence as authorization. Microsoft Python and
+  .NET, OpenAI Python, and Google ADK Python therefore remain fail-closed until
+  fresh Linux, macOS, and Windows evidence is reviewed and promoted; the
+  unchanged OpenAI and Google TypeScript baselines remain admitted.
+- Validate and normalize an agent instance name before release-admission
+  lookup so malformed path-shaped input fails deterministically.
+
 ## [0.78.0] - 2026-09-23
 
 ### Added
@@ -61,7 +86,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Added
 
 - Introduced the first-class **AI Gateway** Create category (`Unified model
-  access and routing`) with OpenRouter Client SDK kits
+access and routing`) with OpenRouter Client SDK kits
   `gateway.openrouter.typescript` (`@openrouter/sdk` `1.3.11`) and
   `gateway.openrouter.python` (`openrouter` `1.2.11`). Generated projects are
   server-owned, pin reviewed SDK baselines, keep the model as runtime
@@ -103,11 +128,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   path exists, then falls back to the first token so commands such as
   `go build ./...` still resolve through `which`.
 - Model Gateway version discovery is a read-only `discover → propose → review
-  → qualify → merge` path. Registry and GitHub must agree before a baseline
+→ qualify → merge` path. Registry and GitHub must agree before a baseline
   proposal can be written. Workspace lifecycle qualification no longer returns
   green when package installation fails.
 - Qualification treats sparse workspace-run init receipts (`errorCategory:
-  unknown` and `Stage failed with exit code 1`, including missing npm/pip
+unknown` and `Stage failed with exit code 1`, including missing npm/pip
   excerpts) as registry infrastructure, not product failure, and retries once.
 - Doctor and the workspace model keep an OpenRouter gateway as framework
   `openrouter` and kind `gateway`, instead of collapsing it to generic Python

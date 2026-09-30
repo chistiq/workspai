@@ -91,8 +91,8 @@ export async function prepareAgentFrameworkAttachment(input: {
   intent?: string;
   mode?: 'scaffold' | 'attach';
 }): Promise<PreparedAgentFrameworkAttachment> {
-  const { registry, selection } = requireAdmittedSelection(input);
   const instanceName = normalizedAgentInstanceName(input.instanceName);
+  const { registry, selection } = requireAdmittedSelection(input);
 
   let goalId = input.goalId;
   const ownsGoal = !goalId;

@@ -23,10 +23,10 @@ These kits ship as source-ready. That is not Workspai release admission and
 does not label them `stable` or `qualified`. SDK `1.x` stability is an upstream
 classification, not a Workspai release gate.
 
-| Kit | Runtime | Official Client SDK | Reviewed |
-| --- | --- | --- | --- |
-| `gateway.openrouter.typescript` | Node.js `>=20` | `@openrouter/sdk` `1.3.11` | 2026-09-21 |
-| `gateway.openrouter.python` | Python `>=3.10` | `openrouter` `1.2.11` | 2026-09-21 |
+| Kit                             | Runtime         | Official Client SDK        | Reviewed   |
+| ------------------------------- | --------------- | -------------------------- | ---------- |
+| `gateway.openrouter.typescript` | Node.js `>=20`  | `@openrouter/sdk` `1.3.33` | 2026-09-28 |
+| `gateway.openrouter.python`     | Python `>=3.10` | `openrouter` `1.2.32`      | 2026-09-28 |
 
 Aliases: `openrouter.typescript`, `gateway.openrouter.ts`, `openrouter-typescript`,
 and the matching Python aliases. Bare `openrouter` is not an alias.
@@ -78,9 +78,9 @@ same commit before a Workspai release can present these kits as qualified.
 ## Intentionally unsupported languages
 
 The official Go SDK (`github.com/OpenRouterTeam/go-sdk`) was evaluated on
-2026-09-21. The upstream README classifies the current `0.x` line as beta and
+2026-09-28. The upstream README classifies the current `0.x` line as beta and
 warns that breaking changes may ship in minor releases. proxy.golang.org
-reported `v0.8.11`. Go is excluded from the stable Create surface until
+reported `v0.8.32`. Go is excluded from the stable Create surface until
 upstream classifies a release line as stable.
 
 The OpenRouter Agent SDK (`@openrouter/agent`) belongs to the agent-runtime
@@ -106,22 +106,22 @@ Routing and privacy policy live in source-controlled `gateway.policy.json`.
 Field names match the pinned SDK for that language. Unknown fields are rejected
 fail-closed in both languages. Supported controls:
 
-| Official field | TypeScript policy | Python policy | Validation |
-| --- | --- | --- | --- |
-| model fallbacks | `models` | `models` | unique non-empty strings; must not repeat `OPENROUTER_MODEL` |
-| `allowFallbacks` | `allowFallbacks` | `allow_fallbacks` | boolean when present |
-| `order` / `only` / `ignore` | same camelCase | same snake_case | unique non-empty strings; `only`∩`ignore` empty; `order` must not include ignored providers |
-| `sort` | string or `{ by, partition }` | string or `{ by, partition }` | `price`/`throughput`/`latency`/`exacto`; `partition` is `model` or `none` |
-| `quantizations` | camelCase list | snake_case list | pinned SDK enum values |
-| `requireParameters` | `requireParameters` | `require_parameters` | boolean when present |
-| `zdr` | `zdr` | `zdr` | boolean; cannot combine with `dataCollection`/`data_collection` `allow` |
-| `dataCollection` | `dataCollection` | `data_collection` | `allow` or `deny` |
-| `enforceDistillableText` | `enforceDistillableText` | `enforce_distillable_text` | boolean when present; both pinned SDKs expose this field |
-| `maxPrice` | `maxPrice` | `max_price` | object with `prompt`/`completion`/`request`/`image`/`audio` as non-negative numeric strings that remain finite after numeric interpretation |
-| `preferredMinThroughput` | number or `{ p50, p75, p90, p99 }` | same | finite non-negative numbers |
-| `preferredMaxLatency` | number or `{ p50, p75, p90, p99 }` | same | finite non-negative numbers |
-| timeout | `timeoutMs` | `timeout_ms` | integer 1–600000; env overrides with a digit string |
-| attribution | `httpReferer`, `appTitle` | `http_referer`, `x_open_router_title` | strings when present |
+| Official field              | TypeScript policy                  | Python policy                         | Validation                                                                                                                                  |
+| --------------------------- | ---------------------------------- | ------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| model fallbacks             | `models`                           | `models`                              | unique non-empty strings; must not repeat `OPENROUTER_MODEL`                                                                                |
+| `allowFallbacks`            | `allowFallbacks`                   | `allow_fallbacks`                     | boolean when present                                                                                                                        |
+| `order` / `only` / `ignore` | same camelCase                     | same snake_case                       | unique non-empty strings; `only`∩`ignore` empty; `order` must not include ignored providers                                                 |
+| `sort`                      | string or `{ by, partition }`      | string or `{ by, partition }`         | `price`/`throughput`/`latency`/`exacto`; `partition` is `model` or `none`                                                                   |
+| `quantizations`             | camelCase list                     | snake_case list                       | pinned SDK enum values                                                                                                                      |
+| `requireParameters`         | `requireParameters`                | `require_parameters`                  | boolean when present                                                                                                                        |
+| `zdr`                       | `zdr`                              | `zdr`                                 | boolean; cannot combine with `dataCollection`/`data_collection` `allow`                                                                     |
+| `dataCollection`            | `dataCollection`                   | `data_collection`                     | `allow` or `deny`                                                                                                                           |
+| `enforceDistillableText`    | `enforceDistillableText`           | `enforce_distillable_text`            | boolean when present; both pinned SDKs expose this field                                                                                    |
+| `maxPrice`                  | `maxPrice`                         | `max_price`                           | object with `prompt`/`completion`/`request`/`image`/`audio` as non-negative numeric strings that remain finite after numeric interpretation |
+| `preferredMinThroughput`    | number or `{ p50, p75, p90, p99 }` | same                                  | finite non-negative numbers                                                                                                                 |
+| `preferredMaxLatency`       | number or `{ p50, p75, p90, p99 }` | same                                  | finite non-negative numbers                                                                                                                 |
+| timeout                     | `timeoutMs`                        | `timeout_ms`                          | integer 1–600000; env overrides with a digit string                                                                                         |
+| attribution                 | `httpReferer`, `appTitle`          | `http_referer`, `x_open_router_title` | strings when present                                                                                                                        |
 
 `exacto` is part of the pinned SDK `ProviderSort` enums, not a Workspai extension.
 Malformed JSON and wrong types raise `GatewayConfigurationError` before SDK
@@ -175,7 +175,7 @@ SDK `cancel()`. A cleanup failure does not replace the primary error or convert
 a successful completion into an error.
 
 The TypeScript starter forwards `AbortSignal` through `chat.send` options,
-including an already-aborted signal. Pinned `@openrouter/sdk` `1.3.11`
+including an already-aborted signal. Pinned `@openrouter/sdk` `1.3.33`
 `EventStream` extends `ReadableStream` and does not expose a dedicated `close()`.
 Cancellation is `ReadableStream` async-iterator `return()` → `cancel()`. If the
 stream has already errored, `cancel()` may be a no-op; the gateway still drops

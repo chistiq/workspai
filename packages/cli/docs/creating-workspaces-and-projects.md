@@ -391,22 +391,24 @@ project metadata and performs the selected workspace registration.
 
 ## Agent Framework kits
 
-| Kit                      | Runtime | Tested baseline | Layout |
-| ------------------------ | ------- | --------------- | ------ |
-| `agent.microsoft.python` | Python  | `agent-framework-core` `1.18.0`, Foundry `1.13.0`, `azure-identity` `1.25.3` | Isolated `agents/<instance>/` with `pyproject.toml`, credentialless `unittest`, and `.env.example` |
-| `agent.microsoft.dotnet` | .NET    | `Microsoft.Agents.AI` `1.21.0`, Foundry `1.21.0-preview.260911.1` | Isolated `agents/<instance>/` with the executable project plus a dedicated test project |
-| `agent.openai.python` | Python | `openai-agents` `0.22.2` | Isolated `agents/<instance>/` with pip-editable `pyproject.toml`, credentialless `unittest`, and `.env.example` |
-| `agent.openai.typescript` | Node.js | `@openai/agents` `0.18.0`, `zod` `4.6.5` | Isolated `agents/<instance>/` with `package.json`, credentialless `node:test`, and `.env.example` |
-| `agent.google-adk.python` | Python | `google-adk` `2.9.2` | Isolated `agents/<instance>/` with pip-editable `pyproject.toml`, credentialless `unittest`, and provider profiles `gemini-api` / `vertex-ai`. Preview and release-admitted. |
-| `agent.google-adk.typescript` | Node.js | `@google/adk` `2.1.0`, `zod` `4.6.5` | Isolated `agents/<instance>/` with `package.json`, credentialless `node:test`, and provider profiles `gemini-api` / `vertex-ai`. Preview, release-admitted, and independent from the Python runtime. |
+| Kit                           | Runtime | Tested baseline                                                              | Layout                                                                                                                                                                                               |
+| ----------------------------- | ------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `agent.microsoft.python`      | Python  | `agent-framework-core` `1.19.0`, Foundry `1.13.1`, `azure-identity` `1.25.3` | Isolated `agents/<instance>/` with `pyproject.toml`, credentialless `unittest`, and `.env.example`. Preview; awaiting fresh release admission.                                                       |
+| `agent.microsoft.dotnet`      | .NET    | `Microsoft.Agents.AI` `1.22.0`, Foundry `1.22.0-preview.260918.1`            | Isolated `agents/<instance>/` with the executable project plus a dedicated test project. Preview; awaiting fresh release admission.                                                                  |
+| `agent.openai.python`         | Python  | `openai-agents` `0.22.3`                                                     | Isolated `agents/<instance>/` with pip-editable `pyproject.toml`, credentialless `unittest`, and `.env.example`. Stable upstream; awaiting fresh release admission.                                  |
+| `agent.openai.typescript`     | Node.js | `@openai/agents` `0.18.0`, `zod` `4.6.5`                                     | Isolated `agents/<instance>/` with `package.json`, credentialless `node:test`, and `.env.example`                                                                                                    |
+| `agent.google-adk.python`     | Python  | `google-adk` `2.10.0`                                                        | Isolated `agents/<instance>/` with pip-editable `pyproject.toml`, credentialless `unittest`, and provider profiles `gemini-api` / `vertex-ai`. Preview; awaiting fresh release admission.            |
+| `agent.google-adk.typescript` | Node.js | `@google/adk` `2.1.0`, `zod` `4.6.5`                                         | Isolated `agents/<instance>/` with `package.json`, credentialless `node:test`, and provider profiles `gemini-api` / `vertex-ai`. Preview, release-admitted, and independent from the Python runtime. |
 
-Interactive `workspai create` shows these kits under **AI Agent** after
-reviewed release admission. Agent kits require Workspace governance and therefore do not
-accept `--no-workspace`. Optional `--agent-name` names the instance directory
-(default `primary`). They do not install dependencies, call a model, or store
-credentials. Exact versions are promoted only after the full Linux, macOS, and
-Windows conformance matrix passes. Weekly registry discovery is report-only; it
-cannot rewrite these pins.
+Interactive `workspai create` shows every published kit under **AI Agent** and
+labels kits whose current baseline awaits release admission. Visibility is not
+authorization: scaffolding remains blocked until the exact baseline has
+reviewed evidence. Agent kits require Workspace governance and therefore do
+not accept `--no-workspace`. Optional `--agent-name` names the instance
+directory (default `primary`). They do not install dependencies, call a model,
+or store credentials. Exact versions are promoted only after the full Linux,
+macOS, and Windows conformance matrix passes. Weekly registry discovery is
+report-only; it cannot rewrite these pins.
 
 Create does not emit an empty root `pyproject.toml` or `.csproj`. The nested
 instance is the only Workspace Run unit. After Create, Model and Graph already
@@ -423,17 +425,17 @@ independent proof for this scaffold. See
 
 ## AI Gateway kits
 
-| Kit | Runtime | Tested baseline | Layout |
-| --- | --- | --- | --- |
-| `gateway.openrouter.typescript` | Node.js | `@openrouter/sdk` `1.3.11`, TypeScript `5.9.3`, `@types/node` `22.20.3` | Server-owned OpenRouter Client SDK starter with `gateway.policy.json`, credentialless `node:test`, and `.env.example` |
-| `gateway.openrouter.python` | Python | `openrouter` `1.2.11` | Server-owned OpenRouter Client SDK starter with `gateway.policy.json`, credentialless `unittest`, and `.env.example` |
+| Kit                             | Runtime | Tested baseline                                                         | Layout                                                                                                                |
+| ------------------------------- | ------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| `gateway.openrouter.typescript` | Node.js | `@openrouter/sdk` `1.3.33`, TypeScript `5.9.3`, `@types/node` `22.20.3` | Server-owned OpenRouter Client SDK starter with `gateway.policy.json`, credentialless `node:test`, and `.env.example` |
+| `gateway.openrouter.python`     | Python  | `openrouter` `1.2.32`                                                   | Server-owned OpenRouter Client SDK starter with `gateway.policy.json`, credentialless `unittest`, and `.env.example`  |
 
 Interactive `workspai create` shows these kits under **AI Gateway** with the
 hint **Unified model access and routing**. A model identifier is runtime
 configuration, not a kit. Create does not install dependencies, call a model,
 or store credentials. Attach is not supported for Gateway in this release.
-The official Go Client SDK remains beta (`v0.8.11` on
-2026-09-21) and is not admitted. See
+The official Go Client SDK remains beta (`v0.8.32` on
+2026-09-28) and is not admitted. See
 [AI Gateway](./model-gateways.md).
 
 ## Desktop, extension, and additional backend generators

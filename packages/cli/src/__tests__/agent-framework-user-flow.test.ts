@@ -5,10 +5,11 @@ import fsExtra from 'fs-extra';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
+  assessBundledAgentFrameworkRelease,
+  BUILTIN_AGENT_FRAMEWORK_ADAPTERS,
   applyPreparedAgentFrameworkAttachment,
   prepareAgentFrameworkAttachment,
-} from '../agent-frameworks/user-flow.js';
-import { listBundledAgentFrameworkReleaseAdmissions } from '../agent-frameworks/release-admission.js';
+} from '../agent-frameworks/index.js';
 import { readDecisionTransaction } from '../decisions/decision-store.js';
 import { inspectGoalLifecycle } from '../goal-lifecycle.js';
 import { verifyProofCarryingChange } from '../proof-carrying-change.js';
@@ -16,11 +17,15 @@ import { buildWorkspaceModel, writeWorkspaceModel } from '../workspace-model.js'
 import { runWorkspaceIntelligenceChain } from '../workspace-intelligence-runner.js';
 
 const roots: string[] = [];
-const releaseAdmissions = listBundledAgentFrameworkReleaseAdmissions();
-const releaseAdmitted = releaseAdmissions.some(
-  (admission) => admission.id === 'microsoft-agent-framework-python'
-);
-const googleAdmitted = releaseAdmissions.some((admission) => admission.id === 'google-adk-python');
+function isReleaseAdmitted(adapterId: string): boolean {
+  const adapter = BUILTIN_AGENT_FRAMEWORK_ADAPTERS.find(
+    (candidate) => candidate.manifest.adapter.id === adapterId
+  );
+  return adapter ? assessBundledAgentFrameworkRelease(adapter).status === 'admitted' : false;
+}
+
+const releaseAdmitted = isReleaseAdmitted('microsoft-agent-framework-python');
+const googleAdmitted = isReleaseAdmitted('google-adk-python');
 
 async function fixture(
   options: { secondProject?: boolean; extraProjects?: string[] } = {}

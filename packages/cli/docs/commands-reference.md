@@ -278,11 +278,14 @@ See [Canonical-first agent entry](./agent-entry.md).
 
 `agent framework` is the governed bridge between Workspai evidence and an
 agent runtime. `list` exposes every built-in adapter and its release-admission
-state. In this CLI version Microsoft Python `1.18.0` and .NET `1.21.0` remain
-`preview`. OpenAI Agents SDK Python `0.22.2` and TypeScript `0.18.0` are
-labeled `stable`. Google ADK Python `2.9.2` and TypeScript `2.1.0` remain
-labeled `preview` and are admitted for Create and Attach by their complete
-Linux, macOS, and Windows evidence. Create and Attach require the reviewed v2 release inventory,
+state. In this CLI version Microsoft Python `1.19.0` and .NET `1.22.0` remain
+`preview`. OpenAI Agents SDK Python `0.22.3` and TypeScript `0.18.0` are
+labeled `stable`. Google ADK Python `2.10.0` and TypeScript `2.1.0` remain
+labeled `preview`. The unchanged OpenAI and Google TypeScript baselines remain
+admitted. Updated Microsoft Python and .NET, OpenAI Python, and Google ADK
+Python baselines await fresh Linux, macOS, and Windows release evidence, so
+Create and Attach fail closed for those four adapters. Create and Attach
+require the reviewed v2 release inventory,
 whose manifest, framework baseline, runtime, and platform claims were promoted
 from the Linux, macOS, and Windows release matrix. Semantic implementation
 digests remain audit provenance rather than runtime authorization. `plan`
@@ -292,13 +295,13 @@ selects `python`, `dotnet`, or `node`. `--framework` selects the independent
 framework id when more than one admitted adapter shares that runtime.
 `attach` shows that plan and requires an
 interactive confirmation or explicit `--yes` before granting the filesystem
-effect and writing an isolated `agents/<name>` directory. `create project
-agent.microsoft.python|dotnet` uses the same admitted lifecycle for a new
-project: it registers the project, plans against a Model baseline, writes the
-nested runtime, then re-observes Model/Graph before it claims Intelligence is
-sealed. `create project agent.openai.python|typescript` uses the same admitted
-lifecycle. `create project agent.google-adk.python|typescript` uses the same
-admitted lifecycle. Dependency installation, credentials, generated-code execution, and
+effect and writing an isolated `agents/<name>` directory. When its selected
+baseline is admitted, `create project agent.microsoft.python|dotnet` uses the
+same governed lifecycle for a new project: it registers the project, plans
+against a Model baseline, writes the nested runtime, then re-observes
+Model/Graph before it claims Intelligence is sealed. The OpenAI and Google ADK
+Create kits use the same admission-governed lifecycle. Dependency installation,
+credentials, generated-code execution, and
 model provider calls are never implied by that approval. `apply` is the
 automation counterpart for a plan that was separately authorized with
 `change authorize`. Any adapter, version, manifest, runtime, or platform drift

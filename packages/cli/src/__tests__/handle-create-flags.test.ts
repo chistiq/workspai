@@ -9,13 +9,20 @@ import path from 'path';
 import * as cliPrompts from '../cli-ui/prompts.js';
 import * as frontendProject from '../frontend-project.js';
 import * as officialProject from '../official-project.js';
-import { listBundledAgentFrameworkReleaseAdmissions } from '../agent-frameworks/release-admission.js';
+import {
+  assessBundledAgentFrameworkRelease,
+  BUILTIN_AGENT_FRAMEWORK_ADAPTERS,
+} from '../agent-frameworks/index.js';
 
-const releaseAdmissions = listBundledAgentFrameworkReleaseAdmissions();
-const releaseAdmitted = releaseAdmissions.some(
-  (admission) => admission.id === 'openai-agents-python'
-);
-const googleAdmitted = releaseAdmissions.some((admission) => admission.id === 'google-adk-python');
+function isReleaseAdmitted(adapterId: string): boolean {
+  const adapter = BUILTIN_AGENT_FRAMEWORK_ADAPTERS.find(
+    (candidate) => candidate.manifest.adapter.id === adapterId
+  );
+  return adapter ? assessBundledAgentFrameworkRelease(adapter).status === 'admitted' : false;
+}
+
+const releaseAdmitted = isReleaseAdmitted('openai-agents-python');
+const googleAdmitted = isReleaseAdmitted('google-adk-python');
 
 describe('handleCreateOrFallback - wrapper flags handling', () => {
   let tmpDir: string;
