@@ -1,69 +1,52 @@
 # Workspai NPM — Documentation Index
 
-Workspai helps people and tools understand the same software system. Use these
-guides to connect existing projects, create new ones, map their relationships,
-check changes, prepare AI context, and automate release checks.
+Start here to map an existing project, inspect blockers, and give your coding
+agent focused context. These guides also cover new projects, teams, and CI.
 
 Start with the [main README](../README.md) for the product overview, or use the
 quickstart below. `workspai` is the main package and command; `wspai` is only a
 shorter optional name.
 
-## Quickstart: from zero to value in 60 seconds
+## Start with an existing project
 
-You have an existing project. You want AI agents (and your team) to understand
-it as a system—not just a pile of files. Three commands:
+You need Node.js **20.19+** and npm. The system map and checks do not require an
+AI API key. Open your project and run:
 
 ```bash
-# Step 1: Adopt the project (it stays where it is)
 cd /path/to/your/project
 npx workspai adopt .
-
-# Step 2: Build the full workspace intelligence
-npx workspai workspace intelligence run --for-agent generic --strict --json
-
-# Step 3: Validate the canonical agent entry
-npx workspai agent bootstrap --for-agent generic --strict --json
+npx workspai workspace intelligence run --for-agent generic
 ```
 
-That is it. Your project now has:
+Your source stays in place. Workspai writes project metadata and agent entry
+files and saves shared reports in the linked workspace. Read the terminal
+summary for detected projects, context, and recorded blockers.
 
-- A **Workspace Model** describing every project, runtime, and dependency
-- A **Knowledge Graph** with searchable, proof-backed relationships
-- **Agent grounding** files (`AGENTS.md`, Cursor rules, Claude rules, etc.)
-- **Health checks** that name what is broken and why
+Choose your next step:
 
-Continue from the same project terminal for any Workspai command—no `cd` needed.
+| You want to… | Try this |
+| --- | --- |
+| Inspect a system relationship | `npx workspai workspace graph search "authentication" --limit 5 --json` — use a term from your code |
+| Validate the entry for a coding agent | `npx workspai agent bootstrap --for-agent generic --strict --json` |
+| Use the complete runner in CI | `npx workspai workspace intelligence run --for-agent generic --strict --json` |
 
-Use `generic` for a vendor-neutral context pack, or select a published host
-target such as `codex`, `claude`, `gemini`, `qwen`, `kimi`, `grok`, `copilot`,
-`cursor`, `windsurf`, or `amazon-q`. Agent Sync publishes shared files and thin
-host adapters that route every consumer to the same evidence.
+Keep using the same project terminal. `generic` prepares portable context for
+supported agent hosts; use a named host such as `codex`, `claude`, or `cursor`
+for its bootstrap receipt. [Agent entry guide](./agent-entry.md).
 
-Use the release pipeline when you need the broader release workflow:
+If a check is blocked, inspect the report and its evidence before claiming
+readiness. An empty graph search means no match is proven by the current graph.
+Refreshing Workspace Intelligence updates the saved system view after changes.
+
+Starting a new project instead? Open the guided flow:
 
 ```bash
-npx workspai pipeline --json --strict
+npx workspai create
 ```
 
-Adoption keeps source in place. The command maps the system and its
-connections, checks what changes may affect, runs health and release checks,
-and prepares focused AI context under `.workspai/`. When the workspace is not
-ready, the report shows the reason and points to the files or reports behind
-it. Automation details and supported AI tools are documented in the
-[Unified runner](./workspace-intelligence-runner.md). See the
-[Artifact Catalog](./contracts/ARTIFACT_CATALOG.md) for exact paths, writers,
-schemas, and consumers.
-
-To start with a new workspace instead:
-
-```bash
-npx workspai create workspace my-workspace --profile minimal --yes
-cd ~/.workspai/workspaces/my-workspace
-npx workspai create project nextjs web --yes
-```
-
-From the workspace terminal, create a project, use `adopt` to link one in place,
-or use `import` to copy or clone one into the workspace.
+[Creating workspaces and projects](./creating-workspaces-and-projects.md) covers
+the choices. For the broader release workflow, see
+[CI workflows](./ci-workflows.md); `pipeline` complements the intelligence runner.
 
 ## Table of contents
 

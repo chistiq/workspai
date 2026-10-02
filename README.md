@@ -8,69 +8,49 @@
 
 ## Give your AI agent the system, not just the repository
 
-**Your AI coding agent wastes time guessing your project structure. Workspai fixes that.**
+**Your coding agent should not have to rediscover your architecture every session.**
 
 > One workspace. One truth. Humans and AI aligned.
 
 ## Workspace Intelligence for software systems
 
-Workspai is an open-source CLI that gives people and AI tools one governed view
-of the software system they are changing.
+Workspai is an open-source CLI that maps your software, links relationships to
+source evidence, and prepares focused context for your coding agent. Developers,
+agents, and CI can inspect the same system map and recorded blockers.
+
+**Same agent. Better system context.** Start inside an existing project:
 
 ```bash
 npx workspai adopt .
 npx workspai workspace intelligence run --for-agent generic
 ```
 
-Two commands. Your project gains a bounded, evidence-backed system view:
+Requires **Node.js 20.19+ and npm**. The system map and checks run locally without
+an AI API key. Your source stays in place; Workspai adds project metadata and
+agent entry files and saves reports in a linked workspace.
 
-| Before Workspai                              | After Workspai                                        |
-| -------------------------------------------- | ----------------------------------------------------- |
-| Agent scans thousands of files for context   | Agent starts from bounded entry and context artifacts |
-| No dependency map between services           | Searchable graph with source-level proof              |
-| Broken test blocks release, no one knows why | Doctor localizes the blocker and next target          |
-| Every AI session starts from scratch         | Sessions resume from durable evidence                 |
-
-Here is what you get:
-
-| What it produces | Why it matters |
+| Your question | What Workspai gives you |
 | --- | --- |
-| **Workspace Model** | A canonical inventory of registered projects, detected runtimes, frameworks, and proven dependencies |
-| **Knowledge Graph** | Searchable relationships between projects, backed by source-level proof |
-| **Health & Readiness** | Doctor checks, verification gates, and release posture based on evidence, not guesses |
-| **Agent Grounding** | Focused context, rules, and operational Skills for supported agent hosts |
-| **MCP Server** | Versioned read-oriented tools for querying evidence, graph, blockers, and context live |
-
-`generic` is the portable default: one canonical context, plus lightweight
-adapters for every supported agent host without rebuilding the Model or
-Graph per provider.
-
-### What the output looks like
-
-The canonical workspace owns the Model, Graph, context, evidence index, and
-Skills. Each linked project keeps only its portable entry, scoped context, and
-workspace binding:
-
-```text
-your-workspace/
-├── .workspai/
-│   ├── reports/                       # Model, Graph, verification, context
-│   └── skills/                        # evidence-derived playbooks
-├── AGENTS.md · .codex/ · .cursor/ · .claude/ · .github/ · .agents/
-└── project/.workspai/
-    ├── agent-entry.v1.json            # portable project entry
-    └── workspace-link.local.json      # machine-local binding
-```
-
-Your agent starts with the project's `agent-entry.v1.json`, resolves the canonical
-workspace, and then reads compact project context before retrieving task-scoped
-Graph evidence or targeted source.
-
-![Workspai CLI adopting and analyzing the gRPC repository](packages/cli/docs/workspai-grpc-readme-cli.gif)
+| **How does this system fit together?** | A map of projects and proven relationships, with source references |
+| **What is blocking the next step?** | Recorded checks, missing evidence, and targets to investigate |
+| **Where should my agent start?** | A compact project entry, focused context, and saved evidence it can validate |
 
 [Get started](#start-with-your-software) ·
-[How it works](#how-it-works) ·
+[Watch the workflow](#see-the-first-run) ·
+[Give your agent a goal](#from-intent-to-a-verified-change) ·
 [Documentation](packages/cli/docs/README.md)
+
+Use it for a repository you are joining, an agent working on existing code, or a
+team connecting several projects. Workspai supplies evidence and context;
+your coding agent still implements the change.
+
+`generic` prepares portable context and entry adapters for supported hosts,
+including Codex, Claude Code, Cursor, and GitHub Copilot. Each host uses the same
+workspace evidence. [Agent integration guide](packages/cli/docs/agent-entry.md).
+
+### See the first run
+
+![Workspai CLI adopting and analyzing the gRPC repository](packages/cli/docs/workspai-grpc-readme-cli.gif)
 
 ## Start with your software
 
@@ -85,17 +65,32 @@ Workspai creates or reuses a minimal workspace in the default system location
 and links the project to it. You can stay in the project directory:
 
 ```bash
-npx workspai workspace intelligence run --for-agent generic --strict --json
+npx workspai workspace intelligence run --for-agent generic
 ```
 
 This run builds the current system view, checks its evidence, and prepares
 shared context for people and tools. Governed reports are saved in the resolved
 canonical workspace under `.workspai/reports/`; the adopted project retains its
 portable entry and scoped context locally.
-When something is missing or blocked, Workspai reports it instead of claiming
-the workspace is healthy. This canonical form gives CI, agents, and other
-machine consumers strict gate semantics through the versioned JSON contract;
-omit `--strict --json` for the shorter human-readable first run shown above.
+Read the terminal summary for detected projects, generated context, and recorded
+blockers. A blocked check points to missing or failing evidence; it does not
+mean you must abandon the project.
+
+Then try a focused graph search. Replace `authentication` with a term from your
+own system:
+
+```bash
+npx workspai workspace graph search "authentication" --limit 5 --json
+```
+
+Inspect the returned evidence references before changing source. An empty
+result means the current graph has not proven a match.
+
+For CI and machine consumers, use the canonical strict JSON runner:
+
+```bash
+npx workspai workspace intelligence run --for-agent generic --strict --json
+```
 
 Starting from scratch? Use the guided flow:
 

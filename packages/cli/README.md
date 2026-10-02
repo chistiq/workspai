@@ -7,73 +7,53 @@
 
 ## Give your AI agent the system, not just the repository
 
-**Your AI coding agent wastes time guessing your project structure. Workspai fixes that.**
+**Your coding agent should not have to rediscover your architecture every session.**
 
 > One workspace. One truth. Humans and AI aligned.
 
 ## Workspace Intelligence for software systems
 
-Workspai is an open-source CLI that gives people and AI tools one governed view
-of the software system they are changing.
+Workspai is an open-source CLI that maps your software, links relationships to
+source evidence, and prepares focused context for your coding agent. Developers,
+agents, and CI can inspect the same system map and recorded blockers.
+
+**Same agent. Better system context.** Start inside an existing project:
 
 ```bash
 npx workspai adopt .
 npx workspai workspace intelligence run --for-agent generic
 ```
 
-Two commands. Your project gains a bounded, evidence-backed system view:
+Requires **Node.js 20.19+ and npm**. The system map and checks run locally without
+an AI API key. Your source stays in place; Workspai adds project metadata and
+agent entry files and saves reports in a linked workspace.
 
 ### Before vs After
 
-| Before Workspai                              | After Workspai                                        |
-| -------------------------------------------- | ----------------------------------------------------- |
-| Agent scans thousands of files for context   | Agent starts from bounded entry and context artifacts |
-| No dependency map between services           | Searchable graph with source-level proof              |
-| Broken test blocks release, no one knows why | Doctor localizes the blocker and next target          |
-| Every AI session starts from scratch         | Sessions resume from durable evidence                 |
+| Before | With Workspai |
+| --- | --- |
+| Architecture questions begin with broad file discovery | Start from a system map and inspect its source references |
+| Project checks and blockers live in separate reports | Read recorded checks and readiness evidence together |
+| A new agent session needs project context | Validate and reuse saved project entry and focused context |
 
 Here is what you get:
 
-| What it produces       | Why it matters                                                                                                                                  |
-| ---------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Workspace Model**    | A canonical inventory of registered projects, detected runtimes, frameworks, and proven dependencies                                            |
-| **Knowledge Graph**    | Searchable relationships between projects, backed by source-level proof                                                                         |
-| **Health & Readiness** | Doctor checks, verification gates, and release posture based on evidence, not guesses                                                           |
-| **Agent Context**      | Bounded, focused instructions so AI tools read what they need, not the entire repo                                                              |
-| **Agent Rules**        | Ready-to-use grounding for Cursor, Copilot, Claude, Codex, Gemini, and more                                                                     |
-| **Agent Skills**       | Runtime-, polyglot-, test-, and delivery-aware operational playbooks, with portable `SKILL.md` projections where the host supports Agent Skills |
-| **MCP Server**         | Versioned read-oriented tools for querying evidence, graph, blockers, and context live                                                          |
+| What you get | Use it to |
+| --- | --- |
+| **System map** — Workspace Model and Knowledge Graph | Find registered projects, detected runtimes, and proven relationships |
+| **Checks and evidence** — Doctor and readiness reports | Inspect blockers and what has actually been verified |
+| **Agent entry and context** — instructions and Skills | Give supported coding agents a focused starting point |
 
 `generic` is the safe default when you do not yet know which agent will use the
 project: Workspai builds one portable context and prepares discovery adapters
 for every supported host, without duplicating the Model or Graph.
 
-### What the output looks like
-
-The canonical workspace owns the Model, Graph, context, evidence index, and
-Skills. Each linked project keeps only its portable entry, scoped context, and
-workspace binding:
-
-```text
-your-workspace/
-├── .workspai/
-│   ├── reports/                       # Model, Graph, verification, context
-│   └── skills/                        # evidence-derived playbooks
-├── AGENTS.md · .codex/ · .cursor/ · .claude/ · .github/ · .agents/
-└── project/.workspai/
-    ├── agent-entry.v1.json            # portable project entry
-    └── workspace-link.local.json      # machine-local binding
-```
-
-Your agent starts with `agent-entry.v1.json`, compact workspace context, and the
-Skills index; it then retrieves task-scoped Graph evidence and targeted source.
-
-![Workspai CLI adopting and analyzing the gRPC repository](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-grpc-readme-cli.gif)
-
 [Get started](#start-in-two-minutes) ·
 [See what you get](#what-happens-after-the-first-run) ·
 [How it works](#how-workspace-intelligence-works) ·
 [Documentation](docs/README.md)
+
+![Workspai CLI adopting and analyzing the gRPC repository](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-grpc-readme-cli.gif)
 
 ## Start in two minutes
 
@@ -100,6 +80,20 @@ Workspai now knows which workspace owns the project. You only need
 The shorter command is intended for a human-readable first run. CI, agents, and
 other machine consumers should use the strict JSON form shown in
 [How Workspace Intelligence works](#how-workspace-intelligence-works).
+
+Look for the terminal summary of projects, generated context, and recorded
+blockers. Runtime depends on the project and its checks; adoption alone does
+not prove that the project is healthy.
+
+Try a focused query to inspect the map. Replace `authentication` with a term
+from your own code:
+
+```bash
+npx workspai workspace graph search "authentication" --limit 5 --json
+```
+
+Read the evidence references returned with a match. No match means the current
+graph has not proven that relationship.
 
 ### Start new software
 
@@ -167,6 +161,10 @@ own result. [Learn how Proof-Carrying Change works](docs/proof-carrying-change.m
 ![Workspai creates a Goal-bound Proof-Carrying Change before source mutation](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-pcc-readme-cli.gif)
 
 ## What happens after the first run
+
+The linked workspace stores the shared map and reports in `.workspai/reports/`.
+Your project keeps its portable `.workspai/agent-entry.v1.json`, scoped context,
+and local workspace binding. You can keep working from the project directory.
 
 The key outputs for each audience are:
 
