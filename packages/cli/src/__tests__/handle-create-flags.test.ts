@@ -962,7 +962,7 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
       expect(createSpy).toHaveBeenCalledTimes(1);
       expect(createSpy).toHaveBeenCalledWith(
         'final-workspace',
-        expect.objectContaining({ parentDirectory: tmpDir })
+        expect.objectContaining({ parentDirectory: resolvedTmpDir })
       );
       expect(await fsExtra.pathExists(path.join(tmpDir, '.workspai', 'workspaces'))).toBe(false);
       expect(promptSpy.mock.calls[2][0][0].choices).toContainEqual(

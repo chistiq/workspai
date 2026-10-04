@@ -342,10 +342,10 @@ jobs:
         if: runner.os == 'Linux'
         run: npm --workspace workspai run smoke:enterprise-package
 
-      # The job already built dist. macOS and Windows exercise platform behavior
-      # without V8 coverage; Linux is the only consumer of the coverage report.
+      # Windows runs the same complete suite in a required, sharded lane below.
+      # Linux owns coverage; macOS exercises platform behavior without coverage.
       - name: Run tests
-        if: runner.os != 'Linux'
+        if: runner.os == 'macOS'
         run: npm --workspace workspai run test:no-build
 
       - name: Run tests with coverage
@@ -378,6 +378,49 @@ jobs:
           flags: unittests
           name: rapidkit-coverage
           fail_ci_if_error: false
+
+  windows-cli-tests:
+    name: Windows CLI tests (${{ matrix.shard }}/4)
+    needs: changes
+    if: needs.changes.outputs.heavy == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      - name: Setup Node.js 20
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - name: Install dependencies
+        run: npm ci
+      - name: Build project
+        run: npm --workspace workspai run build
+      - name: Generate mock embeddings for tests
+        run: npm --workspace workspai run test:prepare-embeddings
+      # Keep two workers per runner: extra local concurrency makes Windows
+      # filesystem transactions contend. Shard across isolated runners instead.
+      - name: Run complete Windows test shard
+        timeout-minutes: 15
+        run: >-
+          npm --workspace workspai run test:no-build --
+          --shard=${{ matrix.shard }}/4 --maxWorkers=2
+          --reporter=default --reporter=json
+          --outputFile.json=artifacts/windows-tests-${{ matrix.shard }}.json
+      - name: Upload Windows test timings
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-cli-tests-${{ matrix.shard }}
+          path: packages/cli/artifacts/windows-tests-${{ matrix.shard }}.json
+          if-no-files-found: warn
+          retention-days: 14
 
   graph-query-admission:
     name: Admit Graph query matrix
@@ -683,6 +726,7 @@ jobs:
         docs-quality,
         phase4-fast-guard,
         build-test-matrix,
+        windows-cli-tests,
         graph-query-admission,
         graph-repository-preview-admission,
         graph-g6-admission,
@@ -698,6 +742,7 @@ jobs:
           DOCS_RESULT: ${{ needs.docs-quality.result }}
           HEAVY_REQUIRED: ${{ needs.changes.outputs.heavy == 'true' }}
           HEAVY_RESULT: ${{ needs.build-test-matrix.result }}
+          WINDOWS_TESTS_RESULT: ${{ needs.windows-cli-tests.result }}
           GRAPH_QUERY_RESULT: ${{ needs.graph-query-admission.result }}
           GRAPH_REPOSITORY_PREVIEW_RESULT: ${{ needs.graph-repository-preview-admission.result }}
           GRAPH_G6_RESULT: ${{ needs.graph-g6-admission.result }}
@@ -714,6 +759,7 @@ jobs:
           fi
           if [[ "$HEAVY_REQUIRED" = "true" ]]; then
             test "$HEAVY_RESULT" = "success"
+            test "$WINDOWS_TESTS_RESULT" = "success"
             test "$GRAPH_QUERY_RESULT" = "success"
             test "$GRAPH_REPOSITORY_PREVIEW_RESULT" = "success"
             test "$GRAPH_G6_RESULT" = "success"

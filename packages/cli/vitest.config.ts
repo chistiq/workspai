@@ -7,10 +7,10 @@ export default defineConfig({
     globals: true,
     environment: 'node',
     setupFiles: ['src/__tests__/setup.ts'],
-    // Full workspace operations perform real filesystem transactions and are
-    // intentionally exercised under coverage on all three CI platforms.
-    // Windows filesystem transactions and V8 coverage contend heavily when
-    // Vitest uses every runner core. Bound concurrency instead of allowing
+    // Full workspace operations perform real filesystem transactions on all
+    // three CI platforms; Linux also collects V8 coverage. Windows CI shards
+    // the full suite across runners, retaining two workers on each runner.
+    // Bound local concurrency instead of allowing
     // timed-out work to race teardown and create EBUSY/ENOTEMPTY cascades.
     ...(isWindows ? { maxWorkers: 2 } : {}),
     testTimeout: isWindows ? 90_000 : 30_000,

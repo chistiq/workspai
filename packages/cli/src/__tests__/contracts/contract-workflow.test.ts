@@ -16,6 +16,33 @@ function readMonorepo(relativePath: string): string {
 }
 
 describe('shared contracts workflow (Wave A + B)', () => {
+  it('requires every Windows CLI shard while preserving Linux coverage and macOS tests', () => {
+    const workflow = YAML.parse(readMonorepo('.github/workflows/ci.yml'));
+    const jobs = workflow.jobs;
+    const windows = jobs['windows-cli-tests'];
+    expect(windows.if).toBe("needs.changes.outputs.heavy == 'true'");
+    expect(windows['runs-on']).toBe('windows-latest');
+    expect(windows.strategy['fail-fast']).toBe(false);
+    expect(windows.strategy.matrix.shard).toEqual([1, 2, 3, 4]);
+    const testStep = windows.steps.find(
+      (step: { name: string }) => step.name === 'Run complete Windows test shard'
+    );
+    expect(testStep.run).toContain('run test:no-build --');
+    expect(testStep.run).toContain('--shard=${{ matrix.shard }}/4 --maxWorkers=2');
+    expect(testStep.run).not.toContain('--exclude');
+    expect(jobs.gate.needs).toContain('windows-cli-tests');
+    const gate = jobs.gate.steps[0];
+    expect(gate.env.WINDOWS_TESTS_RESULT).toBe('${{ needs.windows-cli-tests.result }}');
+    expect(gate.run).toContain('test "$WINDOWS_TESTS_RESULT" = "success"');
+    const matrixSteps = jobs['build-test-matrix'].steps;
+    expect(matrixSteps.find((step: { name: string }) => step.name === 'Run tests').if).toBe(
+      "runner.os == 'macOS'"
+    );
+    expect(
+      matrixSteps.find((step: { name: string }) => step.name === 'Run tests with coverage').if
+    ).toBe("runner.os == 'Linux'");
+  });
+
   it('synchronizes consumers while keeping CLI publication independently gated', () => {
     const npmPackage = JSON.parse(read('package.json'));
     const rootPackage = JSON.parse(readMonorepo('package.json'));

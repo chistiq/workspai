@@ -68,6 +68,12 @@ from the changed paths:
 | Dependency or security surface         | npm audit, SBOM, dependency review, and CodeQL                         |
 
 Specialized workflows use identical `push` and `pull_request` path filters.
+The complete Windows CLI suite runs in four shards on separate runners, with
+two Vitest workers per runner to limit filesystem contention. Every shard must
+pass before `CI Gate` succeeds; no test files are excluded. Each shard uploads
+a JSON test report with timings. Linux retains the complete coverage suite;
+macOS retains the complete platform suite. Sharding reduces elapsed time by
+using additional runners; it does not promise lower total runner usage.
 Manual and scheduled runs remain available for full qualification and upstream
 drift detection. Workflow definitions and release-gate definitions trigger the
 lanes they govern.
