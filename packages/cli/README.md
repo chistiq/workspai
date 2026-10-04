@@ -106,6 +106,8 @@ npx workspai change verify --change <change-id> --strict --json
 npx workspai change capsule validate --change <change-id> --json
 ```
 
+![Workspai records and verifies a Goal-bound change](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-pcc-readme-cli.gif)
+
 </details>
 
 [Record and verify a change](docs/proof-carrying-change.md)
@@ -152,6 +154,15 @@ complements this runner.
 </details>
 
 [Runner behavior and exit codes](docs/workspace-intelligence-runner.md)
+
+<details>
+<summary>See a workspace graph</summary>
+
+![Interactive view of a Workspai workspace graph](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspace-graph.gif)
+
+[Explore the graph](docs/workspace-knowledge-graph.md)
+
+</details>
 
 ## Everyday workflows
 
