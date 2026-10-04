@@ -17,6 +17,7 @@ export type PromptQuestion = {
   name: string;
   message?: string;
   default?: unknown;
+  initialValue?: string;
   choices?: PromptChoice[] | readonly PromptChoice[];
   validate?: (value: string) => boolean | string;
   when?: boolean | ((answers: Record<string, unknown>) => boolean);
@@ -131,7 +132,9 @@ async function askOne(
     const value = await text({
       message,
       defaultValue: typeof question.default === 'string' ? question.default : undefined,
-      initialValue: typeof question.default === 'string' ? question.default : undefined,
+      initialValue:
+        question.initialValue ??
+        (typeof question.default === 'string' ? question.default : undefined),
       validate: adaptInquirerValidate(question.validate),
       placeholder: typeof question.default === 'string' ? question.default : undefined,
     });

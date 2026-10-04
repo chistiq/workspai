@@ -1,7 +1,7 @@
 {
   "name": "workspai",
   "private": true,
-  "version": "0.79.0",
+  "version": "0.79.1",
   "description": "Workspai monorepo for Workspace Intelligence packages.",
   "author": "Chistiq",
   "license": "MIT",
@@ -72,7 +72,6 @@
   "devDependencies": {
     "@vitest/coverage-v8": "^4.1.11",
     "@vitest/ui": "^4.1.11",
-    "chokidar": "^3.6.0",
     "husky": "^9.1.7",
     "vitest": "^4.1.11"
   }

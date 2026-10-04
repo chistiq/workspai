@@ -2,6 +2,7 @@ import { promises as fsPromises } from 'fs';
 import * as fsExtra from 'fs-extra';
 import path from 'path';
 import { prompt } from './cli-ui/index.js';
+import { finishCreateSetup, promptCreateSetup } from './cli-ui/create-navigation.js';
 import { printWorkspaceCreationReceipt } from './cli-ui/workspace-creation-receipt.js';
 import {
   assertIndependentWorkspaceTarget,
@@ -1255,48 +1256,51 @@ export async function createProject(
   let resolvedProfile: string = profile || '';
 
   if (!yes && !profile) {
-    const { selectedProfile } = (await prompt([
-      {
-        type: 'rawlist',
-        name: 'selectedProfile',
-        message: 'Select workspace profile:',
-        choices: [
-          {
-            name: 'minimal     — Foundation files only (fastest bootstrap, mixed projects)',
-            value: 'minimal',
-          },
-          {
-            name: 'java-only   — Java runtime (Spring Boot services)',
-            value: 'java-only',
-          },
-          {
-            name: 'python-only — Python + Poetry (FastAPI, Django, ML pipelines)',
-            value: 'python-only',
-          },
-          {
-            name: 'node-only   — Node.js runtime (NestJS, Express, Next.js)',
-            value: 'node-only',
-          },
-          {
-            name: 'go-only     — Go runtime (Fiber, Gin, gRPC, microservices)',
-            value: 'go-only',
-          },
-          {
-            name: 'dotnet-only — .NET runtime (ASP.NET Core services)',
-            value: 'dotnet-only',
-          },
-          {
-            name: 'polyglot    — Python + Node.js + Go + Java + .NET multi-runtime workspace',
-            value: 'polyglot',
-          },
-          {
-            name: 'enterprise  — Polyglot + governance + Sigstore verification',
-            value: 'enterprise',
-          },
-        ],
-        default: 1,
-      },
-    ])) as { selectedProfile: string };
+    const { selectedProfile } = (await promptCreateSetup(
+      [
+        {
+          type: 'rawlist',
+          name: 'selectedProfile',
+          message: 'Select workspace profile:',
+          choices: [
+            {
+              name: 'minimal     — Foundation files only (fastest bootstrap, mixed projects)',
+              value: 'minimal',
+            },
+            {
+              name: 'java-only   — Java runtime (Spring Boot services)',
+              value: 'java-only',
+            },
+            {
+              name: 'python-only — Python + Poetry (FastAPI, Django, ML pipelines)',
+              value: 'python-only',
+            },
+            {
+              name: 'node-only   — Node.js runtime (NestJS, Express, Next.js)',
+              value: 'node-only',
+            },
+            {
+              name: 'go-only     — Go runtime (Fiber, Gin, gRPC, microservices)',
+              value: 'go-only',
+            },
+            {
+              name: 'dotnet-only — .NET runtime (ASP.NET Core services)',
+              value: 'dotnet-only',
+            },
+            {
+              name: 'polyglot    — Python + Node.js + Go + Java + .NET multi-runtime workspace',
+              value: 'polyglot',
+            },
+            {
+              name: 'enterprise  — Polyglot + governance + Sigstore verification',
+              value: 'enterprise',
+            },
+          ],
+          default: 1,
+        },
+      ],
+      prompt
+    )) as { selectedProfile: string };
     resolvedProfile = selectedProfile;
   } else if (!resolvedProfile) {
     resolvedProfile = 'minimal';
@@ -1312,15 +1316,18 @@ export async function createProject(
       ? 'skip'
       : needsPythonPrompts
         ? (
-            (await prompt([
-              {
-                type: 'confirm',
-                name: 'installPythonEngine',
-                message:
-                  'Install the optional RapidKit Python engine now? (needed for Python-backed kits/modules)',
-                default: true,
-              },
-            ])) as { installPythonEngine?: boolean }
+            (await promptCreateSetup(
+              [
+                {
+                  type: 'confirm',
+                  name: 'installPythonEngine',
+                  message:
+                    'Install the optional RapidKit Python engine now? (needed for Python-backed kits/modules)',
+                  default: true,
+                },
+              ],
+              prompt
+            )) as { installPythonEngine?: boolean }
           ).installPythonEngine !== false
           ? 'install'
           : 'skip'
@@ -1377,22 +1384,25 @@ export async function createProject(
   // Step 1: Choose Python version and install method (or auto-select with --yes / non-Python profile)
   const pythonAnswers: { pythonVersion: string; installMethod: InstallMethod } =
     needsPythonInstallPrompts
-      ? ((await prompt([
-          {
-            type: 'rawlist',
-            name: 'pythonVersion',
-            message: 'Select minimum Python version for RapidKit:',
-            choices: pythonVersionPromptModel.choices,
-            default: pythonVersionPromptModel.defaultValue,
-          },
-          {
-            type: 'rawlist',
-            name: 'installMethod',
-            message: 'How would you like to manage the workspace environment?',
-            choices: installMethodChoices,
-            default: installMethodPromptDefault,
-          },
-        ])) as { pythonVersion: string; installMethod: InstallMethod })
+      ? ((await promptCreateSetup(
+          [
+            {
+              type: 'rawlist',
+              name: 'pythonVersion',
+              message: 'Select minimum Python version for RapidKit:',
+              choices: pythonVersionPromptModel.choices,
+              default: pythonVersionPromptModel.defaultValue,
+            },
+            {
+              type: 'rawlist',
+              name: 'installMethod',
+              message: 'How would you like to manage the workspace environment?',
+              choices: installMethodChoices,
+              default: installMethodPromptDefault,
+            },
+          ],
+          prompt
+        )) as { pythonVersion: string; installMethod: InstallMethod })
       : await (async () => {
           if (pythonEngineMode === 'skip') {
             return {
@@ -1419,6 +1429,8 @@ export async function createProject(
             installMethod: resolvedMethod,
           };
         })();
+
+  finishCreateSetup();
 
   // ── Lite workspace fast path ─────────────────────────────────────────────────
   // Profiles that do not install the optional workspace Python engine at Create

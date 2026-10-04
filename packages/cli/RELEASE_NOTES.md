@@ -5,6 +5,43 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
+## v0.79.1 (October 4, 2026)
+
+### Easier project setup, back navigation, and safer dependencies
+
+Workspai 0.79.1 makes getting started easier, whether you are creating a
+workspace, scaffolding a project, or connecting existing software.
+
+**What's New:**
+
+- Go back through interactive Create setup without restarting the command:
+  menus offer `Back`, and text fields accept `/back`.
+- Revisit workspace profile and optional Python environment choices before
+  creation begins. External generators keep their own prompt behavior.
+- Find simpler README quickstarts and starter examples for backend, frontend,
+  AI Agent, and AI Gateway projects.
+- Remove vulnerable `braces` dependency chains by dropping unused root
+  `chokidar` 3 and upgrading `lint-staged` to `16.4.0` or later in the 16.x line.
+
+**Compatibility:** Existing commands and contract schemas remain supported.
+Node.js 20.19+ and npm remain required. Framework admission and gateway support
+statuses are unchanged. This patch does not release the independent graph engine.
+
+**Publication status:** Published October 4, 2026.
+
+**Install:**
+
+```bash
+npm install -g workspai@0.79.1
+workspai --version
+```
+
+The optional `wspai` alias uses the matching `0.79.1` version.
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.79.1/packages/cli/releases/RELEASE_NOTES_v0.79.1.md)
+
+---
+
 ## v0.79.0 (September 30, 2026)
 
 ### Current agent SDK baselines, fully release-admitted
@@ -4256,6 +4293,7 @@ npm install -g rapidkit@0.24.0
 
 | Version                                                                                                 | Date         | Highlights                                                                                        |
 | ------------------------------------------------------------------------------------------------------- | ------------ | ------------------------------------------------------------------------------------------------- |
+| [v0.79.1](https://github.com/chistiq/workspai/blob/v0.79.1/packages/cli/releases/RELEASE_NOTES_v0.79.1.md) | Oct 4, 2026 | Guided setup back navigation, simpler onboarding, and dependency security |
 | [v0.25.3](https://github.com/chistiq/workspai/blob/main/packages/cli/releases/RELEASE_NOTES_v0.25.3.md) | Mar 22, 2026 | Doctor workspace caching/evidence, safer go fix gating, post-fix verification                     |
 | [v0.25.2](https://github.com/chistiq/workspai/blob/main/packages/cli/releases/RELEASE_NOTES_v0.25.2.md) | Feb 27, 2026 | Smart init orchestration, wrapper/core ownership matrix, Go UX + delegation hardening             |
 | [v0.25.1](https://github.com/chistiq/workspai/blob/main/packages/cli/releases/RELEASE_NOTES_v0.25.1.md) | Feb 27, 2026 | Poetry fallback stabilization, cross-platform doctor hardening, Windows workspace launcher parity |

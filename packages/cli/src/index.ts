@@ -4,6 +4,12 @@ import { Command, Option } from 'commander';
 import chalk from 'chalk';
 import { createUiSpinner, prompt, showIntro } from './cli-ui/index.js';
 import {
+  finishCreateSetup,
+  isCreateSetupBack,
+  promptCreateSetup,
+  withCreateSetupNavigation,
+} from './cli-ui/create-navigation.js';
+import {
   buildKitCategoryChoices,
   buildKitPickerChoices,
   type CreateKitCategoryId,
@@ -817,11 +823,13 @@ async function prepareOutsideWorkspaceCreate(
     args.includes('--no-workspace') ||
     findWorkspaceMarkerUp(process.cwd())
   ) {
+    finishCreateSetup();
     return;
   }
 
   const skipGit = args.includes('--skip-git') || args.includes('--no-git');
   if (args.includes('--create-workspace')) {
+    finishCreateSetup();
     const { registerWorkspaceAtPath } = await import('./create.js');
     await registerWorkspaceAtPath(process.cwd(), {
       skipGit,
@@ -832,10 +840,11 @@ async function prepareOutsideWorkspaceCreate(
   }
 
   if (args.includes('--yes') || args.includes('-y') || !process.stdin.isTTY) {
+    finishCreateSetup();
     return;
   }
 
-  const { workspaceMode } = (await prompt([
+  const { workspaceMode } = (await promptCreateSetup([
     {
       type: 'rawlist',
       name: 'workspaceMode',
@@ -862,6 +871,7 @@ async function prepareOutsideWorkspaceCreate(
     },
   ])) as { workspaceMode: 'managed' | 'current' | 'none' };
 
+  finishCreateSetup();
   if (workspaceMode === 'current') {
     const { registerWorkspaceAtPath } = await import('./create.js');
     await registerWorkspaceAtPath(process.cwd(), {
@@ -1828,6 +1838,25 @@ function printBridgeBackedCreateDryRun(args: string[]): void {
 }
 
 export async function handleCreateOrFallback(args: string[]): Promise<number> {
+  if (
+    args[0] === 'create' &&
+    process.stdin.isTTY &&
+    !args.includes('--yes') &&
+    !args.includes('-y') &&
+    !args.includes('--json')
+  ) {
+    let completedArgs = args;
+    const result = await withCreateSetupNavigation(() => {
+      completedArgs = [...args];
+      return handleCreateOrFallbackImpl(completedArgs);
+    });
+    args.splice(0, args.length, ...completedArgs);
+    return result;
+  }
+  return handleCreateOrFallbackImpl(args);
+}
+
+async function handleCreateOrFallbackImpl(args: string[]): Promise<number> {
   if (args[0] === 'create') {
     const asksForHelp = args.includes('--help') || args.includes('-h') || args.includes('help');
     if (asksForHelp) {
@@ -1893,7 +1922,7 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
       }
       const currentWorkspace = findWorkspaceUp(process.cwd());
       const currentWorkspaceName = currentWorkspace ? path.basename(currentWorkspace) : null;
-      const answers = (await prompt([
+      const answers = (await promptCreateSetup([
         {
           type: 'rawlist',
           name: 'createTarget',
@@ -1909,12 +1938,13 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
 
     if (createTarget === 'existing') {
       const currentWorkspace = findWorkspaceUp(process.cwd());
-      const { source } = (await prompt([buildExistingSoftwareSourcePrompt()])) as {
+      const { source } = (await promptCreateSetup([buildExistingSoftwareSourcePrompt()])) as {
         source: string;
       };
       const classifiedSource = classifyExistingSoftwareSource(source);
 
       if (classifiedSource.kind === 'workspace-archive') {
+        finishCreateSetup();
         const result = await importWorkspaceArchive({
           archivePathOrUrl: classifiedSource.source,
           projectGrounding: 'managed',
@@ -1925,12 +1955,14 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
       }
 
       if (classifiedSource.kind === 'git-project') {
+        finishCreateSetup();
         return await handleImportCommand(classifiedSource.source, {
           workspace: currentWorkspace ?? undefined,
         });
       }
 
       if (classifiedSource.kind === 'local-workspace') {
+        finishCreateSetup();
         const result = await connectWorkspace({
           workspacePath: classifiedSource.source,
           projectGrounding: 'managed',
@@ -1940,7 +1972,7 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
         return 0;
       }
 
-      const { existingProjectMode } = (await prompt([
+      const { existingProjectMode } = (await promptCreateSetup([
         {
           type: 'rawlist',
           name: 'existingProjectMode',
@@ -1958,6 +1990,7 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
         },
       ])) as { existingProjectMode: 'link' | 'copy' };
 
+      finishCreateSetup();
       return existingProjectMode === 'link'
         ? await handleAdoptCommand(classifiedSource.source, {
             workspace: currentWorkspace ?? undefined,
@@ -2008,7 +2041,7 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
           if (process.stdin.isTTY && !hasJson) {
             showIntro('create workspace');
           }
-          const workspaceAnswers = (await prompt([
+          const workspaceAnswers = (await promptCreateSetup([
             {
               type: 'input',
               name: 'workspaceName',
@@ -2041,10 +2074,6 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
         outputParent,
       });
 
-      if (!hasDryRun) {
-        await fsExtra.ensureDir(path.dirname(targetPath));
-      }
-
       const existingWorkspacePath = findExistingWorkspacePath(workspaceName.trim());
       if (
         !hasDryRun &&
@@ -2064,7 +2093,7 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
       let author = userConfig.author || process.env.USER || 'Workspai User';
 
       if (!hasYes) {
-        const answers = (await prompt([
+        const answers = (await promptCreateSetup([
           {
             type: 'input',
             name: 'author',
@@ -2112,6 +2141,7 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
 
       return 0;
     } catch (e) {
+      if (isCreateSetupBack(e)) throw e;
       if (e instanceof RapidKitError) {
         process.stderr.write(`\n❌ ${e.message}\n`);
         if (e.details) {
@@ -2142,7 +2172,7 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
         if (process.stdin.isTTY) {
           showIntro('create project');
         }
-        const { kitCategory } = (await prompt([
+        const { kitCategory } = (await promptCreateSetup([
           {
             type: 'rawlist',
             name: 'kitCategory',
@@ -2150,7 +2180,7 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
             choices: buildKitCategoryChoices(),
           },
         ])) as { kitCategory: CreateKitCategoryId };
-        const { kitChoice } = (await prompt([
+        const { kitChoice } = (await promptCreateSetup([
           {
             type: 'rawlist',
             name: 'kitChoice',
@@ -2167,7 +2197,7 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
           isOfficialProjectKit(kitChoice)
         ) {
           const defaultProjectName = suggestProjectNameForKit(kitChoice);
-          const { projectName } = (await prompt([
+          const { projectName } = (await promptCreateSetup([
             {
               type: 'input',
               name: 'projectName',
@@ -2195,7 +2225,7 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
         }
 
         const defaultProjectName = suggestProjectNameForKit(kitChoice);
-        const { projectName } = (await prompt([
+        const { projectName } = (await promptCreateSetup([
           {
             type: 'input',
             name: 'projectName',
@@ -2360,6 +2390,7 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
 
         return exitCode;
       } catch (e) {
+        if (isCreateSetupBack(e)) throw e;
         const code = bridgeFailureCode(e);
         if (code) return await runCreateFallback(args, code);
         process.stderr.write(
@@ -2386,6 +2417,7 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
 
         return exitCode;
       } catch (e) {
+        if (isCreateSetupBack(e)) throw e;
         const code = bridgeFailureCode(e);
         if (code) return await runCreateFallback(args, code);
         process.stderr.write(
@@ -2399,6 +2431,7 @@ export async function handleCreateOrFallback(args: string[]): Promise<number> {
     await resolveRapidkitPython();
     return await runCoreRapidkit(args, { cwd: process.cwd() });
   } catch (e) {
+    if (isCreateSetupBack(e)) throw e;
     const code = bridgeFailureCode(e);
     if (code) return await runCreateFallback(args, code);
     process.stderr.write(

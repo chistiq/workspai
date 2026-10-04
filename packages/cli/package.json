@@ -1,6 +1,6 @@
 {
   "name": "workspai",
-  "version": "0.79.0",
+  "version": "0.79.1",
   "type": "module",
   "description": "Open-source workspace intelligence CLI for software systems: create, adopt, govern, verify, and align polyglot workspaces for humans, CI, IDEs, and AI agents.",
   "keywords": [
@@ -216,7 +216,7 @@
     "@vitest/ui": "^4.1.11",
     "eslint": "^9.39.2",
     "husky": "^9.1.7",
-    "lint-staged": "^15.5.2",
+    "lint-staged": "^16.4.0",
     "prettier": "^3.6.2",
     "size-limit": "12.1.0",
     "tsup": "^8.5.1",

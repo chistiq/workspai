@@ -1,92 +1,65 @@
-# Workspai NPM — Documentation Index
+# Workspai documentation
 
-Start here to map an existing project, inspect blockers, and give your coding
-agent focused context. These guides also cover new projects, teams, and CI.
+**New here? Start with your project.** You do not need to learn the architecture
+or move your source to try Workspai.
 
-Start with the [main README](../README.md) for the product overview, or use the
-quickstart below. `workspai` is the main package and command; `wspai` is only a
-shorter optional name.
+[Product overview](../README.md) · [Command reference](./commands-reference.md) ·
+[Glossary](./GLOSSARY.md)
 
-## Start with an existing project
+## First run
 
-You need Node.js **20.19+** and npm. The system map and checks do not require an
-AI API key. Open your project and run:
+You need **Node.js 20.19+ and npm**. In your project's terminal:
 
 ```bash
-cd /path/to/your/project
 npx workspai adopt .
 npx workspai workspace intelligence run --for-agent generic
 ```
 
-Your source stays in place. Workspai writes project metadata and agent entry
-files and saves shared reports in the linked workspace. Read the terminal
-summary for detected projects, context, and recorded blockers.
+Workspai adds metadata and agent entry files to your project and saves shared
+reports in a linked workspace. The system map and checks do not require an AI
+API key. Read the terminal summary to find context and checks that need attention.
 
-Choose your next step:
+Starting a new project? Run `npx workspai create` for guided setup.
 
-| You want to… | Try this |
+## What do you want to do next?
+
+| Your goal | Start here |
 | --- | --- |
-| Inspect a system relationship | `npx workspai workspace graph search "authentication" --limit 5 --json` — use a term from your code |
-| Validate the entry for a coding agent | `npx workspai agent bootstrap --for-agent generic --strict --json` |
-| Use the complete runner in CI | `npx workspai workspace intelligence run --for-agent generic --strict --json` |
+| Set up an existing or new project | [Getting started](./creating-workspaces-and-projects.md) |
+| Connect Codex, Claude Code, Cursor, or Copilot | [Agent setup](./agent-entry.md) |
+| Find relationships and their source references | [Explore the graph](./workspace-knowledge-graph.md) |
+| Give an agent a specific outcome | [Plan a goal](./goal-packs.md) |
+| Record and verify an agent's changes | [Proof-Carrying Change](./proof-carrying-change.md) |
+| Fix a reported blocker | [Doctor](./doctor-command.md) · [Repair workflow](./workspace-repair-engine.md) |
+| Run checks in CI | [CI guide](./ci-workflows.md) |
 
-Keep using the same project terminal. `generic` prepares portable context for
-supported agent hosts; use a named host such as `codex`, `claude`, or `cursor`
-for its bootstrap receipt. [Agent entry guide](./agent-entry.md).
+You can keep working from the same project terminal. After changes, rerun the
+intelligence command to refresh the saved view. A blocked check names something
+to investigate; an empty graph search means no current evidence proves a match.
 
-If a check is blocked, inspect the report and its evidence before claiming
-readiness. An empty graph search means no match is proven by the current graph.
-Refreshing Workspace Intelligence updates the saved system view after changes.
+## For CI and automation
 
-Starting a new project instead? Open the guided flow:
+Use the strict JSON runner:
 
 ```bash
-npx workspai create
+npx workspai workspace intelligence run --for-agent generic --strict --json
 ```
 
-[Creating workspaces and projects](./creating-workspaces-and-projects.md) covers
-the choices. For the broader release workflow, see
-[CI workflows](./ci-workflows.md); `pipeline` complements the intelligence runner.
+[Runner behavior and exit codes](./workspace-intelligence-runner.md) ·
+[Generated files and schemas](./contracts/ARTIFACT_CATALOG.md)
 
-## Table of contents
+## Building agents or model gateways?
 
-- [Choose a guide by goal](#choose-a-guide-by-goal)
-- [User documentation](#user-documentation)
-- [Operations & security](#operations--security)
-- [AI module recommendations](#ai-module-recommendations)
-- [Technical contracts](#technical-contracts)
-- [Contributor documentation](#contributor-documentation)
-- [Validation commands](#validation-commands)
+[Agent framework adapters](./agent-framework-adapters.md) covers the supported
+framework kits. [Model gateways](./model-gateways.md) covers server-owned SDK
+starters. These are separate from giving a coding agent context about your project.
 
-## Choose a guide by goal
+## Reference library
 
-| I want to…                                         | Start here                                                                                  | Expected outcome                                                         |
-| -------------------------------------------------- | ------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| Create a workspace or project                      | [Creating workspaces and projects](./creating-workspaces-and-projects.md)                   | A registered project with canonical `.workspai` metadata                 |
-| Bring an existing repository under governance      | [Workspace operations](./workspace-operations.md#import-and-adoption)                       | Source stays in place with `adopt`, or is copied/cloned with `import`    |
-| Run the complete intelligence loop                 | [Unified runner](./workspace-intelligence-runner.md)                                        | One ordered run report with durable stage evidence                       |
-| Turn plain language into governed work             | [Goal Packs](./goal-packs.md)                                                               | A scope-bound, evidence-pinned plan and portable agent handoff           |
-| Prove what an agent changed and why                | [Proof-Carrying Change](./proof-carrying-change.md)                                         | A Goal-bound, effect-receipted, independently verified change capsule    |
-| Define or implement an agent framework integration | [Agent Framework Adapter Contract](./agent-framework-adapters.md)                           | One provider-neutral manifest, ownership boundary, and conformance gate  |
-| Create a server-owned model gateway                | [AI Gateway](./model-gateways.md)                                                           | OpenRouter TypeScript or Python Client SDK starter with workspace lifecycle |
-| Ground an agent before broad source discovery      | [Canonical-first agent entry](./agent-entry.md)                                             | A portable receipt for host discovery, evidence integrity, and freshness |
-| Repair a blocker through an approved transaction   | [Workspace Repair Engine](./workspace-repair-engine.md)                                     | Checkpointed execution, validation, canonical verify, and safe rollback  |
-| Observe current CLI and Studio activity            | [Workspai Live](./workspace-live-activity.md)                                               | One bounded activity projection for terminal, IDE, replay, and capture   |
-| Set a release, security, or coverage outcome       | [Verified engineering goals](./workspace-intelligence-runner.md#verified-engineering-goals) | A durable success contract with a current evidence-backed verdict        |
-| Ask an architecture or dependency question         | [Workspace Knowledge Graph](./workspace-knowledge-graph.md)                                 | A bounded answer with proof references rather than the whole graph       |
-| Measure agent token, cost, and outcome efficiency  | [Workspace Intelligence Evaluation](./workspace-intelligence-evaluation.md)                 | A live, provenance-aware report suitable for CLI, IDE, and CI            |
-| Benchmark bounded retrieval across fixed scenarios | [Workspace Intelligence Benchmark](./workspace-intelligence-benchmark.md)                   | An offline suite with honest estimate/measurement boundaries             |
-| Integrate CI or release gates                      | [CI workflows](./ci-workflows.md)                                                           | Machine-readable exit codes and uploadable evidence                      |
-| Find the writer, schema, or path for an output     | [Artifact Catalog](./contracts/ARTIFACT_CATALOG.md)                                         | One canonical source instead of path guessing                            |
-| Understand Workspai terminology                    | [Glossary](./GLOSSARY.md)                                                                   | Shared meanings for model, graph, evidence, gate, and artifacts          |
-| Review or change the main product README           | [README content contract](./README_CONTENT_CONTRACT.md)                                     | Stable narrative, claim boundaries, and machine-enforced drift rules     |
-| Choose a first contribution path                   | [Contribution Hub](../../../.github/CONTRIBUTING.md)                                        | One bounded task, support route, and file-aware validation plan          |
-| Contribute to the CLI                              | [Development](./DEVELOPMENT.md)                                                             | Local build, test, contract, and documentation gates                     |
+Looking for a specific feature, integration, or contract? Open the complete index.
 
-There are two different AI-facing features. Workspace Intelligence is
-deterministic, proof-backed, and does not require an AI API key. The optional
-module recommender uses embeddings to suggest FastAPI or NestJS modules; start
-with [AI Quickstart](./AI_QUICKSTART.md) only when that is your goal.
+<details>
+<summary>All guides, technical contracts, and contributor resources</summary>
 
 ## User documentation
 
@@ -193,35 +166,11 @@ npm run validate:docs-examples # example JSON/YAML in docs
 npm run smoke:readme           # CLI help smoke for documented commands
 ```
 
-## Repository layout
 
-```text
-workspai/
-├── README.md                 # Monorepo overview
-├── package.json              # Private workspace root
-└── packages/
-    └── cli/
-        ├── README.md         # CLI user hub (install, quickstarts, doc links)
-        ├── CHANGELOG.md
-        ├── RELEASE_NOTES.md
-        ├── releases/         # Per-version release notes
-        └── docs/
-            ├── README.md     # This index
-            ├── README_CONTENT_CONTRACT.md
-            ├── commands-reference.md
-            ├── workspace-knowledge-graph.md
-            ├── workspace-intelligence-evaluation.md
-            ├── workspace-operations.md
-            ├── workspace-run.md
-            ├── ci-workflows.md
-            ├── doctor-command.md
-            ├── OPEN_SOURCE_USER_SCENARIOS.md
-            ├── config-file-guide.md
-            ├── SECURITY.md
-            ├── SETUP.md
-            ├── DEVELOPMENT.md
-            ├── contracts/    # Contract docs (mirrors + matrices)
-            └── …             # AI guides, policies, examples
-```
+</details>
 
-Enterprise governance runbooks are maintained outside this OSS docs tree.
+## Help and feedback
+
+[Ask a question](https://github.com/chistiq/workspai/discussions) ·
+[Report a problem](https://github.com/chistiq/workspai/issues) ·
+[Contribute](../../../.github/CONTRIBUTING.md)

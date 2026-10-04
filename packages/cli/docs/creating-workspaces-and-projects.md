@@ -11,6 +11,11 @@ commands, automation, and the most useful options.
 For a compact list of command syntax, see
 [commands-reference.md](./commands-reference.md).
 
+During interactive `workspai create` setup, selection menus offer **← Back**.
+Text fields accept **`/back`** to return to the previous setup step. Backtracking
+changes your choices before creation begins; it does not undo files or navigate
+prompts owned by an external generator. Ctrl+C still cancels the flow.
+
 ## The two things you can create
 
 A **workspace** is the shared home for related projects, rules, and saved

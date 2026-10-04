@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import process from 'node:process';
 import fsExtra from 'fs-extra';
 
-import { prompt } from '../cli-ui/prompts.js';
+import { promptCreateSetup } from '../cli-ui/create-navigation.js';
 import { isCliJsonLogFormat } from '../observability/cli-log-format.js';
 import { getCanonicalWorkspacesDirectory, resolveNewWorkspacePath } from './workspace-paths.js';
 
@@ -204,7 +204,7 @@ export async function resolveWorkspaceOutputParent(
     return undefined;
   }
 
-  const { location } = (await prompt([
+  const { location } = (await promptCreateSetup([
     {
       type: 'rawlist',
       name: 'location',

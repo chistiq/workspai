@@ -938,6 +938,42 @@ describe('handleCreateOrFallback - wrapper flags handling', () => {
     expect(stderrSpy.mock.calls.map((call) => String(call[0])).join('')).toContain('existing');
   });
 
+  it('backs through project and workspace setup without creating abandoned paths', async () => {
+    const back = '__workspai_create_back__';
+    const promptSpy = vi
+      .spyOn(cliPrompts, 'prompt')
+      .mockResolvedValueOnce({ createTarget: 'project' })
+      .mockResolvedValueOnce({ kitCategory: 'backend' })
+      .mockResolvedValueOnce({ kitChoice: back })
+      .mockResolvedValueOnce({ kitCategory: back })
+      .mockResolvedValueOnce({ createTarget: 'workspace' })
+      .mockResolvedValueOnce({ workspaceName: 'abandoned' })
+      .mockResolvedValueOnce({ location: 'managed' })
+      .mockResolvedValueOnce({ author: '/back' })
+      .mockResolvedValueOnce({ location: back })
+      .mockResolvedValueOnce({ workspaceName: 'final-workspace' })
+      .mockResolvedValueOnce({ location: 'here' })
+      .mockResolvedValueOnce({ author: 'Workspai User' });
+    const createSpy = vi.spyOn(create, 'createProject').mockResolvedValue(undefined as never);
+    const descriptor = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
+    Object.defineProperty(process.stdin, 'isTTY', { configurable: true, value: true });
+    try {
+      expect(await index.handleCreateOrFallback(['create'])).toBe(0);
+      expect(createSpy).toHaveBeenCalledTimes(1);
+      expect(createSpy).toHaveBeenCalledWith(
+        'final-workspace',
+        expect.objectContaining({ parentDirectory: tmpDir })
+      );
+      expect(await fsExtra.pathExists(path.join(tmpDir, '.workspai', 'workspaces'))).toBe(false);
+      expect(promptSpy.mock.calls[2][0][0].choices).toContainEqual(
+        expect.objectContaining({ label: '← Back' })
+      );
+    } finally {
+      if (descriptor) Object.defineProperty(process.stdin, 'isTTY', descriptor);
+      else delete (process.stdin as NodeJS.ReadStream & { isTTY?: boolean }).isTTY;
+    }
+  });
+
   it('prompts for target on `create` and supports choosing workspace', async () => {
     vi.spyOn(cliPrompts, 'prompt')
       .mockResolvedValueOnce({ createTarget: 'workspace' })

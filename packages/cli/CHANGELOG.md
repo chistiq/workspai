@@ -7,6 +7,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.79.1] - 2026-10-04
+
+### Added
+
+- Back navigation in interactive Create setup: selection menus offer `Back`,
+  and text fields accept `/back`. Workspace profile and optional Python setup
+  can be revisited before creation begins. Ctrl+C continues to cancel.
+
+### Changed
+
+- Simplified the product READMEs and documentation entry point with clearer
+  first-run instructions and examples for new workspaces, backend/frontend
+  projects, AI agents, and model gateways.
+- Keep setup navigation instructions in the focused creation guide rather
+  than the product READMEs.
+
+### Fixed
+
+- Preserve setup choices while navigating back and discard abandoned choices
+  before any creation effect. External generator prompts are not replayed.
+- Let setup text fields retain their default without requiring users to erase
+  prefilled text before entering `/back`.
+
+### Security
+
+- Remove the unused root `chokidar` 3 dependency and upgrade `lint-staged` to
+  `^16.4.0`, eliminating the vulnerable `braces` / `micromatch` chains while
+  retaining Node.js 20.19+ compatibility.
+
 ## [0.79.0] - 2026-09-30
 
 ### Changed
