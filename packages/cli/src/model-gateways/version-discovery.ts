@@ -90,9 +90,14 @@ function dateStamp(value: string): string {
   return value.slice(0, 10);
 }
 
-async function fetchJson(url: string, fetcher: FetchLike): Promise<unknown> {
+async function fetchJson(url: string, fetcher: FetchLike, githubToken?: string): Promise<unknown> {
   const response = await fetcher(url, {
-    headers: FETCH_HEADERS,
+    headers: {
+      ...FETCH_HEADERS,
+      ...(githubToken && new URL(url).origin === 'https://api.github.com'
+        ? { authorization: `Bearer ${githubToken}` }
+        : {}),
+    },
     signal: AbortSignal.timeout(15_000),
   });
   if (!response.ok) {
@@ -250,17 +255,20 @@ export async function discoverModelGatewayVersions(input?: {
   excluded?: readonly ModelGatewayExcludedLanguage[];
   fetcher?: FetchLike;
   generatedAt?: string;
+  githubToken?: string;
 }): Promise<ModelGatewayVersionDiscovery> {
   const baselines = input?.baselines ?? BUILTIN_MODEL_GATEWAY_VERSION_BASELINES;
   const excluded = input?.excluded ?? EXCLUDED_MODEL_GATEWAY_LANGUAGES;
   const fetcher = input?.fetcher ?? (fetch as FetchLike);
   const generatedAt = input?.generatedAt ?? new Date().toISOString();
   const reviewedAt = dateStamp(generatedAt);
+  const githubToken = input?.githubToken ?? process.env.GITHUB_TOKEN;
 
   const adapters: ModelGatewayAdapterDiscovery[] = [];
   for (const baseline of baselines) {
     const core = sdkCorePackage(baseline);
     const repository = githubRepo(baseline.upstreamReleaseUrl);
+    let registryVersion: string | null = null;
     try {
       const registryPayload = await fetchJson(
         core.ecosystem === 'npm'
@@ -268,14 +276,15 @@ export async function discoverModelGatewayVersions(input?: {
           : `https://pypi.org/pypi/${core.name}/json`,
         fetcher
       );
-      const githubPayload = await fetchJson(
-        `https://api.github.com/repos/${repository}/releases?per_page=30`,
-        fetcher
-      );
-      const registryVersion =
+      registryVersion =
         core.ecosystem === 'npm'
           ? npmStableVersion(registryPayload, core.name)
           : pypiStableVersion(registryPayload, core.name);
+      const githubPayload = await fetchJson(
+        `https://api.github.com/repos/${repository}/releases?per_page=30`,
+        fetcher,
+        githubToken
+      );
       const githubVersion = githubStableVersion(githubPayload, repository);
       const status = adapterStatus(baseline.sdkVersion, registryVersion, githubVersion);
       adapters.push({
@@ -302,7 +311,7 @@ export async function discoverModelGatewayVersions(input?: {
         runtime: baseline.runtime,
         packageName: core.name,
         pinnedVersion: baseline.sdkVersion,
-        registryVersion: null,
+        registryVersion,
         githubVersion: null,
         status,
         registryUrl: baseline.registryUrl,

@@ -35,6 +35,8 @@ jobs:
 
       - name: Discover upstream version candidates
         id: discover
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         working-directory: packages/cli
         shell: bash
         run: |
@@ -78,7 +80,7 @@ jobs:
                 import fs from "node:fs";
                 const report = JSON.parse(fs.readFileSync(process.argv[1], "utf8"));
                 for (const adapter of report.adapters ?? []) {
-                  console.log(`- ${adapter.adapterId} ${adapter.packageName}: pinned ${adapter.pinnedVersion} -> registry ${adapter.registryVersion ?? "n/a"} / GitHub ${adapter.githubVersion ?? "n/a"} (${adapter.status})`);
+                  console.log(`- ${adapter.adapterId} ${adapter.packageName}: pinned ${adapter.pinnedVersion} -> registry ${adapter.registryVersion ?? "n/a"} / GitHub ${adapter.githubVersion ?? "n/a"} (${adapter.status}; ${adapter.detail})`);
                 }
                 for (const entry of report.excluded ?? []) {
                   console.log(`- excluded ${entry.language} ${entry.module}: observed ${entry.pinnedObservation} -> ${entry.latestObservedVersion ?? "n/a"} (${entry.status}; ${entry.detail})`);

@@ -78,6 +78,54 @@ const python = sdkCorePackage(
 );
 
 describe('model gateway version discovery', () => {
+  it('authenticates only GitHub requests and never serializes the token', async () => {
+    const seen: { url: string; authorization?: string }[] = [];
+    const routes = mockedFetch({
+      'registry.npmjs.org/@openrouter/sdk': npmPackument(typescript.name, typescript.version),
+      'pypi.org/pypi/openrouter/json': pypiPayload(python.version),
+      'OpenRouterTeam/typescript-sdk/releases': [githubRelease(`v${typescript.version}`)],
+      'OpenRouterTeam/python-sdk/releases': [githubRelease(`v${python.version}`)],
+      'proxy.golang.org': goProxy('v0.8.32'),
+    });
+    const discovery = await discoverModelGatewayVersions({
+      githubToken: 'test-discovery-token',
+      fetcher: async (url, init) => {
+        seen.push({ url, authorization: init?.headers?.authorization });
+        return routes(url);
+      },
+    });
+    expect(discovery.outcome).toBe('current');
+    expect(seen.filter((call) => call.url.startsWith('https://api.github.com/'))).toHaveLength(2);
+    for (const call of seen) {
+      expect(call.authorization).toBe(
+        call.url.startsWith('https://api.github.com/') ? 'Bearer test-discovery-token' : undefined
+      );
+    }
+    expect(JSON.stringify(discovery)).not.toContain('test-discovery-token');
+  });
+
+  it('preserves registry evidence when GitHub rejects the lookup', async () => {
+    const routes = mockedFetch({
+      'registry.npmjs.org/@openrouter/sdk': npmPackument(typescript.name, typescript.version),
+      'pypi.org/pypi/openrouter/json': pypiPayload(python.version),
+      'proxy.golang.org': goProxy('v0.8.32'),
+    });
+    const discovery = await discoverModelGatewayVersions({
+      githubToken: '',
+      fetcher: async (url) =>
+        url.startsWith('https://api.github.com/')
+          ? { ok: false, status: 403, json: async () => ({}) }
+          : routes(url),
+    });
+    expect(discovery.outcome).toBe('unavailable');
+    expect(discovery.proposedDocument).toBeNull();
+    for (const adapter of discovery.adapters) {
+      expect(adapter.registryVersion).toBe(adapter.pinnedVersion);
+      expect(adapter.githubVersion).toBeNull();
+      expect(adapter.detail).toContain('HTTP 403');
+    }
+  });
+
   it('reports current when registry and GitHub agree with the baseline', async () => {
     const discovery = await discoverModelGatewayVersions({
       generatedAt: '2026-09-21T00:00:00.000Z',
@@ -223,6 +271,11 @@ describe('model gateway workflows', () => {
     expect(qualification).toContain('model-gateway-workspace-lifecycle.test.ts');
     expect(qualification).toContain('model-gateway-policy-parity.test.ts');
     expect(discovery).toContain('propose-model-gateway-version-update.ts');
+    const discoveryStep = YAML.parse(discovery).jobs.discover.steps.find(
+      (step: { id?: string }) => step.id === 'discover'
+    );
+    expect(discoveryStep.env.GITHUB_TOKEN).toBe('${{ github.token }}');
+    expect(discovery).toContain('adapter.detail');
     expect(discovery).toContain('diff -u');
     expect(discovery).toContain('proposed.json');
     expect(discovery).not.toContain('0 current, 10 update available');

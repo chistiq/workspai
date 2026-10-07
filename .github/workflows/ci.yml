@@ -424,8 +424,8 @@ jobs:
 
   graph-query-admission:
     name: Admit Graph query matrix
-    needs: build-test-matrix
-    if: needs.build-test-matrix.result == 'success'
+    needs: [build-test-matrix, windows-cli-tests]
+    if: needs.build-test-matrix.result == 'success' && needs.windows-cli-tests.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -459,8 +459,8 @@ jobs:
 
   graph-repository-preview-admission:
     name: Admit Graph repository preview matrix
-    needs: build-test-matrix
-    if: needs.build-test-matrix.result == 'success'
+    needs: [build-test-matrix, windows-cli-tests]
+    if: needs.build-test-matrix.result == 'success' && needs.windows-cli-tests.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -494,8 +494,8 @@ jobs:
 
   graph-g6-admission:
     name: Admit Graph G6 matrix
-    needs: build-test-matrix
-    if: needs.build-test-matrix.result == 'success'
+    needs: [build-test-matrix, windows-cli-tests]
+    if: needs.build-test-matrix.result == 'success' && needs.windows-cli-tests.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -529,8 +529,8 @@ jobs:
 
   graph-g7-release-candidate:
     name: Verify Graph G7 release candidate matrix
-    needs: [build-test-matrix, graph-g6-admission]
-    if: needs.build-test-matrix.result == 'success' && needs.graph-g6-admission.result == 'success'
+    needs: [build-test-matrix, windows-cli-tests, graph-g6-admission]
+    if: needs.build-test-matrix.result == 'success' && needs.windows-cli-tests.result == 'success' && needs.graph-g6-admission.result == 'success'
     runs-on: ubuntu-latest
     permissions:
       contents: read

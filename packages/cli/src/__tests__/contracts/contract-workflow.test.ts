@@ -34,6 +34,15 @@ describe('shared contracts workflow (Wave A + B)', () => {
     const gate = jobs.gate.steps[0];
     expect(gate.env.WINDOWS_TESTS_RESULT).toBe('${{ needs.windows-cli-tests.result }}');
     expect(gate.run).toContain('test "$WINDOWS_TESTS_RESULT" = "success"');
+    for (const name of [
+      'graph-query-admission',
+      'graph-repository-preview-admission',
+      'graph-g6-admission',
+      'graph-g7-release-candidate',
+    ]) {
+      expect(jobs[name].needs).toContain('windows-cli-tests');
+      expect(jobs[name].if).toContain("needs.windows-cli-tests.result == 'success'");
+    }
     const matrixSteps = jobs['build-test-matrix'].steps;
     expect(matrixSteps.find((step: { name: string }) => step.name === 'Run tests').if).toBe(
       "runner.os == 'macOS'"
