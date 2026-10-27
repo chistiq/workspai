@@ -1,7 +1,7 @@
 {
   "bomFormat": "CycloneDX",
   "specVersion": "1.6",
-  "serialNumber": "urn:uuid:118efb10-d0d6-8db4-b8c8-1c33d6921cd1",
+  "serialNumber": "urn:uuid:d19e037c-3b8f-853b-a4be-0a0c345e1df0",
   "version": 1,
   "metadata": {
     "component": {
@@ -189,10 +189,10 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:npm/%40vitest/coverage-v8@4.1.11",
+      "bom-ref": "pkg:npm/%40vitest/coverage-v8@4.1.12",
       "name": "@vitest/coverage-v8",
-      "version": "4.1.11",
-      "purl": "pkg:npm/%40vitest/coverage-v8@4.1.11",
+      "version": "4.1.12",
+      "purl": "pkg:npm/%40vitest/coverage-v8@4.1.12",
       "scope": "excluded",
       "licenses": [
         {
@@ -208,7 +208,7 @@
         },
         {
           "name": "npm:integrity",
-          "value": "sha512-8MVGEFnJIcdGjcbfKmeq8z0pZHH0JlVtoVZH9Q/qwUp6wyFnEJUBMrw9DCaj+ra3vShGmhavjalMIhPNxZAUcw=="
+          "value": "sha512-6S7/iVknKglLAxMFxQGNppBI0iqJS2NgM6FBxavitj7KaDq/vywOWGf6dGu7F2L1Qy0G6S3uTp7aGshHrzK8JA=="
         }
       ]
     },
@@ -414,10 +414,10 @@
     },
     {
       "type": "library",
-      "bom-ref": "pkg:npm/vitest@4.1.11",
+      "bom-ref": "pkg:npm/vitest@4.1.12",
       "name": "vitest",
-      "version": "4.1.11",
-      "purl": "pkg:npm/vitest@4.1.11",
+      "version": "4.1.12",
+      "purl": "pkg:npm/vitest@4.1.12",
       "scope": "excluded",
       "licenses": [
         {
@@ -433,7 +433,7 @@
         },
         {
           "name": "npm:integrity",
-          "value": "sha512-fhACrNXUidIbGSBr5FlbuBkO7VWC1ZyLl0DO4CU2DrQoAPxX84Ysxs+HeGQpii5lZWV1Q4gBZTTu49mF+A6Edw=="
+          "value": "sha512-5eWdz2yb3ajxWF3C8C4TjkXl7FGm3n2E/VlazALrQHzK7nYMSGFnCZto0bbPNl77AwkOZVLk0YnBAejUu0NiWA=="
         }
       ]
     },
