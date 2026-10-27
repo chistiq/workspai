@@ -1,6 +1,6 @@
 {
   "schemaVersion": "workspai.model-gateway-version-baselines.v1",
-  "reviewedAt": "2026-09-28",
+  "reviewedAt": "2026-10-27",
   "baselines": [
     {
       "adapterId": "openrouter-typescript",
@@ -9,21 +9,21 @@
       "runtime": "node",
       "policy": "tested-baseline",
       "releaseChannel": "stable",
-      "sdkVersion": "1.3.33",
-      "discoveryDate": "2026-09-28",
+      "sdkVersion": "1.5.13",
+      "discoveryDate": "2026-10-27",
       "declaredMaturity": "stable-1.x",
       "runtimeRequirement": "Node.js 18, 20, or 22 LTS as documented by the SDK RUNTIMES.md; generated projects require Node.js >=20",
-      "upstreamReleaseUrl": "https://github.com/OpenRouterTeam/typescript-sdk/releases/tag/v1.3.33",
-      "registryUrl": "https://registry.npmjs.org/@openrouter/sdk/1.3.33",
-      "notes": "Proposed 2026-09-28. Qualifies only after Linux, macOS, and Windows generated-project and lifecycle evidence on the same commit.",
+      "upstreamReleaseUrl": "https://github.com/OpenRouterTeam/typescript-sdk/releases/tag/v1.5.13",
+      "registryUrl": "https://registry.npmjs.org/@openrouter/sdk/1.5.13",
+      "notes": "Proposed 2026-10-27. Qualifies only after Linux, macOS, and Windows generated-project and lifecycle evidence on the same commit.",
       "packages": [
         {
           "ecosystem": "npm",
           "name": "@openrouter/sdk",
-          "version": "1.3.33",
+          "version": "1.5.13",
           "channel": "stable",
           "role": "sdk-core",
-          "registryUrl": "https://registry.npmjs.org/@openrouter/sdk/1.3.33"
+          "registryUrl": "https://registry.npmjs.org/@openrouter/sdk/1.5.13"
         },
         {
           "ecosystem": "npm",
@@ -51,21 +51,21 @@
       "runtime": "python",
       "policy": "tested-baseline",
       "releaseChannel": "stable",
-      "sdkVersion": "1.2.32",
-      "discoveryDate": "2026-09-28",
+      "sdkVersion": "1.3.86",
+      "discoveryDate": "2026-10-27",
       "declaredMaturity": "stable-as-of-v1.0",
       "runtimeRequirement": "Python >=3.10 as declared by the PyPI package requires_python field",
-      "upstreamReleaseUrl": "https://github.com/OpenRouterTeam/python-sdk/releases/tag/v1.2.32",
-      "registryUrl": "https://pypi.org/pypi/openrouter/1.2.32",
-      "notes": "Proposed 2026-09-28. Qualifies only after Linux, macOS, and Windows generated-project and lifecycle evidence on the same commit.",
+      "upstreamReleaseUrl": "https://github.com/OpenRouterTeam/python-sdk/releases/tag/v1.3.86",
+      "registryUrl": "https://pypi.org/pypi/openrouter/1.3.86",
+      "notes": "Proposed 2026-10-27. Qualifies only after Linux, macOS, and Windows generated-project and lifecycle evidence on the same commit.",
       "packages": [
         {
           "ecosystem": "pypi",
           "name": "openrouter",
-          "version": "1.2.32",
+          "version": "1.3.86",
           "channel": "stable",
           "role": "sdk-core",
-          "registryUrl": "https://pypi.org/pypi/openrouter/1.2.32"
+          "registryUrl": "https://pypi.org/pypi/openrouter/1.3.86"
         }
       ],
       "automaticUpgrade": false

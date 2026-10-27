@@ -25,8 +25,8 @@ classification, not a Workspai release gate.
 
 | Kit                             | Runtime         | Official Client SDK        | Reviewed   |
 | ------------------------------- | --------------- | -------------------------- | ---------- |
-| `gateway.openrouter.typescript` | Node.js `>=20`  | `@openrouter/sdk` `1.3.33` | 2026-09-28 |
-| `gateway.openrouter.python`     | Python `>=3.10` | `openrouter` `1.2.32`      | 2026-09-28 |
+| `gateway.openrouter.typescript` | Node.js `>=20`  | `@openrouter/sdk` `1.5.13` | 2026-10-27 |
+| `gateway.openrouter.python`     | Python `>=3.10` | `openrouter` `1.3.86`      | 2026-10-27 |
 
 Aliases: `openrouter.typescript`, `gateway.openrouter.ts`, `openrouter-typescript`,
 and the matching Python aliases. Bare `openrouter` is not an alias.
@@ -175,7 +175,7 @@ SDK `cancel()`. A cleanup failure does not replace the primary error or convert
 a successful completion into an error.
 
 The TypeScript starter forwards `AbortSignal` through `chat.send` options,
-including an already-aborted signal. Pinned `@openrouter/sdk` `1.3.33`
+including an already-aborted signal. Pinned `@openrouter/sdk` `1.5.13`
 `EventStream` extends `ReadableStream` and does not expose a dedicated `close()`.
 Cancellation is `ReadableStream` async-iterator `return()` → `cancel()`. If the
 stream has already errored, `cancel()` may be a no-op; the gateway still drops

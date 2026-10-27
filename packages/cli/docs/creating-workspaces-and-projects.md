@@ -430,10 +430,13 @@ independent proof for this scaffold. See
 
 ## AI Gateway kits
 
-| Kit                             | Runtime | Tested baseline                                                         | Layout                                                                                                                |
+| Kit                             | Runtime | SDK baseline                                                            | Layout                                                                                                                |
 | ------------------------------- | ------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `gateway.openrouter.typescript` | Node.js | `@openrouter/sdk` `1.3.33`, TypeScript `5.9.3`, `@types/node` `22.20.3` | Server-owned OpenRouter Client SDK starter with `gateway.policy.json`, credentialless `node:test`, and `.env.example` |
-| `gateway.openrouter.python`     | Python  | `openrouter` `1.2.32`                                                   | Server-owned OpenRouter Client SDK starter with `gateway.policy.json`, credentialless `unittest`, and `.env.example`  |
+| `gateway.openrouter.typescript` | Node.js | `@openrouter/sdk` `1.5.13`, TypeScript `5.9.3`, `@types/node` `22.20.3` | Server-owned OpenRouter Client SDK starter with `gateway.policy.json`, credentialless `node:test`, and `.env.example` |
+| `gateway.openrouter.python`     | Python  | `openrouter` `1.3.86`                                                   | Server-owned OpenRouter Client SDK starter with `gateway.policy.json`, credentialless `unittest`, and `.env.example`  |
+
+These are proposed SDK pins; three-OS qualification is required before they
+can be described as qualified or release-admitted.
 
 Interactive `workspai create` shows these kits under **AI Gateway** with the
 hint **Unified model access and routing**. A model identifier is runtime

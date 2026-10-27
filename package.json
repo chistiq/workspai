@@ -70,9 +70,9 @@
     "prepush:check": "corepack npm run check:cross-platform-lockfile && corepack npm --workspace workspai run contracts:prepush && corepack npm run check:brand && corepack npm run check:package-quality && corepack npm run check:package-boundaries && corepack npm run check:package-mirrors && corepack npm --workspace workspai run quality:push && corepack npm --workspace wspai run smoke"
   },
   "devDependencies": {
-    "@vitest/coverage-v8": "^4.1.11",
-    "@vitest/ui": "^4.1.11",
+    "@vitest/coverage-v8": "^4.1.12",
+    "@vitest/ui": "^4.1.12",
     "husky": "^9.1.7",
-    "vitest": "^4.1.11"
+    "vitest": "^4.1.12"
   }
 }
