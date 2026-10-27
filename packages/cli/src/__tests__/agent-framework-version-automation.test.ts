@@ -55,7 +55,7 @@ describe('agent framework version automation', () => {
     expect(conformance).toContain('qualification_mode:');
     expect(conformance).toContain("'packages/cli/src/__tests__/agent-framework-*.test.ts'");
     expect(conformance).toContain(
-      'inputs.qualification_mode == \'full\' && \'["ubuntu-latest","macos-latest","windows-latest"]\' || \'["ubuntu-latest"]\''
+      'inputs.qualification_mode == \'full\' && \'["ubuntu-24.04","macos-latest","windows-latest"]\' || \'["ubuntu-24.04"]\''
     );
     expect(conformance).toContain(
       "github.event_name == 'workflow_dispatch' && inputs.qualification_mode == 'full'"
