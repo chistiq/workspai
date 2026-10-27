@@ -3591,7 +3591,7 @@ describe('Doctor Command', () => {
     });
     await fsExtra.outputFile(
       path.join(pythonProjectPath, 'agents', 'primary', 'pyproject.toml'),
-      '[project]\nname = "primary"\ndependencies = ["openai-agents==0.22.2"]\n'
+      '[project]\nname = "primary"\ndependencies = ["openai-agents==0.24.0"]\n'
     );
     await fsExtra.outputFile(
       path.join(pythonProjectPath, 'agents', 'primary', '.env.example'),
@@ -3614,7 +3614,7 @@ describe('Doctor Command', () => {
       path.join(typescriptProjectPath, 'agents', 'primary', 'package.json'),
       {
         name: 'primary',
-        dependencies: { '@openai/agents': '0.18.0', zod: '4.6.5' },
+        dependencies: { '@openai/agents': '0.21.0', zod: '4.6.7' },
       }
     );
     await fsExtra.outputFile(

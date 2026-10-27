@@ -126,12 +126,12 @@ describe('kit picker choices', () => {
     expect(
       buildKitPickerChoices('agent').find((choice) => choice.value === 'agent.google-adk.python')
         ?.hint
-    ).toBe('python · release-admitted baseline');
+    ).toBe('python · preview · awaiting release admission');
     expect(
       buildKitPickerChoices('agent').find(
         (choice) => choice.value === 'agent.google-adk.typescript'
       )?.hint
-    ).toBe('node · release-admitted baseline');
+    ).toBe('node · preview · awaiting release admission');
     expect(buildKitPickerChoices('gateway')).toHaveLength(2);
     expect(buildKitPickerChoices('gateway').map((choice) => choice.value)).toEqual([
       'gateway.openrouter.python',

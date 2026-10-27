@@ -9,7 +9,7 @@ import {
 } from '../agent-frameworks/index.js';
 
 describe('agent framework release admission', () => {
-  it('keeps the reviewed inventory while blocking adapters changed after promotion', () => {
+  it('keeps the reviewed inventory and blocks candidate baselines pending new qualification', () => {
     const admissions = listBundledAgentFrameworkReleaseAdmissions();
     expect(admissions.map((admission) => admission.id).sort()).toEqual([
       'google-adk-python',
@@ -38,12 +38,12 @@ describe('agent framework release admission', () => {
         ])
       )
     ).toEqual({
-      'microsoft-agent-framework-python': 'admitted',
-      'microsoft-agent-framework-dotnet': 'admitted',
-      'openai-agents-python': 'admitted',
-      'openai-agents-typescript': 'admitted',
-      'google-adk-python': 'admitted',
-      'google-adk-typescript': 'admitted',
+      'microsoft-agent-framework-python': 'blocked',
+      'microsoft-agent-framework-dotnet': 'blocked',
+      'openai-agents-python': 'blocked',
+      'openai-agents-typescript': 'blocked',
+      'google-adk-python': 'blocked',
+      'google-adk-typescript': 'blocked',
     });
   });
 
@@ -67,10 +67,12 @@ describe('agent framework release admission', () => {
     expect(digestBuiltinAgentFrameworkImplementation(adapter)).not.toBe(
       digestBuiltinAgentFrameworkImplementation(changed)
     );
-    expect(assessBundledAgentFrameworkRelease(changed)).toMatchObject({
-      status: 'admitted',
-      blockers: [],
-    });
+    expect(assessBundledAgentFrameworkRelease(changed)).toEqual(
+      assessBundledAgentFrameworkRelease(adapter)
+    );
+    expect(assessBundledAgentFrameworkRelease(changed).blockers).toContain(
+      'framework baseline changed after release admission'
+    );
 
     const changedManifest = {
       ...adapter,
@@ -99,7 +101,7 @@ describe('agent framework release admission', () => {
         {},
         { trustReviewedReleaseAdmissions: true }
       ).resolveAdapter(adapterId).status
-    ).toBe('admitted');
+    ).toBe('blocked');
     expect(
       createBuiltinAgentFrameworkRegistry({}, { trustReviewedReleaseAdmissions: true }).get(
         adapterId
@@ -117,16 +119,16 @@ describe('agent framework release admission', () => {
       status: registry.resolveAdapter(entry.manifest.adapter.id).status,
       stability: entry.manifest.adapter.stability,
     }));
-    expect(adapters.filter((adapter) => adapter.status === 'admitted')).toHaveLength(6);
+    expect(adapters.filter((adapter) => adapter.status === 'blocked')).toHaveLength(6);
     expect(
       adapters
         .filter((adapter) => adapter.id.startsWith('openai-agents-'))
-        .every((adapter) => adapter.status === 'admitted' && adapter.stability === 'stable')
+        .every((adapter) => adapter.status === 'blocked' && adapter.stability === 'stable')
     ).toBe(true);
     expect(
       adapters
         .filter((adapter) => adapter.id.startsWith('google-adk-'))
-        .every((adapter) => adapter.status === 'admitted' && adapter.stability === 'preview')
+        .every((adapter) => adapter.status === 'blocked' && adapter.stability === 'preview')
     ).toBe(true);
     expect(
       createBuiltinAgentFrameworkRegistry().resolveAdapter('openai-agents-python').status

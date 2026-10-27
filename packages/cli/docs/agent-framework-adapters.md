@@ -95,20 +95,22 @@ conflict, not a ranking guess.
 
 ## Microsoft Agent Framework baseline
 
-The built-in implementation currently targets the upstream stable baselines
-verified from the Microsoft source tree:
+The current source candidates target these upstream stable versions. They are
+not yet Workspai-qualified; the reviewed release inventory remains bound to
+the previous versions until the new candidates pass the complete platform
+matrix:
 
-| Adapter                            | Tested framework | Runtime         | Authored detection                         |
-| ---------------------------------- | ---------------- | --------------- | ------------------------------------------ |
-| `microsoft-agent-framework-python` | `1.19.0`         | Python `>=3.10` | `agent-framework` PyPI package family      |
-| `microsoft-agent-framework-dotnet` | `1.22.0`         | .NET `>=8.0`    | `Microsoft.Agents.AI` NuGet package family |
+| Adapter                            | Candidate framework | Runtime         | Authored detection                         |
+| ---------------------------------- | ------------------- | --------------- | ------------------------------------------ |
+| `microsoft-agent-framework-python` | `1.23.0`            | Python `>=3.10` | `agent-framework` PyPI package family      |
+| `microsoft-agent-framework-dotnet` | `1.26.0`            | .NET `>=8.0`    | `Microsoft.Agents.AI` NuGet package family |
 
 The first provider profile pins its integration independently: Python uses
-`agent-framework-foundry` `1.13.1`, while .NET uses
-`Microsoft.Agents.AI.Foundry` `1.22.0-preview.260918.1` over the stable
-`Microsoft.Agents.AI` `1.22.0` core. Preview integration status is not
+`agent-framework-foundry` `1.15.0`, while .NET uses
+`Microsoft.Agents.AI.Foundry` `1.26.0-preview.261023.1` over the stable
+`Microsoft.Agents.AI` `1.26.0` core. Preview integration status is not
 misrepresented as framework stability. The dedicated .NET test project pins
-`Microsoft.NET.Test.Sdk` `18.10.1` and `xunit.v3.mtp-v2` `4.0.1`.
+`Microsoft.NET.Test.Sdk` `18.11.0` and `xunit.v3.mtp-v2` `4.0.2`.
 
 Each adapter implements detection, scaffold and attach planning, managed-file
 rendering, project context, validation, and runtime resolution. It never
@@ -163,18 +165,20 @@ Provider credentials remain environment references. The first provider profile u
 Microsoft Foundry, but provider identity is not part of framework identity and
 additional profiles must preserve the same security boundary.
 
-## OpenAI Agents SDK baseline
+## OpenAI Agents SDK candidate baseline
 
-The built-in OpenAI adapters pin independently verified SDK baselines. They do
-not reuse Microsoft detection, kits, or model-provider defaults.
+The built-in OpenAI adapters pin independently discovered SDK candidates. They
+do not reuse Microsoft detection, kits, or model-provider defaults. The current
+release admission covers the older pins; these candidates need a new complete
+qualification matrix before Create or Attach can use them.
 
-| Adapter                    | Tested framework | Runtime         | Authored detection                 |
-| -------------------------- | ---------------- | --------------- | ---------------------------------- |
-| `openai-agents-python`     | `0.22.3`         | Python `>=3.10` | exact PyPI package `openai-agents` |
-| `openai-agents-typescript` | `0.18.0`         | Node.js `>=22`  | exact npm package `@openai/agents` |
+| Adapter                    | Candidate framework | Runtime         | Authored detection                 |
+| -------------------------- | ------------------- | --------------- | ---------------------------------- |
+| `openai-agents-python`     | `0.24.0`            | Python `>=3.10` | exact PyPI package `openai-agents` |
+| `openai-agents-typescript` | `0.21.0`            | Node.js `>=22`  | exact npm package `@openai/agents` |
 
-The TypeScript starter also pins peer `zod` `4.6.5`, TypeScript `7.0.2`, and
-`@types/node` `26.6.3`. The `openai` PyPI or npm package alone is not this
+The TypeScript starter also pins peer `zod` `4.6.7`, TypeScript `7.0.2`, and
+`@types/node` `26.6.5`. The `openai` PyPI or npm package alone is not this
 framework. Generated markers under `.workspai/agent-frameworks/` cannot select
 it.
 
@@ -207,11 +211,11 @@ Claimed capabilities are conservative and independently evidenced:
   hosted tools, and human-approval loops
 
 Python cancellation uses `Runner.max_turns` and `ModelSettings.timeout` from
-`openai-agents` `0.22.3`. `ModelSettings.timeout` is a per-model-request
+`openai-agents` `0.24.0`. `ModelSettings.timeout` is a per-model-request
 timeout applied only on the live model path. Injected `ScriptedModel` runs omit
 it because that setting hung the official test double on Python 3.13.
 TypeScript cancellation uses `maxTurns` plus `AbortSignal` from
-`@openai/agents` `0.18.0`. Those SDK controls are not a Workspai-owned timeout
+`@openai/agents` `0.21.0`. Those SDK controls are not a Workspai-owned timeout
 service. Workspai still owns mutation admission and verification; a successful
 model run is not verified evidence.
 
@@ -235,8 +239,9 @@ workspace profile. A later adapter-manifest change must not hide a kit.
 Create and Attach still refuse a kit whose adapter is not release-admitted;
 visibility in the picker is not permission to write a blocked adapter.
 Attach still requires `--framework openai-agents` when the
-runtime is shared. OpenAI adapters are labeled `stable`; Python `0.22.3` and
-TypeScript `0.18.0` are release-admitted from the complete reviewed matrix.
+runtime is shared. OpenAI adapters are labeled `stable`; the previously admitted Python `0.22.3`
+and TypeScript `0.18.0` pins do not authorize the current `0.24.0` and `0.21.0`
+candidates.
 Handoffs, MCP, sessions, voice, sandbox, and approval loops stay unsupported.
 Microsoft adapters remain `preview`.
 
@@ -254,18 +259,19 @@ graph Workflow Runtime is not generalized to Python.
 
 | Adapter                 | Runtime           | Authored detection              |
 | ----------------------- | ----------------- | ------------------------------- |
-| `google-adk-python`     | Python `>=3.10`   | exact PyPI package `google-adk` |
+| `google-adk-python`     | Python `>=3.11`   | exact PyPI package `google-adk` |
 | `google-adk-typescript` | Node.js `>=20.19` | exact npm package `@google/adk` |
 
-The Python baseline is `google-adk` `2.10.0`. The TypeScript baseline is
-`@google/adk` `2.1.0` with `zod` `4.6.5`, TypeScript `7.0.2`, and
-`@types/node` `26.6.3`. `@google/adk-devtools` is not a v1 dependency. Do not
+The current Python candidate is `google-adk` `2.13.0`. The TypeScript
+candidate is `@google/adk` `2.3.0` with `zod` `4.6.7`, TypeScript `7.0.2`,
+and `@types/node` `26.6.5`. `@google/adk-devtools` is not a v1 dependency. Do not
 run unqualified `npx adk`.
 
 Adapters are labeled `preview`. Create kits are `agent.google-adk.python` and
-`agent.google-adk.typescript`. Python `2.10.0` and TypeScript `2.1.0` are
-admitted by the reviewed v2 Linux, macOS, and Windows evidence. The generic
-admission boundary refuses any unpublished or drifted kit before
+`agent.google-adk.typescript`. The reviewed v2 Linux, macOS, and Windows
+evidence covers the previous pins (`2.10.0` Python and `2.1.0` TypeScript),
+not these candidates. The generic admission boundary refuses any unpublished
+or drifted kit before
 `--dry-run` and before filesystem or workspace mutation. Generated Python code
 uses the current ADK lifecycle: construct `App(root_agent=...)`, pass that app
 to `Runner`, and enter the runner as an async context manager.
@@ -302,9 +308,9 @@ evidence file per check. Google ADK `verification-binding` evidence records
 `telemetryOptInRecording` as distinct booleans. Reports are retained as CI artifacts for review. A
 final job validates every evidence path and emits an admission candidate only
 when all three operating-system lanes pass for every built-in adapter.
-Python conformance is pinned to 3.10.11, the final Python 3.10 release with
-cross-platform binary installers; this provides one reproducible minimum-runtime
-baseline while the adapter continues to declare Python `>=3.10` support.
+Microsoft and OpenAI Python conformance use Python 3.10.11, the final Python
+3.10 release with cross-platform binary installers. Google ADK Python uses
+Python 3.11 because candidate `google-adk` 2.13.0 requires Python `>=3.11`.
 
 After verification, CI emits one admission-candidate artifact. It binds the
 source commit, CLI version, adapter manifest and implementation digests, lane reports, and every

@@ -278,12 +278,12 @@ See [Canonical-first agent entry](./agent-entry.md).
 
 `agent framework` is the governed bridge between Workspai evidence and an
 agent runtime. `list` exposes every built-in adapter and its release-admission
-state. In this CLI version Microsoft Python `1.19.0` and .NET `1.22.0` remain
-`preview`. OpenAI Agents SDK Python `0.22.3` and TypeScript `0.18.0` are
-labeled `stable`. Google ADK Python `2.10.0` and TypeScript `2.1.0` remain
-labeled `preview`. All six current baselines are admitted by the complete
-Linux, macOS, and Windows evidence from Agent Framework Adapter Matrix run 88.
-Create and Attach require the reviewed v2 release inventory,
+state. The current candidates are Microsoft Python `1.23.0` and .NET `1.26.0`,
+OpenAI Agents Python `0.24.0` and TypeScript `0.21.0`, and Google ADK Python
+`2.13.0` and TypeScript `2.3.0`. Microsoft and Google adapters remain
+`preview`; OpenAI adapters remain `stable`. These candidates are not admitted:
+the existing v2 inventory records the prior versions and their Linux, macOS,
+and Windows evidence. Create and Attach require the reviewed v2 release inventory,
 whose manifest, framework baseline, runtime, and platform claims were promoted
 from the Linux, macOS, and Windows release matrix. Semantic implementation
 digests remain audit provenance rather than runtime authorization. `plan`

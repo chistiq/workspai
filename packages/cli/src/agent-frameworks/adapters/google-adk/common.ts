@@ -35,7 +35,7 @@ function languageLimitations(language: 'python' | 'typescript'): string[] {
   if (language === 'python') {
     const version = packageVersion(GOOGLE_ADK_PYTHON_BASELINE, 'google-adk');
     return [
-      `Python and TypeScript are independent ADK runtimes. This adapter pins google-adk ${version} and requires Python >=3.10. It does not claim TypeScript graph Workflow Runtime behavior.`,
+      `Python and TypeScript are independent ADK runtimes. This adapter pins google-adk ${version} and requires Python >=3.11. It does not claim TypeScript graph Workflow Runtime behavior.`,
       'Sessions use InMemorySessionService. That state is lost when the process exits and is not production persistence.',
       `Streaming uses RunConfig(streaming_mode=StreamingMode.SSE). Official Python google-adk ${version} Runner.run_async has no AbortSignal; host timeout uses asyncio.wait_for and cancellation uses asyncio.Task.cancel.`,
       'Create never installs dependencies or calls a model. Live Gemini Developer API and Vertex AI calls are out of CI.',

@@ -184,7 +184,7 @@ export function packageVersion(
 }
 
 export function formatAgentFrameworkVersionPolicy(baseline: AgentFrameworkVersionBaseline): string {
-  return `${baseline.frameworkVersion} · Workspai verified ${baseline.releaseChannel} baseline`;
+  return `${baseline.frameworkVersion} · ${baseline.releaseChannel} upstream candidate · Workspai admission required`;
 }
 
 export function isStableRegistryVersion(version: string): boolean {

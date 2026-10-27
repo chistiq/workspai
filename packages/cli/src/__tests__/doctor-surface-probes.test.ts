@@ -1041,7 +1041,7 @@ describe('doctor enterprise surface probes', () => {
     });
     const nodeProject = await makeProject({
       'agents/primary/package.json':
-        '{"name":"primary","dependencies":{"@openai/agents":"0.18.0"}}\n',
+        '{"name":"primary","dependencies":{"@openai/agents":"0.21.0"}}\n',
       'agents/primary/.env.example': 'OPENAI_API_KEY=\nOPENAI_MODEL=\n',
     });
     const dotnetProject = await makeProject({

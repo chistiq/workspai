@@ -1841,7 +1841,7 @@ async function main(): Promise<void> {
       if (runtime === 'python') {
         await run(
           'uv',
-          ['sync', '--python', '3.10', '--project', path.dirname(context.dependencyManifest)],
+          ['sync', '--python', '3.11', '--project', path.dirname(context.dependencyManifest)],
           generatedRoot
         );
         const version = await run(

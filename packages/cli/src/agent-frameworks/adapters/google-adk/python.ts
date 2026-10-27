@@ -414,7 +414,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "${target.slug}"
 version = "0.1.0"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 dependencies = [
   "google-adk==${SDK_PACKAGE_VERSION}",
 ]
@@ -1143,7 +1143,7 @@ __pycache__/
 
 This Google Agent Development Kit Python entrypoint consumes bounded Workspai context. Run these commands from the project root.
 
-Pinned baseline: \`google-adk==${SDK_PACKAGE_VERSION}\` on Python 3.10 or newer. The official package import is \`google.adk\`. This runtime is independent from \`@google/adk\` TypeScript and does not include TypeScript 2.0 graph Workflow Runtime.
+Pinned baseline: \`google-adk==${SDK_PACKAGE_VERSION}\` on Python 3.11 or newer. The official package import is \`google.adk\`. This runtime is independent from \`@google/adk\` TypeScript and does not include TypeScript 2.0 graph Workflow Runtime.
 
 Google ADK is the agent runtime. \`WORKSPAI_ADK_PROVIDER=gemini-api\` and \`WORKSPAI_ADK_PROVIDER=vertex-ai\` are provider profiles. OpenRouter is a separate Workspai Gateway category and is not an ADK provider. Workspai owns governance, ownership, context, and verification.
 
@@ -1246,7 +1246,7 @@ export const googleAdkPythonAdapter: AgentFrameworkAdapter = {
     return {
       adapterId: googleAdkPythonManifest.adapter.id,
       frameworkId: googleAdkPythonManifest.framework.id,
-      runtime: 'python>=3.10',
+      runtime: 'python>=3.11',
       entrypoint: target.entrypoint,
       dependencyManifest: target.dependencyManifest,
       requiredEnvironment: [...GOOGLE_ADK_REQUIRED_ENVIRONMENT],
@@ -1266,6 +1266,6 @@ export const googleAdkPythonAdapter: AgentFrameworkAdapter = {
     return validateAdapterRender(googleAdkPythonAdapter, input);
   },
   resolveRuntime(availableRuntimes) {
-    return resolveDeclaredRuntime('python', '>=3.10', availableRuntimes);
+    return resolveDeclaredRuntime('python', '>=3.11', availableRuntimes);
   },
 };

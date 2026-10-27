@@ -56,28 +56,28 @@ describe('agent framework version policy', () => {
 
   it('labels stable and preview baselines truthfully', () => {
     expect(formatAgentFrameworkVersionPolicy(MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE)).toBe(
-      `${MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE.frameworkVersion} · Workspai verified stable baseline`
+      `${MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE.frameworkVersion} · stable upstream candidate · Workspai admission required`
     );
     expect(formatAgentFrameworkVersionPolicy(MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE)).toBe(
-      `${MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE.frameworkVersion} · Workspai verified preview baseline`
+      `${MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE.frameworkVersion} · preview upstream candidate · Workspai admission required`
     );
     expect(
       packageVersion(MICROSOFT_AGENT_FRAMEWORK_DOTNET_BASELINE, 'Microsoft.Agents.AI.Foundry')
     ).toContain('-preview.');
     expect(formatAgentFrameworkVersionPolicy(OPENAI_AGENTS_PYTHON_BASELINE)).toBe(
-      `${OPENAI_AGENTS_PYTHON_BASELINE.frameworkVersion} · Workspai verified stable baseline`
+      `${OPENAI_AGENTS_PYTHON_BASELINE.frameworkVersion} · stable upstream candidate · Workspai admission required`
     );
     expect(formatAgentFrameworkVersionPolicy(OPENAI_AGENTS_TYPESCRIPT_BASELINE)).toBe(
-      `${OPENAI_AGENTS_TYPESCRIPT_BASELINE.frameworkVersion} · Workspai verified stable baseline`
+      `${OPENAI_AGENTS_TYPESCRIPT_BASELINE.frameworkVersion} · stable upstream candidate · Workspai admission required`
     );
-    expect(packageVersion(OPENAI_AGENTS_PYTHON_BASELINE, 'openai-agents')).toBe('0.22.3');
-    expect(packageVersion(OPENAI_AGENTS_TYPESCRIPT_BASELINE, '@openai/agents')).toBe('0.18.0');
-    expect(packageVersion(OPENAI_AGENTS_TYPESCRIPT_BASELINE, 'zod')).toBe('4.6.5');
+    expect(packageVersion(OPENAI_AGENTS_PYTHON_BASELINE, 'openai-agents')).toBe('0.24.0');
+    expect(packageVersion(OPENAI_AGENTS_TYPESCRIPT_BASELINE, '@openai/agents')).toBe('0.21.0');
+    expect(packageVersion(OPENAI_AGENTS_TYPESCRIPT_BASELINE, 'zod')).toBe('4.6.7');
     expect(formatAgentFrameworkVersionPolicy(GOOGLE_ADK_PYTHON_BASELINE)).toBe(
-      `${GOOGLE_ADK_PYTHON_BASELINE.frameworkVersion} · Workspai verified stable baseline`
+      `${GOOGLE_ADK_PYTHON_BASELINE.frameworkVersion} · stable upstream candidate · Workspai admission required`
     );
     expect(formatAgentFrameworkVersionPolicy(GOOGLE_ADK_TYPESCRIPT_BASELINE)).toBe(
-      `${GOOGLE_ADK_TYPESCRIPT_BASELINE.frameworkVersion} · Workspai verified stable baseline`
+      `${GOOGLE_ADK_TYPESCRIPT_BASELINE.frameworkVersion} · stable upstream candidate · Workspai admission required`
     );
     expect(packageVersion(GOOGLE_ADK_PYTHON_BASELINE, 'google-adk')).toBe(
       GOOGLE_ADK_PYTHON_BASELINE.frameworkVersion
@@ -170,7 +170,7 @@ describe('agent framework version policy', () => {
           return {
             versions: {
               [admitted.version]: {},
-              ...(admitted.name === '@openai/agents' ? { '0.19.0': {} } : {}),
+              ...(admitted.name === '@openai/agents' ? { '0.22.0': {} } : {}),
               '99.0.0-rc.1': {},
             },
           };
@@ -187,8 +187,8 @@ describe('agent framework version policy', () => {
       expect.arrayContaining([
         expect.objectContaining({
           name: '@openai/agents',
-          admittedVersion: '0.18.0',
-          latestRegistryVersion: '0.19.0',
+          admittedVersion: '0.21.0',
+          latestRegistryVersion: '0.22.0',
           status: 'update-available',
         }),
       ])

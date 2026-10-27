@@ -7,12 +7,12 @@
       "runtime": "python",
       "policy": "latest-admitted",
       "releaseChannel": "stable",
-      "frameworkVersion": "1.19.0",
+      "frameworkVersion": "1.23.0",
       "packages": [
         {
           "ecosystem": "pypi",
           "name": "agent-framework-core",
-          "version": "1.19.0",
+          "version": "1.23.0",
           "channel": "stable",
           "role": "framework-core",
           "registryUrl": "https://pypi.org/pypi/agent-framework-core/json"
@@ -20,7 +20,7 @@
         {
           "ecosystem": "pypi",
           "name": "agent-framework-foundry",
-          "version": "1.13.1",
+          "version": "1.15.0",
           "channel": "stable",
           "role": "framework-integration",
           "registryUrl": "https://pypi.org/pypi/agent-framework-foundry/json"
@@ -28,7 +28,7 @@
         {
           "ecosystem": "pypi",
           "name": "azure-identity",
-          "version": "1.25.3",
+          "version": "1.27.0",
           "channel": "stable",
           "role": "runtime-support",
           "registryUrl": "https://pypi.org/pypi/azure-identity/json"
@@ -43,12 +43,12 @@
       "runtime": "dotnet",
       "policy": "latest-admitted",
       "releaseChannel": "preview",
-      "frameworkVersion": "1.22.0",
+      "frameworkVersion": "1.26.0",
       "packages": [
         {
           "ecosystem": "nuget",
           "name": "Microsoft.Agents.AI",
-          "version": "1.22.0",
+          "version": "1.26.0",
           "channel": "stable",
           "role": "framework-core",
           "registryUrl": "https://api.nuget.org/v3-flatcontainer/microsoft.agents.ai/index.json"
@@ -56,7 +56,7 @@
         {
           "ecosystem": "nuget",
           "name": "Microsoft.Agents.AI.Foundry",
-          "version": "1.22.0-preview.260918.1",
+          "version": "1.26.0-preview.261023.1",
           "channel": "preview",
           "role": "framework-integration",
           "registryUrl": "https://api.nuget.org/v3-flatcontainer/microsoft.agents.ai.foundry/index.json"
@@ -72,7 +72,7 @@
         {
           "ecosystem": "nuget",
           "name": "Microsoft.NET.Test.Sdk",
-          "version": "18.10.1",
+          "version": "18.11.0",
           "channel": "stable",
           "role": "runtime-support",
           "registryUrl": "https://api.nuget.org/v3-flatcontainer/microsoft.net.test.sdk/index.json"
@@ -80,7 +80,7 @@
         {
           "ecosystem": "nuget",
           "name": "xunit.v3.mtp-v2",
-          "version": "4.0.1",
+          "version": "4.0.2",
           "channel": "stable",
           "role": "runtime-support",
           "registryUrl": "https://api.nuget.org/v3-flatcontainer/xunit.v3.mtp-v2/index.json"
@@ -95,12 +95,12 @@
       "runtime": "python",
       "policy": "latest-admitted",
       "releaseChannel": "stable",
-      "frameworkVersion": "0.22.3",
+      "frameworkVersion": "0.24.0",
       "packages": [
         {
           "ecosystem": "pypi",
           "name": "openai-agents",
-          "version": "0.22.3",
+          "version": "0.24.0",
           "channel": "stable",
           "role": "framework-core",
           "registryUrl": "https://pypi.org/pypi/openai-agents/json"
@@ -115,12 +115,12 @@
       "runtime": "node",
       "policy": "latest-admitted",
       "releaseChannel": "stable",
-      "frameworkVersion": "0.18.0",
+      "frameworkVersion": "0.21.0",
       "packages": [
         {
           "ecosystem": "npm",
           "name": "@openai/agents",
-          "version": "0.18.0",
+          "version": "0.21.0",
           "channel": "stable",
           "role": "framework-core",
           "registryUrl": "https://registry.npmjs.org/@openai/agents"
@@ -128,7 +128,7 @@
         {
           "ecosystem": "npm",
           "name": "zod",
-          "version": "4.6.5",
+          "version": "4.6.7",
           "channel": "stable",
           "role": "runtime-support",
           "registryUrl": "https://registry.npmjs.org/zod"
@@ -144,7 +144,7 @@
         {
           "ecosystem": "npm",
           "name": "@types/node",
-          "version": "26.6.3",
+          "version": "26.6.5",
           "channel": "stable",
           "role": "runtime-support",
           "registryUrl": "https://registry.npmjs.org/@types/node"
@@ -159,12 +159,12 @@
       "runtime": "python",
       "policy": "latest-admitted",
       "releaseChannel": "stable",
-      "frameworkVersion": "2.10.0",
+      "frameworkVersion": "2.13.0",
       "packages": [
         {
           "ecosystem": "pypi",
           "name": "google-adk",
-          "version": "2.10.0",
+          "version": "2.13.0",
           "channel": "stable",
           "role": "framework-core",
           "registryUrl": "https://pypi.org/pypi/google-adk/json"
@@ -174,7 +174,9 @@
       "admissionRequired": true,
       "upstream": {
         "githubRepository": "google/adk-python",
-        "releaseTagPrefixes": ["v"]
+        "releaseTagPrefixes": [
+          "v"
+        ]
       }
     },
     {
@@ -183,12 +185,12 @@
       "runtime": "node",
       "policy": "latest-admitted",
       "releaseChannel": "stable",
-      "frameworkVersion": "2.1.0",
+      "frameworkVersion": "2.3.0",
       "packages": [
         {
           "ecosystem": "npm",
           "name": "@google/adk",
-          "version": "2.1.0",
+          "version": "2.3.0",
           "channel": "stable",
           "role": "framework-core",
           "registryUrl": "https://registry.npmjs.org/@google/adk"
@@ -196,7 +198,7 @@
         {
           "ecosystem": "npm",
           "name": "zod",
-          "version": "4.6.5",
+          "version": "4.6.7",
           "channel": "stable",
           "role": "runtime-support",
           "registryUrl": "https://registry.npmjs.org/zod"
@@ -212,7 +214,7 @@
         {
           "ecosystem": "npm",
           "name": "@types/node",
-          "version": "26.6.3",
+          "version": "26.6.5",
           "channel": "stable",
           "role": "runtime-support",
           "registryUrl": "https://registry.npmjs.org/@types/node"
@@ -222,7 +224,10 @@
       "admissionRequired": true,
       "upstream": {
         "githubRepository": "google/adk-js",
-        "releaseTagPrefixes": ["adk-v", "main-v"]
+        "releaseTagPrefixes": [
+          "adk-v",
+          "main-v"
+        ]
       }
     }
   ]
