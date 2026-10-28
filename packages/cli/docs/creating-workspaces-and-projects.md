@@ -396,28 +396,27 @@ project metadata and performs the selected workspace registration.
 
 ## Agent Framework kits
 
-| Kit                           | Runtime | Candidate SDK baseline                                                       | Layout                                                                                                                                                                                               |
-| ----------------------------- | ------- | ---------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `agent.microsoft.python`      | Python  | `agent-framework-core` `1.23.0`, Foundry `1.15.0`, `azure-identity` `1.27.0` | Isolated `agents/<instance>/` with `pyproject.toml`, credentialless `unittest`, and `.env.example`. Preview; candidate pending qualification.                                                        |
-| `agent.microsoft.dotnet`      | .NET    | `Microsoft.Agents.AI` `1.26.0`, Foundry `1.26.0-preview.261023.1`            | Isolated `agents/<instance>/` with the executable project plus a dedicated test project. Preview; candidate pending qualification.                                                                  |
-| `agent.openai.python`         | Python  | `openai-agents` `0.24.0`                                                     | Isolated `agents/<instance>/` with pip-editable `pyproject.toml`, credentialless `unittest`, and `.env.example`. Stable; candidate pending qualification.                                            |
-| `agent.openai.typescript`     | Node.js | `@openai/agents` `0.21.0`, `zod` `4.6.7`                                     | Isolated `agents/<instance>/` with `package.json`, credentialless `node:test`, and `.env.example`; candidate pending qualification.                                                                  |
-| `agent.google-adk.python`     | Python `>=3.11` | `google-adk` `2.13.0`                                                        | Isolated `agents/<instance>/` with pip-editable `pyproject.toml`, credentialless `unittest`, and provider profiles `gemini-api` / `vertex-ai`. Preview; candidate pending qualification.             |
-| `agent.google-adk.typescript` | Node.js | `@google/adk` `2.3.0`, `zod` `4.6.7`                                         | Isolated `agents/<instance>/` with `package.json`, credentialless `node:test`, and provider profiles `gemini-api` / `vertex-ai`; candidate pending qualification.                                    |
+| Kit                           | Runtime         | Release-admitted SDK baseline                                              | Layout                                                                                                                         |
+| ----------------------------- | --------------- | --------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| `agent.microsoft.python`      | Python          | `agent-framework-core` `1.23.0`, Foundry `1.15.0`, `azure-identity` `1.27.0` | Isolated `agents/<instance>/` with `pyproject.toml`, credentialless `unittest`, and `.env.example`. Preview.                    |
+| `agent.microsoft.dotnet`      | .NET            | `Microsoft.Agents.AI` `1.26.0`, Foundry `1.26.0-preview.261023.1`           | Isolated `agents/<instance>/` with the executable project plus a dedicated test project. Preview.                              |
+| `agent.openai.python`         | Python          | `openai-agents` `0.24.0`                                                     | Isolated `agents/<instance>/` with pip-editable `pyproject.toml`, credentialless `unittest`, and `.env.example`. Stable.        |
+| `agent.openai.typescript`     | Node.js         | `@openai/agents` `0.21.0`, `zod` `4.6.7`                                     | Isolated `agents/<instance>/` with `package.json`, credentialless `node:test`, and `.env.example`. Stable.                      |
+| `agent.google-adk.python`     | Python `>=3.11` | `google-adk` `2.13.0`                                                        | Isolated `agents/<instance>/` with pip-editable `pyproject.toml`, credentialless `unittest`, and provider profiles. Preview.    |
+| `agent.google-adk.typescript` | Node.js         | `@google/adk` `2.3.0`, `zod` `4.6.7`                                         | Isolated `agents/<instance>/` with `package.json`, credentialless `node:test`, and provider profiles. Preview.                  |
 
-These are discovered candidates, not release-admitted versions. Existing
-admission evidence remains bound to the previously reviewed pins until the
-complete qualification matrix passes for these versions.
+All six exact baselines are admitted by the full Linux, macOS, and Windows
+[Agent Framework Adapter Matrix run 92](https://github.com/chistiq/workspai/actions/runs/40584579308).
 
 Interactive `workspai create` shows every published kit under **AI Agent** and
-labels kits whose current baseline awaits release admission. Visibility is not
-authorization: scaffolding remains blocked until the exact baseline has
-reviewed evidence. Agent kits require Workspace governance and therefore do
-not accept `--no-workspace`. Optional `--agent-name` names the instance
-directory (default `primary`). They do not install dependencies, call a model,
-or store credentials. Exact versions are promoted only after the full Linux,
-macOS, and Windows conformance matrix passes. Weekly registry discovery is
-report-only; it cannot rewrite these pins.
+labels each kit's release status. Visibility is not authorization: scaffolding
+is allowed only when the exact baseline has reviewed admission evidence. Agent
+kits require Workspace governance and therefore do not accept `--no-workspace`.
+Optional `--agent-name` names the instance directory (default `primary`). They
+do not install dependencies, call a model, or store credentials. Future
+versions are promoted only after the full Linux, macOS, and Windows conformance
+matrix passes. Weekly registry discovery is report-only; it cannot rewrite
+these pins.
 
 Create does not emit an empty root `pyproject.toml` or `.csproj`. The nested
 instance is the only Workspace Run unit. After Create, Model and Graph already

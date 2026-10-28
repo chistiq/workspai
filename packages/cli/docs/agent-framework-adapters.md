@@ -95,12 +95,11 @@ conflict, not a ranking guess.
 
 ## Microsoft Agent Framework baseline
 
-The current source candidates target these upstream stable versions. They are
-not yet Workspai-qualified; the reviewed release inventory remains bound to
-the previous versions until the new candidates pass the complete platform
-matrix:
+The current baselines target these upstream stable versions and are
+Workspai-qualified by the complete Linux, macOS, and Windows matrix in
+[Agent Framework Adapter Matrix run 92](https://github.com/chistiq/workspai/actions/runs/40584579308):
 
-| Adapter                            | Candidate framework | Runtime         | Authored detection                         |
+| Adapter                            | Framework baseline | Runtime         | Authored detection                         |
 | ---------------------------------- | ------------------- | --------------- | ------------------------------------------ |
 | `microsoft-agent-framework-python` | `1.23.0`            | Python `>=3.10` | `agent-framework` PyPI package family      |
 | `microsoft-agent-framework-dotnet` | `1.26.0`            | .NET `>=8.0`    | `Microsoft.Agents.AI` NuGet package family |
@@ -165,14 +164,13 @@ Provider credentials remain environment references. The first provider profile u
 Microsoft Foundry, but provider identity is not part of framework identity and
 additional profiles must preserve the same security boundary.
 
-## OpenAI Agents SDK candidate baseline
+## OpenAI Agents SDK baseline
 
-The built-in OpenAI adapters pin independently discovered SDK candidates. They
-do not reuse Microsoft detection, kits, or model-provider defaults. The current
-release admission covers the older pins; these candidates need a new complete
-qualification matrix before Create or Attach can use them.
+The built-in OpenAI adapters pin independently discovered SDK baselines. They
+do not reuse Microsoft detection, kits, or model-provider defaults. The exact
+baselines below are release-admitted for Create and Attach.
 
-| Adapter                    | Candidate framework | Runtime         | Authored detection                 |
+| Adapter                    | Framework baseline | Runtime         | Authored detection                 |
 | -------------------------- | ------------------- | --------------- | ---------------------------------- |
 | `openai-agents-python`     | `0.24.0`            | Python `>=3.10` | exact PyPI package `openai-agents` |
 | `openai-agents-typescript` | `0.21.0`            | Node.js `>=22`  | exact npm package `@openai/agents` |
@@ -239,9 +237,9 @@ workspace profile. A later adapter-manifest change must not hide a kit.
 Create and Attach still refuse a kit whose adapter is not release-admitted;
 visibility in the picker is not permission to write a blocked adapter.
 Attach still requires `--framework openai-agents` when the
-runtime is shared. OpenAI adapters are labeled `stable`; the previously admitted Python `0.22.3`
-and TypeScript `0.18.0` pins do not authorize the current `0.24.0` and `0.21.0`
-candidates.
+runtime is shared. OpenAI adapters are labeled `stable`; the current Python
+`0.24.0` and TypeScript `0.21.0` baselines are release-admitted by the full
+cross-platform matrix.
 Handoffs, MCP, sessions, voice, sandbox, and approval loops stay unsupported.
 Microsoft adapters remain `preview`.
 
@@ -262,16 +260,15 @@ graph Workflow Runtime is not generalized to Python.
 | `google-adk-python`     | Python `>=3.11`   | exact PyPI package `google-adk` |
 | `google-adk-typescript` | Node.js `>=20.19` | exact npm package `@google/adk` |
 
-The current Python candidate is `google-adk` `2.13.0`. The TypeScript
-candidate is `@google/adk` `2.3.0` with `zod` `4.6.7`, TypeScript `7.0.2`,
+The current Python baseline is `google-adk` `2.13.0`. The TypeScript
+baseline is `@google/adk` `2.3.0` with `zod` `4.6.7`, TypeScript `7.0.2`,
 and `@types/node` `26.6.5`. `@google/adk-devtools` is not a v1 dependency. Do not
 run unqualified `npx adk`.
 
 Adapters are labeled `preview`. Create kits are `agent.google-adk.python` and
-`agent.google-adk.typescript`. The reviewed v2 Linux, macOS, and Windows
-evidence covers the previous pins (`2.10.0` Python and `2.1.0` TypeScript),
-not these candidates. The generic admission boundary refuses any unpublished
-or drifted kit before
+`agent.google-adk.typescript`. Both exact baselines are release-admitted by
+Agent Framework Adapter Matrix run 92. The generic admission boundary refuses
+any unpublished or drifted kit before
 `--dry-run` and before filesystem or workspace mutation. Generated Python code
 uses the current ADK lifecycle: construct `App(root_agent=...)`, pass that app
 to `Runner`, and enter the runner as an async context manager.
@@ -466,8 +463,8 @@ multi-language Microsoft Agent Framework. OpenAI Agents SDK and Google ADK
 Python and TypeScript adapters share that same create, attach, detection,
 ownership, and verification host. They are selectable for Create and Attach
 only while their exact manifest digest, framework baseline, runtime, and
-platform list remain in the reviewed release-admission inventory. All six
-current baselines are admitted by Agent Framework Adapter Matrix run 88.
+platform list remain in the reviewed release-admission inventory. All six current baselines are admitted by
+[Agent Framework Adapter Matrix run 92](https://github.com/chistiq/workspai/actions/runs/40584579308).
 
 ## Implementation sequence
 

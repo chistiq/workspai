@@ -5,6 +5,40 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
+## Planned Release: v0.80.0 (publication pending)
+
+### Six updated Agent Framework baselines admitted
+
+Workspai 0.80.0 updates all six Microsoft, OpenAI, and Google agent framework
+baselines and admits them after the complete Linux, macOS, and Windows matrix.
+
+**What's New:**
+
+- Enable the exact updated six-kit baselines for governed Create and Attach.
+- Require Python 3.11 for the Google ADK Python starter.
+- Refresh the source-ready OpenRouter Client SDK pins to TypeScript 1.5.13 and
+  Python 1.3.86 without changing Gateway qualification status.
+
+**Compatibility:** Existing commands and contract schemas remain supported.
+OpenAI remains `stable`; Microsoft and Google ADK remain `preview`. OpenRouter
+gateways remain source-ready, not release-qualified, and Attach remains
+unsupported.
+
+**Publication status:** Pending.
+
+**Install after publication:**
+
+```bash
+npm install -g workspai@0.80.0
+workspai --version
+```
+
+The optional `wspai` alias will use the matching `0.80.0` version.
+
+[Full Release Notes](https://github.com/chistiq/workspai/blob/main/packages/cli/releases/RELEASE_NOTES_v0.80.0.md)
+
+---
+
 ## v0.79.1 (October 4, 2026)
 
 ### Easier project setup, back navigation, and safer dependencies

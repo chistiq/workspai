@@ -52,13 +52,12 @@ describe('agent framework project kits', () => {
     expect(resolveAgentFrameworkProjectKit('agent.google-adk.python')?.adapterId).toBe(
       'google-adk-python'
     );
-    // New SDK candidates remain visible but blocked until matching platform evidence is admitted.
-    expect(isAdmittedAgentFrameworkProjectKit('agent.microsoft.python')).toBe(false);
-    expect(isAdmittedAgentFrameworkProjectKit('agent.microsoft.dotnet')).toBe(false);
-    expect(isAdmittedAgentFrameworkProjectKit('agent.openai.python')).toBe(false);
-    expect(isAdmittedAgentFrameworkProjectKit('agent.openai.typescript')).toBe(false);
-    expect(isAdmittedAgentFrameworkProjectKit('agent.google-adk.python')).toBe(false);
-    expect(isAdmittedAgentFrameworkProjectKit('agent.google-adk.typescript')).toBe(false);
+    expect(isAdmittedAgentFrameworkProjectKit('agent.microsoft.python')).toBe(true);
+    expect(isAdmittedAgentFrameworkProjectKit('agent.microsoft.dotnet')).toBe(true);
+    expect(isAdmittedAgentFrameworkProjectKit('agent.openai.python')).toBe(true);
+    expect(isAdmittedAgentFrameworkProjectKit('agent.openai.typescript')).toBe(true);
+    expect(isAdmittedAgentFrameworkProjectKit('agent.google-adk.python')).toBe(true);
+    expect(isAdmittedAgentFrameworkProjectKit('agent.google-adk.typescript')).toBe(true);
   });
 
   it('resolves stable aliases without exposing mutable registry state', () => {

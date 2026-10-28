@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.80.0] - Unreleased
+
+### Added
+
+- Admit the current Microsoft Agent Framework, OpenAI Agents SDK, and Google
+  ADK baselines for all six adapters after the complete Linux, macOS, and
+  Windows qualification matrix passed in run 92.
+
+### Changed
+
+- Update Microsoft Agent Framework to Python `1.23.0` and .NET `1.26.0`,
+  OpenAI Agents to Python `0.24.0` and TypeScript `0.21.0`, and Google ADK to
+  Python `2.13.0` and TypeScript `2.3.0`. Google ADK Python now requires
+  Python `>=3.11`.
+- Refresh source-ready OpenRouter Client SDK pins to TypeScript `1.5.13` and
+  Python `1.3.86`; gateway kits remain unqualified and Attach remains
+  unsupported.
+
+### Fixed
+
+- Pin the Agent Framework Linux qualification lanes to Ubuntu 24.04 so
+  Python `3.10.11` remains available after `ubuntu-latest` moved to Ubuntu 26.
+
 ## [0.79.1] - 2026-10-04
 
 ### Added
