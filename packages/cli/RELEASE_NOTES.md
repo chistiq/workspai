@@ -5,7 +5,7 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Planned Release: v0.80.0 (publication pending)
+## v0.80.0 (October 28, 2026)
 
 ### Six updated Agent Framework baselines admitted
 
@@ -24,9 +24,9 @@ OpenAI remains `stable`; Microsoft and Google ADK remain `preview`. OpenRouter
 gateways remain source-ready, not release-qualified, and Attach remains
 unsupported.
 
-**Publication status:** Pending.
+**Publication status:** Published October 28, 2026.
 
-**Install after publication:**
+**Install or upgrade:**
 
 ```bash
 npm install -g workspai@0.80.0
@@ -35,7 +35,7 @@ workspai --version
 
 The optional `wspai` alias will use the matching `0.80.0` version.
 
-[Full Release Notes](https://github.com/chistiq/workspai/blob/main/packages/cli/releases/RELEASE_NOTES_v0.80.0.md)
+[Full Release Notes](https://github.com/chistiq/workspai/blob/v0.80.0/packages/cli/releases/RELEASE_NOTES_v0.80.0.md)
 
 ---
 

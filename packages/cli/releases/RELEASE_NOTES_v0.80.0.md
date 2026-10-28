@@ -14,9 +14,9 @@
 
 # Workspai CLI v0.80.0
 
-Planned release: October 28, 2026.
+Released October 28, 2026.
 
-**Publication status: pending.**
+**Publication status: published.** Released October 28, 2026.
 
 ## Current Agent Framework Baselines
 
