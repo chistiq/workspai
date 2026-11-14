@@ -230,7 +230,9 @@
       "properties": {
         "architecture": { "enum": ["allowed-with-citations", "prohibited"] },
         "sourceInspection": { "const": "bounded-and-targeted" },
-        "sourceMutation": { "const": "governed-cli-transaction-only" },
+        "sourceMutation": {
+          "enum": ["governed-cli-transaction-only", "risk-and-project-policy-based"]
+        },
         "verification": { "const": "cli-evidence-only" }
       }
     },
@@ -245,7 +247,8 @@
           "id": { "type": "string", "minLength": 1 },
           "status": { "enum": ["passed", "warning", "failed"] },
           "message": { "type": "string", "minLength": 1 },
-          "artifact": { "$ref": "#/$defs/portablePath" }
+          "artifact": { "$ref": "#/$defs/portablePath" },
+          "inputValidation": { "$ref": "#/$defs/inputValidation" }
         }
       }
     },
@@ -277,6 +280,62 @@
     }
   },
   "$defs": {
+    "inputValidation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["matches", "findings", "omittedFindings"],
+      "properties": {
+        "matches": {
+          "type": "boolean"
+        },
+        "omittedFindings": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "findings": {
+          "type": "array",
+          "maxItems": 8,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["scope", "reason"],
+            "properties": {
+              "scope": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["kind", "id"],
+                "properties": {
+                  "kind": {
+                    "enum": ["workspace", "project"]
+                  },
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  }
+                }
+              },
+              "reason": {
+                "enum": [
+                  "aggregate-mismatch",
+                  "membership-mismatch",
+                  "content-changed",
+                  "inventory-changed",
+                  "scan-failed"
+                ]
+              },
+              "expectedHash": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "actualHash": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              }
+            }
+          }
+        }
+      }
+    },
     "hash": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
     "status": { "enum": ["ready", "degraded", "blocked"] },
     "portablePath": {

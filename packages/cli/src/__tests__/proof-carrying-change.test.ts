@@ -11,6 +11,7 @@ import {
   beginProofCarryingChange,
   createDeletedArtifactReference,
   findUncoveredEffectArtifacts,
+  inspectProofCarryingChange,
   listProofCarryingChanges,
   recordProofCarryingChangeEffect,
   recordProofCarryingChangePrediction,
@@ -396,6 +397,22 @@ describe('proof-carrying change composition', () => {
       expect.objectContaining({ id: 'effects-receipted', status: 'passed' })
     );
     expect(verified.capsule.verification.length).toBeGreaterThan(0);
+    const status = await inspectProofCarryingChange({
+      workspacePath,
+      changeId: begun.changeId,
+    });
+    const transaction = await fsExtra.readJson(
+      path.join(workspacePath, '.workspai', 'decisions', begun.changeId, 'transaction.json')
+    );
+    expect(transaction.blockers).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: 'decision.verification.failed', actionable: true }),
+      ])
+    );
+    expect(status.nextActions).not.toHaveLength(0);
+    expect(status.nextActions.join('\n')).toContain(
+      `workspai change resume --change ${begun.changeId}`
+    );
     const listed = await listProofCarryingChanges({ workspacePath });
     expect(listed.changes[0]?.blockers).toContainEqual(
       expect.stringContaining('independently-verified')

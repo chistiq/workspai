@@ -90,6 +90,53 @@
         {
           "flags": "--json",
           "attributeName": "json"
+        },
+        {
+          "flags": "--view <view>",
+          "attributeName": "view"
+        },
+        {
+          "flags": "--max-bytes <bytes>",
+          "attributeName": "maxBytes"
+        }
+      ]
+    },
+    {
+      "path": [
+        "agent",
+        "context"
+      ],
+      "command": "context",
+      "parent": "agent",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Prepare bounded, project-scoped Workspai context for one agent task",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--task <request>",
+          "attributeName": "task"
+        },
+        {
+          "flags": "--project <path>",
+          "attributeName": "project"
+        },
+        {
+          "flags": "--path <relative-path>",
+          "attributeName": "path"
+        },
+        {
+          "flags": "--for-agent <agent>",
+          "attributeName": "forAgent"
+        },
+        {
+          "flags": "--limit <count>",
+          "attributeName": "limit"
+        },
+        {
+          "flags": "--max-bytes <bytes>",
+          "attributeName": "maxBytes"
         }
       ]
     },
@@ -1852,6 +1899,52 @@
     {
       "path": [
         "project",
+        "lifecycle"
+      ],
+      "command": "lifecycle",
+      "parent": "project",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Inspect detected project lifecycle stages",
+      "hidden": false,
+      "arguments": [],
+      "options": []
+    },
+    {
+      "path": [
+        "project",
+        "lifecycle",
+        "plan"
+      ],
+      "command": "plan",
+      "parent": "project lifecycle",
+      "registrationKind": "commander",
+      "aliases": [],
+      "description": "Show manifest-backed lifecycle checks relevant to this project or package",
+      "hidden": false,
+      "arguments": [],
+      "options": [
+        {
+          "flags": "--project <path>",
+          "attributeName": "project"
+        },
+        {
+          "flags": "--path <relative-path>",
+          "attributeName": "path"
+        },
+        {
+          "flags": "--max-bytes <bytes>",
+          "attributeName": "maxBytes"
+        },
+        {
+          "flags": "--json",
+          "attributeName": "json"
+        }
+      ]
+    },
+    {
+      "path": [
+        "project",
         "restore"
       ],
       "command": "restore",
@@ -2224,6 +2317,22 @@
         {
           "flags": "--kind <kind>",
           "attributeName": "kind"
+        },
+        {
+          "flags": "--view <view>",
+          "attributeName": "view"
+        },
+        {
+          "flags": "--max-bytes <bytes>",
+          "attributeName": "maxBytes"
+        },
+        {
+          "flags": "--context-receipt <id>",
+          "attributeName": "contextReceipt"
+        },
+        {
+          "flags": "--expected-graph-hash <hash>",
+          "attributeName": "expectedGraphHash"
         },
         {
           "flags": "--refresh-graph",

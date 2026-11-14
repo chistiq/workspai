@@ -124,6 +124,7 @@
       "properties": {
         "mode": { "const": "canonical-first" },
         "bootstrapCommand": { "type": "string", "minLength": 1 },
+        "taskContextCommand": { "type": "string", "minLength": 1 },
         "verifyCommand": { "type": "string", "minLength": 1 },
         "requiredReadOrder": {
           "type": "array",
@@ -146,7 +147,7 @@
             "liveSourceAuthority": { "const": "exact-implementation" },
             "workspaceEvidenceAuthority": { "const": "identity-topology-readiness-goals" },
             "broadScanBeforeBootstrap": { "const": false },
-            "sourceMutation": { "const": "governed-only" },
+            "sourceMutation": { "enum": ["governed-only", "risk-and-project-policy-based"] },
             "verificationClaims": { "const": "cli-evidence-only" }
           }
         },

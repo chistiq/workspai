@@ -162,7 +162,9 @@ const COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
   agent:
     'Resolve portable project entry contracts and issue canonical-first grounding receipts for coding agents.',
   'agent bootstrap':
-    'Validate host discovery, workspace membership, evidence freshness, live inputs, and active Goal bindings before broad source discovery.',
+    'Validate host discovery, workspace membership, evidence freshness, live inputs, and active Goal bindings before broad source discovery; --view agent --json returns a budgeted consumer view without weakening claim limits.',
+  'agent context':
+    'Prepare one read-only, byte-bounded packet for a user task by combining exact project binding, compact grounding, scoped Graph discovery, and nearest-manifest lifecycle checks; missing Workspai evidence does not block native project work.',
   'agent framework':
     'Inspect release-admitted agent framework runtimes and their governed project integration commands.',
   'agent framework list':
@@ -279,6 +281,10 @@ const COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
   'project archives': 'List governed project archives and their available restoration metadata.',
   'project commands':
     'Discover commands supported by the selected project runtime and its current capability tier.',
+  'project lifecycle':
+    'Inspect detected, manifest-backed lifecycle checks for a project or its runtime units.',
+  'project lifecycle plan':
+    'Return bounded, manifest-derived init, test, build, and start commands for all project runtime units or the closest unit containing a selected path.',
   'project agent-entry':
     'Verify portable entry adapters and canonical evidence bindings for one or every supported agent host.',
   'project coverage':
@@ -443,6 +449,67 @@ const COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
 const COMMAND_DOCUMENTATION_OVERRIDES: Readonly<
   Record<string, Omit<RuntimeCommandDocumentation, 'invocation' | 'summary'>>
 > = {
+  'project lifecycle plan': {
+    canonicalArgv: ['project', 'lifecycle', 'plan', '--json'],
+    output: {
+      defaultFormat: 'human-or-json',
+      modes: [
+        {
+          selector: '--json [--path <relative-path>] [--max-bytes <bytes>]',
+          format: 'json',
+          mediaType: 'application/json',
+        },
+      ],
+    },
+    exitSemantics: {
+      default:
+        'Complete manifest-backed lifecycle context or no discovered units returns 0; unmapped paths and insufficient budgets return 2.',
+      strict:
+        'Not applicable; this command discovers lifecycle guidance but does not execute checks.',
+      failure: 'Invalid options, project scanning errors or contract failures return 2.',
+    },
+  },
+  'agent bootstrap': {
+    canonicalArgv: ['agent', 'bootstrap', '--json'],
+    output: {
+      defaultFormat: 'human-or-json',
+      modes: [
+        { selector: '--json', format: 'json', mediaType: 'application/json' },
+        {
+          selector: '--view agent --json [--max-bytes <bytes>]',
+          format: 'json',
+          mediaType: 'application/json',
+        },
+      ],
+    },
+    exitSemantics: {
+      default:
+        'Ready and non-strict degraded grounding return 0; blocked grounding or insufficient output budget returns 2.',
+      strict:
+        'Return 2 unless the source grounding is ready and the requested view fits its output budget.',
+      failure: 'Invalid options, project resolution or receipt contract failure returns 1.',
+    },
+  },
+  'agent context': {
+    canonicalArgv: ['agent', 'context', '--task', '<request>'],
+    output: {
+      defaultFormat: 'human-or-json',
+      modes: [
+        {
+          selector: '--task <request> [--project <path>] [--path <relative-path>]',
+          format: 'json',
+          mediaType: 'application/json',
+        },
+      ],
+    },
+    exitSemantics: {
+      default:
+        'Complete or explicitly partial context returns 0; an oversized packet is rejected without partial output and returns 2.',
+      strict:
+        'Not applicable; this read-only packet does not run verification or gate native project work.',
+      failure: 'Invalid task, path, bounds or contract input returns 2.',
+    },
+  },
   live: {
     canonicalArgv: ['live', '--once', '--json', '--projection', 'board'],
     output: {
@@ -514,6 +581,31 @@ const COMMAND_DOCUMENTATION_OVERRIDES: Readonly<
           mediaType: 'application/json',
         },
         {
+          selector: 'search <query> --view agent --max-bytes <bytes> --json',
+          format: 'json',
+          mediaType: 'application/json',
+        },
+        {
+          selector: 'search <query> --view agent --context-receipt <id> --max-bytes <bytes> --json',
+          format: 'json',
+          mediaType: 'application/json',
+        },
+        {
+          selector: 'search <query> --view agent --context-receipt <id> --json',
+          format: 'json',
+          mediaType: 'application/json',
+        },
+        {
+          selector: 'search <query> --view agent --json',
+          format: 'json',
+          mediaType: 'application/json',
+        },
+        {
+          selector: 'search <query> --view full --json',
+          format: 'json',
+          mediaType: 'application/json',
+        },
+        {
           selector: 'benchmark <query> --limit <count> --json',
           format: 'json',
           mediaType: 'application/json',
@@ -528,6 +620,11 @@ const COMMAND_DOCUMENTATION_OVERRIDES: Readonly<
         { selector: 'entities [kind] --json', format: 'json', mediaType: 'application/json' },
         {
           selector: 'evidence <id-or-unique-label> --json',
+          format: 'json',
+          mediaType: 'application/json',
+        },
+        {
+          selector: 'evidence <id> --expected-graph-hash <hash> --json',
           format: 'json',
           mediaType: 'application/json',
         },

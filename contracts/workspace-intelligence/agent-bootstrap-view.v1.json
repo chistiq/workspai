@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/agent-bootstrap-view.v1.json",
+  "title": "Workspai agent bootstrap consumer view",
+  "description": "Terminal projection of a full v1 grounding receipt. It preserves authority and every non-passing finding, or rejects an insufficient UTF-8 output budget.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "sourceReceipt",
+        "generatedAt",
+        "status",
+        "statusScope",
+        "readiness",
+        "requestedAgent",
+        "resolvedHost",
+        "project",
+        "workspace",
+        "entry",
+        "canonicalEvidence",
+        "activeGoal",
+        "claims",
+        "requiredReadOrder",
+        "checks",
+        "nextActions",
+        "budget",
+        "integrity"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "workspai.agent-bootstrap-view.v1" },
+        "sourceReceipt": { "$ref": "#/$defs/sourceReceipt" },
+        "generatedAt": { "$ref": "agent-bootstrap-receipt.v1.json#/properties/generatedAt" },
+        "status": { "$ref": "agent-bootstrap-receipt.v1.json#/properties/status" },
+        "statusScope": { "$ref": "agent-bootstrap-receipt.v1.json#/properties/statusScope" },
+        "readiness": { "$ref": "agent-bootstrap-receipt.v1.json#/properties/readiness" },
+        "requestedAgent": { "$ref": "agent-bootstrap-receipt.v1.json#/properties/requestedAgent" },
+        "resolvedHost": { "$ref": "agent-bootstrap-receipt.v1.json#/properties/resolvedHost" },
+        "project": { "$ref": "agent-bootstrap-receipt.v1.json#/properties/project" },
+        "workspace": { "$ref": "agent-bootstrap-receipt.v1.json#/properties/workspace" },
+        "entry": { "$ref": "agent-bootstrap-receipt.v1.json#/properties/entry" },
+        "canonicalEvidence": {
+          "$ref": "agent-bootstrap-receipt.v1.json#/properties/canonicalEvidence"
+        },
+        "activeGoal": { "$ref": "agent-bootstrap-receipt.v1.json#/properties/activeGoal" },
+        "claims": { "$ref": "agent-bootstrap-receipt.v1.json#/properties/claims" },
+        "requiredReadOrder": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "checks": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["total", "passed", "findings", "omittedPassedDetails"],
+          "properties": {
+            "total": { "type": "integer", "minimum": 6 },
+            "passed": { "type": "integer", "minimum": 0 },
+            "omittedPassedDetails": { "type": "integer", "minimum": 0 },
+            "findings": {
+              "type": "array",
+              "items": {
+                "allOf": [
+                  { "$ref": "agent-bootstrap-receipt.v1.json#/properties/checks/items" },
+                  {
+                    "type": "object",
+                    "properties": { "status": { "enum": ["warning", "failed"] } }
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "nextActions": { "$ref": "agent-bootstrap-receipt.v1.json#/properties/nextActions" },
+        "budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["maxBytes", "usedBytes", "accounting"],
+          "properties": {
+            "maxBytes": { "$ref": "#/$defs/byteLimit" },
+            "usedBytes": { "type": "integer", "minimum": 1 },
+            "accounting": { "const": "utf8-json-with-newline" }
+          }
+        },
+        "integrity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["algorithm", "payloadHash"],
+          "properties": {
+            "algorithm": { "const": "sha256" },
+            "payloadHash": { "$ref": "agent-bootstrap-receipt.v1.json#/$defs/hash" }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "status",
+        "sourceReceipt",
+        "groundingStatus",
+        "budget",
+        "message",
+        "nextActions"
+      ],
+      "properties": {
+        "schemaVersion": { "const": "workspai.agent-bootstrap-view.v1" },
+        "status": { "const": "insufficient-budget" },
+        "sourceReceipt": { "$ref": "#/$defs/sourceReceipt" },
+        "groundingStatus": { "$ref": "agent-bootstrap-receipt.v1.json#/properties/status" },
+        "budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["maxBytes", "requiredBytes", "accounting"],
+          "properties": {
+            "maxBytes": { "$ref": "#/$defs/byteLimit" },
+            "requiredBytes": { "type": "integer", "minimum": 1 },
+            "accounting": { "const": "utf8-json-with-newline" }
+          }
+        },
+        "message": { "type": "string", "minLength": 1 },
+        "nextActions": { "type": "array", "minItems": 1, "items": { "type": "string" } }
+      }
+    }
+  ],
+  "$defs": {
+    "byteLimit": { "type": "integer", "minimum": 1024, "maximum": 131072 },
+    "sourceReceipt": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "receiptId", "integrity"],
+      "properties": {
+        "schemaVersion": { "const": "workspai.agent-bootstrap-receipt.v1" },
+        "receiptId": { "$ref": "agent-bootstrap-receipt.v1.json#/$defs/hash" },
+        "integrity": { "$ref": "agent-bootstrap-receipt.v1.json#/properties/integrity" }
+      }
+    }
+  }
+}

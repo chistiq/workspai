@@ -7,6 +7,105 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.81.0] - 2026-11-13
+
+### Added
+
+- Add `workspai agent context --task <request>` for a single bounded,
+  project-scoped read packet combining canonical grounding, relevant Graph
+  discovery and nearest-manifest lifecycle checks. Missing Workspai evidence
+  remains explicit without blocking native project work; oversized packets
+  return a typed whole-packet refusal.
+- Add `workspai project lifecycle plan --json` for compact, manifest-derived
+  lifecycle commands across detected runtime units. `--path` selects the closest
+  package boundary and `--max-bytes` enforces an exact UTF-8 budget; unmapped
+  paths and oversized complete plans return explicit non-partial outcomes.
+- Add opt-in `workspace graph search --view agent --json` with an exact UTF-8
+  wire budget, ranked match explanations, primary proofs, package boundaries and
+  relevant and unscoped diagnostics. Oversized responses return a typed budget refusal rather
+  than silently removing selected matches or findings.
+- Return revision-bound `graph evidence` expansion arguments for full details;
+  changed source or evidence requires a fresh search. Existing search output
+  remains available, with `--view full` for full selected entity/proof fields.
+- Add optional workspace-local delivery receipts so later compact searches in
+  the same conversation can omit unchanged matches only when source revision
+  and scope still match; missing or stale receipts return complete results.
+- Index bounded test-source discovery with portable paths and lexical references,
+  without promoting test fixtures into production architecture or claiming test
+  execution. Source and test files expose their nearest package manifest paths.
+- Add an opt-in `agent bootstrap --view agent --json` consumer projection with
+  an exact UTF-8 output budget, source receipt lineage, explicit successful-check
+  omissions and typed `insufficient-budget` rejection. Full v1 receipts remain
+  the default; all warnings, failures, readiness and claim limits are retained.
+
+### Changed
+
+- Only report evaluation token-reduction percentages for task-aligned runs with
+  the same recorded model configuration and complete, consistently measured
+  token usage; raw deltas remain visible when comparisons are not admissible.
+- Generate task-proportional, language-aware answer guidance across host adapters
+  and operational Skills while preserving approval, transaction and verification
+  requirements. Compact bootstrap views continue from completed preflight steps
+  and route applicable Goal packs before scoped Skills and Graph retrieval.
+- Use the user's task query in the project lens retrieval route, and keep
+  workspace Skill guidance scoped to relevant context and evidence.
+- Explain scoped native-search fallback when bounded Graph evidence is
+  insufficient; missing matches do not prove that source or tests are absent.
+- Make generated mutation policy proportional: routine project-local changes
+  follow repository policy and native checks; use Goal-bound Change prediction,
+  effect receipts and strict verification when project policy, cross-boundary
+  scope or governed effects require them. Context retrieval alone creates no
+  Goal or Change.
+
+### Fixed
+
+- Keep targeted Node workspace members on their declared owner's package
+  manager, expose the owner manifest, and avoid independent member installs.
+  Excluded and independent packages retain their own lifecycle.
+- Identify freshness failures by logical scope and reason with bounded findings,
+  omission counts and hashes instead of an unexplained `live-input-mismatch`.
+  Task grounding and retrieval reuse one validated snapshot within the command;
+  strict freshness and claim restrictions remain intact.
+- Remove mandatory workspace report reads and workspace-wide verification
+  fallbacks from local runtime/test/delivery/API/dependency Skills. Use task continuation and
+  scoped evidence; keep release and cross-boundary governance requirements.
+- Explain test prerequisites, reuse of running setup/checks, longer polling and
+  separate reporting of setup failure, tests not started and test failures.
+- Run generated task entry before source search and implementation/test reads,
+  while allowing minimal path/instruction discovery and native fallback. Explain
+  parsing saved JSON tool output as data regardless of file extension, avoiding
+  execution and full-packet error echoes.
+- Attach project references to source extraction and call-binding diagnostics.
+  Compact project views omit only proven foreign findings, disclose omission
+  counts, retain global/unknown/cross-project warnings and label coverage and
+  freshness summaries as workspace aggregates. Full Graph evidence is unchanged;
+  older unscoped diagnostics remain visible until intelligence is refreshed.
+- Use task context as the primary generated entry across project instructions,
+  portable Skills and host adapters; omit completed reads and Graph queries
+  from the task continuation instead of requiring another bootstrap.
+- Apply proportional mutation and response guidance consistently to workspace
+  instructions, customization reports and agent profiles. Generated profiles
+  expose terminal execution for their documented CLI reads and native checks.
+- Share the whole task-context byte budget across components, return exact
+  aggregate retry sizes and reject component-limit failures without partial
+  evidence or ineffective budget retries. Resolve nested starts against the
+  canonical project before selecting lifecycle commands.
+- Accept integrity-bound legacy v1 entry and bootstrap mutation policies
+  without rewriting metadata or silently relaxing their restrictions.
+- Respect project scope for exact Graph relation evidence and shared-entity
+  source proofs during discovery and evidence expansion.
+- Reuse immutable Graph project-scope indexes and token postings for language
+  affinity instead of repeatedly scanning the graph for each candidate.
+- Reject persisted Graph snapshots from older provider generations, retain
+  camel-case attribute tokens during retrieval and prioritize selected file
+  proofs within the existing agent proof budget. Compact test references are
+  filtered to the caller's query.
+- Detect Rust application frameworks from production dependency declarations,
+  including renamed and inherited dependencies, rather than shared workspace
+  catalogs, development dependencies or incidental framework text.
+- Preserve authored `AGENTS.md` whitespace, line endings and final-newline state
+  when adding, refreshing or removing project grounding blocks.
+
 ## [0.80.0] - 2026-10-28
 
 ### Added

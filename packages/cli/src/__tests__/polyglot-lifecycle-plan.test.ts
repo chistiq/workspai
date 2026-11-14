@@ -4,6 +4,8 @@ import path from 'path';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { buildPolyglotLifecyclePlan } from '../polyglot-lifecycle-plan.js';
+import { buildProjectLifecycleContext } from '../project-lifecycle-context.js';
+import { assertJsonSchemaContract } from '../utils/json-schema-contract.js';
 
 describe('polyglot lifecycle plan', () => {
   const tempDirs: string[] = [];
@@ -150,6 +152,52 @@ describe('polyglot lifecycle plan', () => {
     );
     expect(plan.units[1]?.stages[0]?.command).toBe('npm install');
   });
+
+  it.each(['npm', 'pnpm', 'yarn', 'bun'])(
+    'keeps targeted workspace members on their owning %s boundary without independent installs',
+    async (manager) => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-member-lifecycle-'));
+      tempDirs.push(root);
+      await fs.outputJson(path.join(root, 'package.json'), {
+        private: true,
+        packageManager: `${manager}@1.0.0`,
+        workspaces: ['packages/*', '!packages/independent'],
+        scripts: { test: 'root-test' },
+      });
+      await fs.outputJson(path.join(root, 'packages/member/package.json'), {
+        name: 'member',
+        scripts: { test: 'member-test' },
+      });
+      await fs.outputJson(path.join(root, 'packages/independent/package.json'), {
+        name: 'independent',
+        scripts: { test: 'independent-test' },
+      });
+      const result = buildProjectLifecycleContext(root, { path: 'packages/member/src/index.ts' });
+      expect(result.status).toBe('ready');
+      if (result.status !== 'ready') throw new Error('Expected member lifecycle');
+      expect(result.units).toHaveLength(1);
+      expect(result.units[0]).toMatchObject({
+        root: 'packages/member',
+        workspaceOwner: { root: '.', manifest: 'package.json', packageManager: manager },
+        stages: [{ stage: 'test', command: `${manager} run test` }],
+      });
+      expect(result.units[0]?.stages).not.toContainEqual(
+        expect.objectContaining({ stage: 'init' })
+      );
+      assertJsonSchemaContract(result, 'contracts/project-lifecycle-context.v1.json', 'Lifecycle');
+      const independent = buildProjectLifecycleContext(root, {
+        path: 'packages/independent/src/index.ts',
+      });
+      if (independent.status !== 'ready') throw new Error('Expected independent lifecycle');
+      expect(independent.units[0]?.workspaceOwner).toBeUndefined();
+      expect(independent.units[0]?.stages[0]?.command).toBe('npm install');
+      // Default execution still installs once at the workspace root.
+      expect(buildPolyglotLifecyclePlan(root).units.map((unit) => unit.root)).toEqual([
+        '.',
+        'packages/independent',
+      ]);
+    }
+  );
 
   it('does not execute nested evaluation fixtures or metadata-only platform packages', async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), 'workspai-fixture-lifecycle-'));

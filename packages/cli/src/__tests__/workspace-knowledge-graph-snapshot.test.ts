@@ -14,7 +14,11 @@ import type { WorkspaceKnowledgeGraph } from '../contracts/workspace-knowledge-g
 import type { WorkspaceModel } from '../workspace-model.js';
 import { hashWorkspaceModel } from '../workspace-model-hash.js';
 import { readWorkspaceKnowledgeGraphSnapshot } from '../workspace-knowledge-graph-snapshot.js';
-import { computeWorkspaceKnowledgeGraphInputFingerprint } from '../workspace-knowledge-graph.js';
+import {
+  buildWorkspaceKnowledgeGraph,
+  computeWorkspaceKnowledgeGraphInputFingerprint,
+  inspectWorkspaceKnowledgeGraphInputs,
+} from '../workspace-knowledge-graph.js';
 import { buildCleanGitEnv } from '../utils/git-worktree.js';
 
 describe('workspace knowledge graph snapshot', () => {
@@ -72,35 +76,6 @@ describe('workspace knowledge graph snapshot', () => {
         observedProjects: 0,
       },
     } as unknown as WorkspaceModel;
-    const graph = {
-      schemaVersion: WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.knowledgeGraph,
-      generatedAt: '2026-08-10T00:00:00.000Z',
-      source: {
-        kind: 'workspace-model',
-        artifact: WORKSPACE_INTELLIGENCE_ARTIFACTS.model,
-        hashAlgorithm: 'sha256',
-        hash: hashWorkspaceModel(model),
-      },
-      workspace: { name: 'snapshot', profile: 'polyglot' },
-      projectTopology: topology,
-      entities: [],
-      relations: [],
-      proofs: [],
-      providers: [],
-      quality: {
-        entityCount: 0,
-        relationCount: 0,
-        proofCount: 0,
-        entityProofCoverageRatio: 1,
-        relationProofCoverageRatio: 1,
-        providerSuccessRatio: 1,
-        conflictCount: 0,
-        unknownCount: 0,
-        portable: true,
-        secretValuesEmitted: false,
-      },
-      diagnostics: [],
-    } as unknown as WorkspaceKnowledgeGraph;
     const sourceRoot = options.nestedGitProject ? path.join(root, 'app') : root;
     await fsExtra.outputFile(path.join(sourceRoot, 'src', 'main.rs'), 'fn main() {}\n');
     if (options.git) {
@@ -113,6 +88,22 @@ describe('workspace knowledge graph snapshot', () => {
       await git(sourceRoot, ['add', 'src/main.rs']);
       await git(sourceRoot, [...gitIdentity, 'commit', '--quiet', '-m', 'fixture']);
     }
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'snapshot', profile: 'polyglot' },
+      projects: projects.map((project) => ({
+        id: project.name,
+        path: project.path,
+        runtime: project.runtime,
+      })),
+      projectTopology: topology as WorkspaceKnowledgeGraph['projectTopology'],
+      source: {
+        kind: 'workspace-model',
+        artifact: WORKSPACE_INTELLIGENCE_ARTIFACTS.model,
+        hashAlgorithm: 'sha256',
+        hash: hashWorkspaceModel(model),
+      },
+    });
     graph.source.inputs = await computeWorkspaceKnowledgeGraphInputFingerprint({
       workspacePath: root,
       projects: projects.map((project) => ({ id: project.name, path: project.path })),
@@ -135,6 +126,29 @@ describe('workspace knowledge graph snapshot', () => {
       graph: { workspace: { name: 'snapshot' } },
     });
   });
+
+  it.each(['missing', 'older', 'malformed', 'duplicate'] as const)(
+    'rejects %s provider generations even with live source fingerprints',
+    async (mode) => {
+      const { root, graph } = await fixture();
+      if (mode === 'missing')
+        graph.providers = graph.providers.filter(
+          (provider) => provider.id !== 'test-source-evidence'
+        );
+      else if (mode === 'older')
+        graph.providers.find((provider) => provider.id === 'source-structure')!.version = '0.0.0';
+      else if (mode === 'duplicate') graph.providers.push({ ...graph.providers[0] });
+      else graph.providers = [null] as unknown as WorkspaceKnowledgeGraph['providers'];
+      await fsExtra.outputJson(
+        path.join(root, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph),
+        graph
+      );
+      await expect(readWorkspaceKnowledgeGraphSnapshot(root)).resolves.toEqual({
+        status: 'miss',
+        reason: 'provider-mismatch',
+      });
+    }
+  );
 
   it('uses Git tree and worktree state and detects repeated edits to an already-modified file', async () => {
     const { root, graph } = await fixture({ git: true });
@@ -183,6 +197,70 @@ describe('workspace knowledge graph snapshot', () => {
       status: 'miss',
       reason: 'live-input-mismatch',
     });
+  });
+
+  it('identifies the changed logical project without exposing machine paths or source contents', async () => {
+    const { root, graph } = await fixture({ nestedGitProject: true });
+    await fsExtra.outputFile(
+      path.join(root, 'app/src/main.rs'),
+      'fn main() { println!("changed"); }\n'
+    );
+    const snapshot = await readWorkspaceKnowledgeGraphSnapshot(root, {
+      includeInputDiagnostics: true,
+    });
+    expect(snapshot).toMatchObject({
+      status: 'miss',
+      reason: 'live-input-mismatch',
+      inputValidation: {
+        matches: false,
+        omittedFindings: 0,
+        findings: [
+          {
+            scope: { kind: 'project', id: 'app' },
+            reason: 'content-changed',
+            expectedHash: graph.source.inputs!.scopes.find((scope) => scope.id === 'app')!.hash,
+          },
+        ],
+      },
+    });
+    expect(JSON.stringify(snapshot)).not.toContain(root);
+    expect(JSON.stringify(snapshot)).not.toContain('println!');
+    if (snapshot.status !== 'miss') throw new Error('Expected miss');
+    expect(snapshot.inputValidation?.findings[0].actualHash).toMatch(/^[a-f0-9]{64}$/);
+    // Existing callers retain their original, small failure envelope.
+    expect(await readWorkspaceKnowledgeGraphSnapshot(root)).not.toHaveProperty('inputValidation');
+  });
+
+  it('bounds findings while validating every scope and preserving a false aggregate verdict', async () => {
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'workspai-input-findings-'));
+    roots.push(root);
+    const projects = Array.from({ length: 10 }, (_, i) => ({
+      id: `project-${i}`,
+      path: `project-${i}`,
+    }));
+    for (const project of projects)
+      await fsExtra.outputFile(path.join(root, project.path, 'main.py'), 'value = 1\n');
+    const expected = await computeWorkspaceKnowledgeGraphInputFingerprint({
+      workspacePath: root,
+      projects,
+      projectFileLimit: 100,
+      workspaceFileLimit: 100,
+    });
+    expect(
+      (await inspectWorkspaceKnowledgeGraphInputs({ workspacePath: root, projects, expected }))
+        .matches
+    ).toBe(true);
+    for (const project of projects)
+      await fsExtra.outputFile(path.join(root, project.path, 'main.py'), 'value = 2\n');
+    const validation = await inspectWorkspaceKnowledgeGraphInputs({
+      workspacePath: root,
+      projects,
+      expected,
+    });
+    expect(validation.matches).toBe(false);
+    expect(validation.findings).toHaveLength(8);
+    expect(validation.omittedFindings).toBe(2);
+    expect(validation.findings.every((finding) => finding.scope.kind === 'project')).toBe(true);
   });
 
   it('does not invalidate Git-backed graph evidence when managed outputs change', async () => {

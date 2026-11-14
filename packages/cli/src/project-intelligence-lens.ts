@@ -4,6 +4,7 @@ import fsp from 'node:fs/promises';
 import path from 'node:path';
 import { execa } from 'execa';
 import fsExtra from 'fs-extra';
+import { AGENT_CONTEXT_GUIDANCE, AGENT_RESPONSE_GUIDANCE } from './agent-output-guidance.js';
 
 import type {
   WorkspaceKnowledgeAttribute,
@@ -171,7 +172,7 @@ export interface ProjectContextAgent {
     enforcement: 'required';
     mandatoryPreflight: {
       command: string;
-      successCondition: 'ready';
+      successCondition: 'ready' | 'ready-or-disclosed-partial';
     };
     workspaceLocator: {
       command: 'workspai project workspace status --json';
@@ -1240,8 +1241,8 @@ export async function buildProjectContextAgent(
     agentRouting: {
       enforcement: 'required',
       mandatoryPreflight: {
-        command: 'workspai agent bootstrap --for-agent generic --strict --json',
-        successCondition: 'ready',
+        command: 'workspai agent context --task "<user request>" --for-agent generic',
+        successCondition: 'ready-or-disclosed-partial',
       },
       workspaceLocator: {
         command: 'workspai project workspace status --json',
@@ -1262,11 +1263,9 @@ export async function buildProjectContextAgent(
       ],
       requiredReadOrder: [
         PROJECT_AGENT_ENTRY_RELATIVE_PATH,
-        'command:workspai agent bootstrap --for-agent generic --strict --json',
-        'command:workspai project workspace status --json',
-        WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent,
-        'workspace:.workspai/reports/workspace-skills-index.json',
-        `command:workspai workspace graph search ${JSON.stringify(projectName)} --scope ${JSON.stringify(`project:${projectName}`)} --limit 12 --json`,
+        'command:workspai agent context --task "<user request>" --for-agent generic',
+        'continuation:grounding.requiredReadOrder',
+        'source:targeted-live-files',
       ],
       degradedMode: {
         allowCompleteArchitectureClaims: false,
@@ -1302,6 +1301,18 @@ export async function buildProjectContextAgent(
   return context;
 }
 
+function projectTaskEntryWorkflow(host = 'generic'): string {
+  return `1. Read the nearest repository instructions and \`${PROJECT_AGENT_ENTRY_RELATIVE_PATH}\`.
+2. Run \`workspai agent context --task "<user request>" --for-agent ${host}\` once before source search or implementation/test reads. Minimal path and instruction discovery is allowed; add \`--path\` only when the project-relative source or manifest is known.
+3. Use the packet's grounding, scoped Graph results and lifecycle checks. Follow only remaining \`grounding.requiredReadOrder\` entries; do not repeat bootstrap, membership lookup or Graph retrieval already supplied by the packet while it remains current.
+4. Read an active Goal's exact pack and handoff only when it applies to this project and request; load one matching Skill when relevant, then inspect cited proofs and targeted live source.
+5. After the final edit, review the diff and run the closest applicable native checks. Preserve any stricter repository mutation policy.
+
+Without a concrete task, inspect entry status with \`workspai agent bootstrap --for-agent ${host} --strict --json --view agent\`; this is an alternative, not an additional prerequisite for task context.
+
+Packet policy: \`ready\` may proceed. \`partial\`, or nested \`degraded\`/\`blocked\` grounding, must disclose limitations and preserve restrictions on Workspai claims; continue authorized native project work without unrelated workspace repair. \`insufficient-budget\` emits no partial packet: follow the packet's \`nextActions\` to retry or narrow the request.`;
+}
+
 function buildProjectGroundingMarkdown(context: ProjectContextAgent): string {
   const related =
     context.intelligence.relatedProjects.length > 0
@@ -1335,24 +1346,13 @@ commands launched here resolve the machine-local workspace automatically.
 
 ## Mandatory first contact
 
-Do not begin broad repository discovery, architecture claims, planning, or mutation
-until this sequence is complete:
+Use this bounded entry before source discovery, implementation/test reads or Workspai architecture claims:
 
-1. Read \`${PROJECT_AGENT_ENTRY_RELATIVE_PATH}\` to discover the portable protocol.
-2. Run \`workspai agent bootstrap --for-agent generic --strict --json\`.
-3. Follow the receipt's \`requiredReadOrder\` exactly.
-4. Read \`.workspai/reports/project-context-agent.json\`.
-5. If the receipt reports an active Goal, read its immutable Goal Pack and agent
-   handoff before choosing or expanding work.
-6. Read the compact workspace Skills index and load only a matching playbook.
-7. Query the bounded Workspace Graph with the user's actual task before opening broad
-   source, then inspect only returned proof paths and targeted live files.
+${projectTaskEntryWorkflow()}
 
-Receipt policy:
+${AGENT_CONTEXT_GUIDANCE}
 
-- \`ready\`: continue with bounded evidence and targeted source inspection.
-- \`degraded\`: disclose the limitation and do not claim complete architecture or verification.
-- \`blocked\`: stop governed claims, execute \`nextActions\`, and rerun bootstrap.
+${AGENT_RESPONSE_GUIDANCE}
 
 ## Workspace location and portable paths
 
@@ -1429,16 +1429,13 @@ function buildProjectAgentsSection(context: ProjectContextAgent): string {
 - Workspace identity: \`${context.workspace.name}\` (logical name, not a filesystem path)
 - Entry contract: \`${PROJECT_AGENT_ENTRY_RELATIVE_PATH}\`
 
-Before broad repository discovery, architecture claims, planning, or mutation:
+Before source discovery, implementation/test reads or Workspai architecture claims:
 
-1. Read \`${PROJECT_AGENT_ENTRY_RELATIVE_PATH}\`.
-2. Run \`workspai agent bootstrap --for-agent generic --strict --json\`.
-3. Follow the receipt's \`requiredReadOrder\` exactly.
-4. If a Goal is active, read its immutable Goal Pack and handoff before acting.
-5. Read the compact workspace Skills index and load only a matching playbook.
-6. Query the bounded Workspace Graph with the user's task, then inspect only returned proofs and targeted live source.
+${projectTaskEntryWorkflow()}
 
-Receipt policy: \`ready\` may proceed; \`degraded\` must disclose limitations and may not claim complete architecture or verification; \`blocked\` must stop governed claims, execute \`nextActions\`, and rerun bootstrap.
+${AGENT_CONTEXT_GUIDANCE}
+
+${AGENT_RESPONSE_GUIDANCE}
 
 \`workspace:\` paths belong to the canonical workspace, not this project's \`.workspai\` directory. Resolve their machine-local root at runtime with \`workspai project workspace status --json\`. That output is machine-local: never copy it into answers, shared logs, commits, or portable artifacts.
 
@@ -1454,24 +1451,34 @@ function managedBlockPattern(start: string, end: string): RegExp {
 }
 
 function removeProjectManagedAgentSection(existing: string): string {
-  let result = existing.replace(
-    managedBlockPattern(WORKSPAI_PROJECT_GROUNDING_START, WORKSPAI_PROJECT_GROUNDING_END),
-    ''
+  const removeOwnedBlock = (text: string, start: string, end: string): string => {
+    const match = managedBlockPattern(start, end).exec(text);
+    if (!match) return text;
+    let after = match.index + match[0].length;
+    // Prepending a managed block adds its own two-newline separator. Remove
+    // only that separator, preserving every byte of the authored body.
+    if (match.index === 0) {
+      const separator = /^(?:\r?\n){1,2}/.exec(text.slice(after));
+      after += separator?.[0].length ?? 0;
+    }
+    return text.slice(0, match.index) + text.slice(after);
+  };
+  let result = removeOwnedBlock(
+    existing,
+    WORKSPAI_PROJECT_GROUNDING_START,
+    WORKSPAI_PROJECT_GROUNDING_END
   );
   const legacySection = extractManagedAgentSection(result);
   if (legacySection?.includes('# Workspai project boundary')) {
-    result = result.replace(
-      managedBlockPattern(RAPIDKIT_AGENT_GROUNDING_START, RAPIDKIT_AGENT_GROUNDING_END),
-      ''
-    );
+    result = removeOwnedBlock(result, RAPIDKIT_AGENT_GROUNDING_START, RAPIDKIT_AGENT_GROUNDING_END);
   }
-  return result.replace(/\n{3,}/g, '\n\n').trim();
+  return result;
 }
 
 function upsertProjectManagedAgentSection(existing: string, generated: string): string {
   const withoutManaged = removeProjectManagedAgentSection(existing);
   const block = `${WORKSPAI_PROJECT_GROUNDING_START}\n${generated.trim()}\n${WORKSPAI_PROJECT_GROUNDING_END}`;
-  return withoutManaged ? `${block}\n\n${withoutManaged}\n` : `${block}\n`;
+  return withoutManaged ? `${block}\n\n${withoutManaged}` : `${block}\n`;
 }
 
 async function writeAtomic(filePath: string, contents: string): Promise<void> {
@@ -1600,20 +1607,17 @@ function projectPortableSkillMarkdown(
     '',
     '## Workflow',
     '',
-    `1. Read \`${PROJECT_AGENT_ENTRY_RELATIVE_PATH}\`.`,
-    '2. Run `workspai agent bootstrap --for-agent generic --strict --json`.',
-    '3. Continue only when the receipt permits it and follow its bounded `requiredReadOrder`.',
+    projectTaskEntryWorkflow(),
     ...(canonicalSkill
       ? [
-          `4. Resolve and follow the canonical Skill \`${canonicalSkill}\` listed in \`workspace:.workspai/reports/workspace-skills-index.json\`.`,
-          `5. Query the graph with \`workspai workspace graph search <task-query> --scope project:${context.project.name} --limit 12 --json\` before broad source inspection.`,
+          `Resolve and follow the canonical Skill \`${canonicalSkill}\` listed in \`workspace:.workspai/reports/workspace-skills-index.json\` only when it applies to this task.`,
         ]
       : [
-          '4. Load only the matching canonical Skill from `workspace:.workspai/reports/workspace-skills-index.json`.',
-          `5. Query the graph with \`workspai workspace graph search <task-query> --scope project:${context.project.name} --limit 12 --json\` before broad source inspection.`,
+          'Load only a matching canonical Skill from `workspace:.workspai/reports/workspace-skills-index.json` when the task needs it.',
         ]),
     '',
     'Repository-authored instructions and live source remain authoritative for exact implementation.',
+    AGENT_CONTEXT_GUIDANCE,
     '',
   ].join('\n');
 }
@@ -1859,21 +1863,20 @@ function projectAgentAdapterBody(input: {
     const importPrefix = input.importAlreadyPresent ? '' : `${imported}\n\n`;
     return `${importPrefix}# Workspai host binding · ${input.adapter.host}
 
-The imported Workspai entry gate is mandatory. Validate this host with
-\`workspai agent bootstrap --for-agent ${input.adapter.host} --strict --json\`, then follow
-the receipt's \`requiredReadOrder\`, Goal handoff, bounded Graph queries, proof paths,
+The imported Workspai entry gate is mandatory. Use its task context route with
+\`--for-agent ${input.adapter.host}\`; it already validates this host and retrieves
+scoped evidence. Follow remaining packet reads, applicable Goal handoffs, proof paths,
 status policy, workspace locator privacy policy, and authority boundary. Do not repeat
-the imported instructions or replace repository-authored source rules.`;
+the imported instructions or replace repository-authored source rules. Without a task,
+standalone entry inspection uses \`workspai agent bootstrap --for-agent ${input.adapter.host} --strict --json --view agent\`.`;
   }
   return `# Workspai entry for ${input.adapter.host}
 
-Before broad repository discovery, architecture claims, planning, or mutation:
+Before source discovery, implementation/test reads or Workspai architecture claims:
 
-1. Read \`${PROJECT_AGENT_ENTRY_RELATIVE_PATH}\`.
-2. Run \`workspai agent bootstrap --for-agent ${input.adapter.host} --strict --json\`.
-3. Follow \`requiredReadOrder\`, any active Goal handoff, bounded Graph queries, and returned proof paths.
+${projectTaskEntryWorkflow(input.adapter.host)}
 
-Receipt policy: \`ready\` may proceed; \`degraded\` must disclose limitations; \`blocked\` must execute \`nextActions\` and rerun bootstrap before governed claims.
+${AGENT_CONTEXT_GUIDANCE}
 
 The workspace name is a logical identity, not a path. Resolve \`workspace:\` URIs at runtime with \`workspai project workspace status --json\`; its absolute paths are machine-local and must never be copied into shared output or portable artifacts. Live source owns exact implementation; Workspai evidence owns identity, topology, goals, readiness, and verification. Repository-authored rules remain authoritative for source changes after this entry gate.`;
 }
@@ -2085,8 +2088,7 @@ async function reconcileProjectAgents(
     if (existed && !agentsStat?.isSymbolicLink()) await fsp.rm(managedPath, { force: true });
     return undefined;
   }
-  const normalized = `${updated.trimEnd()}\n`;
-  if (normalized !== existing) await writeAtomic(managedPath, normalized);
+  if (updated !== existing) await writeAtomic(managedPath, updated);
   return mode === 'managed' ? agentsPath : undefined;
 }
 

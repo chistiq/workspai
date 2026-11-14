@@ -1,0 +1,464 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/workspace-graph-search-view.v1.json",
+  "title": "Workspai Graph search consumer view",
+  "description": "Opt-in terminal discovery view with exact UTF-8 wire budget, relevant and unscoped diagnostics, explicit foreign-diagnostic omissions, revision-bound evidence expansion and optional digest-bound context delivery receipts. Workspace aggregate coverage is not project coverage. It does not authorize changes or claim executed test coverage.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "status",
+        "query",
+        "scope",
+        "source",
+        "validation",
+        "coverage",
+        "diagnostics",
+        "claims",
+        "limit",
+        "totalMatches",
+        "omitted",
+        "matches",
+        "proofs",
+        "expand",
+        "budget"
+      ],
+      "properties": {
+        "diagnosticSelection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "omittedForeign", "retainedUnscoped", "aggregateScope"],
+          "properties": {
+            "mode": { "enum": ["project-and-unscoped", "workspace"] },
+            "omittedForeign": { "type": "integer", "minimum": 0 },
+            "retainedUnscoped": { "type": "integer", "minimum": 0 },
+            "aggregateScope": { "const": "workspace" }
+          }
+        },
+        "schemaVersion": {
+          "const": "workspace-graph-search-view.v1"
+        },
+        "status": {
+          "const": "results"
+        },
+        "query": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["workspace", "project", "kind"],
+          "properties": {
+            "workspace": {
+              "type": "string",
+              "minLength": 1
+            },
+            "project": {
+              "type": ["string", "null"]
+            },
+            "kind": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "$ref": "workspace-knowledge-graph.v1.json#/properties/entities/items/properties/kind"
+                }
+              ]
+            }
+          }
+        },
+        "source": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["graphHash", "modelHash", "inputsHash", "generatedAt"],
+          "properties": {
+            "graphHash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "modelHash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            },
+            "inputsHash": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-f0-9]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "generatedAt": {
+              "type": "string",
+              "format": "date-time"
+            }
+          }
+        },
+        "validation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["liveInputsValidated", "proofFreshness"],
+          "properties": {
+            "liveInputsValidated": {
+              "type": "boolean"
+            },
+            "proofFreshness": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["fresh", "stale", "unknown"],
+              "properties": {
+                "fresh": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "stale": {
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "unknown": {
+                  "type": "integer",
+                  "minimum": 0
+                }
+              }
+            }
+          }
+        },
+        "coverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["completeness", "unknownCount", "failedProviders", "partialProviders"],
+          "properties": {
+            "completeness": {
+              "oneOf": [
+                {
+                  "$ref": "workspace-knowledge-graph.v1.json#/properties/quality/properties/completeness"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "unknownCount": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "failedProviders": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "partialProviders": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              }
+            }
+          }
+        },
+        "diagnostics": {
+          "$ref": "workspace-knowledge-graph.v1.json#/properties/diagnostics"
+        },
+        "claims": {
+          "const": "discovery-only; lexical matches do not establish implementation bindings, executed tests or verified completion"
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "totalMatches": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "omitted": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["matches", "additionalProofs", "relations", "entityDetails"],
+          "properties": {
+            "matches": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "additionalProofs": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "relations": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "entityDetails": {
+              "const": "deferred"
+            }
+          }
+        },
+        "matches": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["id", "kind", "label", "packageManifests", "reason", "proofId"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "$ref": "workspace-knowledge-graph.v1.json#/properties/entities/items/properties/kind"
+              },
+              "label": {
+                "type": "string",
+                "minLength": 1
+              },
+              "project": {
+                "type": "string",
+                "minLength": 1
+              },
+              "role": {
+                "type": "string",
+                "minLength": 1
+              },
+              "packageManifests": {
+                "type": "array",
+                "items": {
+                  "$ref": "workspace-knowledge-graph.v1.json#/properties/proofs/items/properties/artifact"
+                }
+              },
+              "reason": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["basis", "terms"],
+                "properties": {
+                  "basis": {
+                    "enum": ["lexical", "scope"]
+                  },
+                  "terms": {
+                    "type": "array",
+                    "items": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "uniqueItems": true
+                  }
+                }
+              },
+              "proofId": {
+                "type": ["string", "null"]
+              }
+            }
+          },
+          "maxItems": 100
+        },
+        "proofs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "provider",
+              "artifact",
+              "derivation",
+              "trust",
+              "confidence",
+              "freshness"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "provider": {
+                "type": "string",
+                "minLength": 1
+              },
+              "artifact": {
+                "type": "string",
+                "minLength": 1,
+                "not": {
+                  "pattern": "^(?:/|[A-Za-z]:[\\\\/])"
+                }
+              },
+              "pointer": {
+                "type": "string"
+              },
+              "line": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "column": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "contentHash": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "derivation": {
+                "enum": ["extracted", "inferred", "authored"]
+              },
+              "trust": {
+                "enum": ["authoritative", "corroborated", "observed", "ambiguous"]
+              },
+              "confidence": {
+                "enum": ["high", "medium", "low"]
+              },
+              "freshness": {
+                "enum": ["fresh", "stale", "unknown"]
+              }
+            },
+            "additionalProperties": false
+          },
+          "maxItems": 100
+        },
+        "delivery": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["receiptId", "status", "reusedMatchIds", "reusedFrom", "reason"],
+          "properties": {
+            "receiptId": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "status": {
+              "enum": ["full", "delta"]
+            },
+            "reusedMatchIds": {
+              "type": "array",
+              "items": { "type": "string", "minLength": 1 },
+              "uniqueItems": true,
+              "maxItems": 100
+            },
+            "reusedFrom": {
+              "oneOf": [{ "type": "string", "format": "uuid" }, { "type": "null" }]
+            },
+            "reason": {
+              "oneOf": [
+                { "type": "null" },
+                {
+                  "enum": [
+                    "receipt-not-found",
+                    "expired",
+                    "source-changed",
+                    "scope-changed",
+                    "ledger-unavailable"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        "expand": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["argv", "idPlaceholder", "expectedGraphHash"],
+          "properties": {
+            "argv": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 7
+            },
+            "idPlaceholder": {
+              "const": "<id>"
+            },
+            "expectedGraphHash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        },
+        "budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["maxBytes", "usedBytes", "accounting"],
+          "properties": {
+            "maxBytes": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 131072
+            },
+            "usedBytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "accounting": {
+              "const": "utf8-json-with-newline"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "status",
+        "requestHash",
+        "graphHash",
+        "budget",
+        "message",
+        "nextActions"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "workspace-graph-search-view.v1"
+        },
+        "status": {
+          "const": "insufficient-budget"
+        },
+        "requestHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "graphHash": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["maxBytes", "requiredBytes", "accounting"],
+          "properties": {
+            "maxBytes": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 131072
+            },
+            "requiredBytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "accounting": {
+              "const": "utf8-json-with-newline"
+            }
+          }
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nextActions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "minItems": 1
+        }
+      }
+    }
+  ]
+}

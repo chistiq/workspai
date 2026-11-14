@@ -171,6 +171,30 @@ const READ_TOOLS: McpTool[] = (
       },
     },
     {
+      name: 'prepareProjectTaskContext',
+      description:
+        'Prepare bounded, read-only grounding, project Graph evidence and nearest manifest-backed checks for one task; missing Workspai evidence does not block native project work',
+      inputSchema: {
+        type: 'object',
+        properties: {
+          task: { type: 'string', minLength: 1, maxLength: 4096 },
+          projectId: {
+            type: 'string',
+            minLength: 1,
+            description: 'Exact registered project id from the canonical workspace model',
+          },
+          path: {
+            type: 'string',
+            description:
+              'Optional project-relative source or manifest path for lifecycle selection',
+          },
+          limit: { type: 'integer', minimum: 1, maximum: 12, default: 8 },
+          maxBytes: { type: 'integer', minimum: 8192, maximum: 131072, default: 32768 },
+        },
+        required: ['task', 'projectId'],
+      },
+    },
+    {
       name: 'getWorkspaceGraphEvidence',
       description: 'Resolve portable evidence for a knowledge graph entity or relation',
       inputSchema: {
@@ -429,6 +453,30 @@ async function invokeTool(
           : {}),
         limit: Number.isFinite(rawLimit) ? rawLimit : 12,
         projection: 'agent',
+      });
+    }
+    case 'prepareProjectTaskContext': {
+      const model = (await readJsonArtifact(
+        workspacePath,
+        WORKSPACE_INTELLIGENCE_ARTIFACTS.model
+      )) as WorkspaceModel | null;
+      const projectId = String(args.projectId ?? '').trim();
+      const project = model?.projects.find((candidate) => candidate.name === projectId);
+      if (!project) {
+        throw new Error(
+          `No canonical workspace project matches the exact id "${projectId}". Read the workspace model and retry with its project name.`
+        );
+      }
+      const projectPath = path.isAbsolute(project.path)
+        ? project.path
+        : path.resolve(workspacePath, project.path);
+      const { buildAgentTaskContext } = await import('./agent-task-context.js');
+      return buildAgentTaskContext({
+        projectPath,
+        task: String(args.task ?? ''),
+        ...(typeof args.path === 'string' ? { path: args.path } : {}),
+        limit: typeof args.limit === 'number' ? args.limit : 8,
+        maxBytes: typeof args.maxBytes === 'number' ? args.maxBytes : undefined,
       });
     }
     case 'getWorkspaceGraphEvidence': {

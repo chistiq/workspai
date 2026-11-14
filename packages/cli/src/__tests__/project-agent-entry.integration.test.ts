@@ -3,6 +3,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import fsExtra from 'fs-extra';
+import { execa } from 'execa';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import {
@@ -10,6 +11,7 @@ import {
   WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
 } from '../contracts/workspace-intelligence-runtime-registry.js';
 import { buildAgentBootstrapReceipt } from '../project-agent-entry.js';
+import { buildAgentBootstrapView } from '../agent-bootstrap-view.js';
 import { syncProjectIntelligenceLens } from '../project-intelligence-lens.js';
 import { writeProjectWorkspaceLink } from '../project-workspace-link.js';
 import { planGoalPack } from '../goal-pack.js';
@@ -35,6 +37,28 @@ describe('canonical-first project agent entry', () => {
   afterEach(async () => {
     await Promise.all(roots.splice(0).map((root) => fsExtra.remove(root)));
   });
+
+  it.each([
+    { args: ['--view', 'other', '--json'], message: '--view must be full or agent' },
+    { args: ['--view', 'agent'], message: '--view agent requires --json' },
+    { args: ['--max-bytes', '4096', '--json'], message: '--max-bytes requires --view agent' },
+    {
+      args: ['--view', 'agent', '--max-bytes', '1e4', '--json'],
+      message: '--max-bytes must be an integer',
+    },
+  ])(
+    'rejects invalid consumer output options before resolving project data: $message',
+    async ({ args, message }) => {
+      const result = await execa(
+        process.execPath,
+        [path.resolve('dist/index.js'), 'agent', 'bootstrap', ...args],
+        { reject: false }
+      );
+      expect(result.exitCode).toBe(1);
+      expect(result.stdout).toContain(message);
+      expect(result.stdout).not.toContain('workspai.agent-bootstrap-receipt.v1');
+    }
+  );
 
   it('issues a ready, portable receipt from generated Model and Graph evidence', async () => {
     const root = await fsp.mkdtemp(path.join(os.tmpdir(), 'workspai-agent-entry-'));
@@ -276,6 +300,53 @@ describe('canonical-first project agent entry', () => {
       'workspace:.workspai/reports/workspace-skills-index.json'
     );
     expect(JSON.stringify(receipt)).not.toContain(root);
+
+    const view = buildAgentBootstrapView(receipt);
+    expect(view.status).toBe('ready');
+    if (view.status === 'insufficient-budget') throw new Error('Unexpected fixture budget failure');
+    expect(view.claims).toEqual(receipt.claims);
+    expect(view.canonicalEvidence).toEqual(receipt.canonicalEvidence);
+    expect(view.sourceReceipt.integrity).toEqual(receipt.integrity);
+    expect(view.requiredReadOrder).not.toContain(receipt.requiredReadOrder[1]);
+
+    const cliArgs = [
+      path.resolve('dist/index.js'),
+      'agent',
+      'bootstrap',
+      '--project',
+      projectPath,
+      '--for-agent',
+      'codex',
+      '--strict',
+      '--json',
+      '--no-live-inputs',
+    ];
+    const fullRun = await execa(process.execPath, cliArgs, { reject: false });
+    const compactRun = await execa(process.execPath, [...cliArgs, '--view', 'agent'], {
+      reject: false,
+    });
+    expect(fullRun.exitCode).toBe(2);
+    expect(compactRun.exitCode).toBe(2);
+    const fullOutput = JSON.parse(fullRun.stdout);
+    const compactOutput = JSON.parse(compactRun.stdout);
+    expect(fullOutput.schemaVersion).toBe('workspai.agent-bootstrap-receipt.v1');
+    expect(compactOutput.schemaVersion).toBe('workspai.agent-bootstrap-view.v1');
+    expect(compactOutput.status).toBe(fullOutput.status);
+    expect(compactOutput.claims).toEqual(fullOutput.claims);
+    expect(compactOutput.canonicalEvidence).toEqual(fullOutput.canonicalEvidence);
+    expect(compactOutput.checks.findings).toEqual(
+      fullOutput.checks.filter((item: { status: string }) => item.status !== 'passed')
+    );
+    expect(Buffer.byteLength(compactRun.stdout + '\n')).toBe(compactOutput.budget.usedBytes);
+    expect(Buffer.byteLength(compactRun.stdout)).toBeLessThan(Buffer.byteLength(fullRun.stdout));
+    const smallRun = await execa(
+      process.execPath,
+      [...cliArgs, '--view', 'agent', '--max-bytes', '1024'],
+      { reject: false }
+    );
+    expect(smallRun.exitCode).toBe(2);
+    expect(JSON.parse(smallRun.stdout).status).toBe('insufficient-budget');
+    expect(Buffer.byteLength(smallRun.stdout + '\n')).toBeLessThanOrEqual(1024);
 
     const projectContext = await fsExtra.readJson(
       path.join(projectPath, WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent)

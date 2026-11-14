@@ -334,7 +334,12 @@
       "type": "object",
       "required": ["readOrder", "projectProofArtifacts", "relations", "proofs"],
       "properties": {
-        "readOrder": { "type": "array", "maxItems": 12, "items": { "type": "string" }, "uniqueItems": true },
+        "readOrder": {
+          "type": "array",
+          "maxItems": 12,
+          "items": { "type": "string" },
+          "uniqueItems": true
+        },
         "projectProofArtifacts": {
           "type": "array",
           "items": {
@@ -380,9 +385,12 @@
           "required": ["command", "successCondition"],
           "properties": {
             "command": {
-              "const": "workspai agent bootstrap --for-agent generic --strict --json"
+              "enum": [
+                "workspai agent bootstrap --for-agent generic --strict --json",
+                "workspai agent context --task \"<user request>\" --for-agent generic"
+              ]
             },
-            "successCondition": { "const": "ready" }
+            "successCondition": { "enum": ["ready", "ready-or-disclosed-partial"] }
           },
           "additionalProperties": false
         },

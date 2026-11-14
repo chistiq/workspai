@@ -91,6 +91,21 @@
       "contractPath": "contracts/workspace-intelligence/agent-bootstrap-receipt.v1.json",
       "publication": "json-schema"
     },
+    "agentBootstrapView": {
+      "schemaVersion": "workspai.agent-bootstrap-view.v1",
+      "contractPath": "contracts/workspace-intelligence/agent-bootstrap-view.v1.json",
+      "publication": "json-schema"
+    },
+    "agentTaskContext": {
+      "schemaVersion": "workspai.agent-task-context.v1",
+      "contractPath": "contracts/workspace-intelligence/agent-task-context.v1.json",
+      "publication": "json-schema"
+    },
+    "projectLifecycleContext": {
+      "schemaVersion": "workspai.project-lifecycle-context.v1",
+      "contractPath": "contracts/project-lifecycle-context.v1.json",
+      "publication": "json-schema"
+    },
     "doctorProjectEvidence": {
       "schemaVersion": "doctor-project-evidence-v1",
       "contractPath": "contracts/doctor-project-evidence.v1.json",
@@ -459,6 +474,11 @@
     "workspaceKnowledgeSearch": {
       "schemaVersion": "workspace-knowledge-search.v1",
       "contractPath": "contracts/workspace-intelligence/workspace-knowledge-search.v1.json",
+      "publication": "json-schema"
+    },
+    "workspaceGraphSearchView": {
+      "schemaVersion": "workspace-graph-search-view.v1",
+      "contractPath": "contracts/workspace-intelligence/workspace-graph-search-view.v1.json",
       "publication": "json-schema"
     },
     "workspaceGraphTokenEfficiency": {

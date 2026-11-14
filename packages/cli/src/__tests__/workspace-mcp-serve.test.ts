@@ -43,6 +43,7 @@ describe('workspace mcp serve (4.19)', () => {
         'getWorkspaceEvaluation',
         'queryWorkspaceEntities',
         'searchWorkspaceGraph',
+        'prepareProjectTaskContext',
         'getWorkspaceGraphEvidence',
         'findWorkspaceGraphPath',
         'listProofCarryingChanges',
@@ -128,6 +129,40 @@ describe('workspace mcp serve (4.19)', () => {
         to: '@example/api',
       })
     ).resolves.toMatchObject({ found: true, hops: expect.any(Array) });
+  });
+
+  it('prepares a task-scoped read-only context for the exact registered project', async () => {
+    await fsExtra.outputJson(path.join(workspacePath, 'api', 'package.json'), {
+      name: '@example/api',
+      version: '1.0.0',
+      scripts: { test: 'vitest run' },
+    });
+    const model = await buildWorkspaceModel({ workspacePath });
+    await writeWorkspaceModel(model, workspacePath);
+
+    const context = (await invokeMcpToolForTest(workspacePath, 'prepareProjectTaskContext', {
+      task: 'Add a test for the API package',
+      projectId: 'api',
+      path: 'package.json',
+    })) as {
+      schemaVersion: string;
+      status: string;
+      scope: { project: string };
+      task: { text: string };
+    };
+
+    expect(context).toMatchObject({
+      schemaVersion: 'workspai.agent-task-context.v1',
+      status: 'partial',
+      scope: { project: 'api' },
+      task: { text: 'Add a test for the API package' },
+    });
+    await expect(
+      invokeMcpToolForTest(workspacePath, 'prepareProjectTaskContext', {
+        task: 'Inspect this project',
+        projectId: 'missing-project',
+      })
+    ).rejects.toThrow(/exact id/i);
   });
 
   it('fails closed when the graph source hash no longer matches the workspace model', async () => {

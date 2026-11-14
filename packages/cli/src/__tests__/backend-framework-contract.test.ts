@@ -493,8 +493,8 @@ describe('backend-framework-contract', () => {
     ['php-generic', 'composer.json', '{"require":{}}', 'php'],
     ['sinatra', 'Gemfile', "gem 'sinatra'", 'sinatra'],
     ['ruby-generic', 'Gemfile', "gem 'rake'", 'ruby'],
-    ['actix', 'Cargo.toml', 'actix-web = "4"', 'actix'],
-    ['rocket', 'Cargo.toml', 'rocket = "0.5"', 'rocket'],
+    ['actix', 'Cargo.toml', '[dependencies]\nactix-web = "4"', 'actix'],
+    ['rocket', 'Cargo.toml', '[dependencies]\nrocket = "0.5"', 'rocket'],
     ['rust-generic', 'Cargo.toml', '[package]\nname="x"', 'rust'],
     ['phoenix', 'mix.exs', '{:phoenix, "~> 1.7"}', 'phoenix'],
     ['elixir-generic', 'mix.exs', 'defmodule App.MixProject', 'elixir'],
@@ -502,6 +502,26 @@ describe('backend-framework-contract', () => {
     const project = await createTempProject(name);
     await fs.writeFile(path.join(project, fileName), content);
     expect(detectBackendFrameworkFromProject(project).key).toBe(expectedKey);
+  });
+
+  it.each([
+    ['[workspace]\nmembers = ["crates/*"]\n[workspace.dependencies]\naxum = "0.8"', 'rust'],
+    [
+      '[package]\nname = "axum-helper"\n# rocket and actix-web are examples\n[dev-dependencies]\naxum = "0.8"',
+      'rust',
+    ],
+    ['[build-dependencies]\nrocket = "0.5"', 'rust'],
+    ['[dependencies]\naxum = { workspace = true }', 'axum'],
+    ['[dependencies]\nhttp = { package = "axum", version = "0.8" }', 'axum'],
+    ['[dependencies]\naxum = { package = "hyper", version = "1" }', 'rust'],
+    ['[dependencies.axum]\npackage = "hyper"\nversion = "1"', 'rust'],
+    ['[dependencies]\nhttp = "1" # package = "axum"', 'rust'],
+    ['[target.\'cfg(unix)\'.dependencies]\nrocket = "0.5"', 'rocket'],
+    ['[dependencies.http]\npackage = "actix-web"\nversion = "4"', 'actix'],
+  ])('separates Cargo dependency usage from catalogs and tooling: %s', async (manifest, key) => {
+    const project = await createTempProject('cargo-scope');
+    await fs.writeFile(path.join(project, 'Cargo.toml'), manifest);
+    expect(detectBackendFrameworkFromProject(project).key).toBe(key);
   });
 
   it('treats an authored Go module as authoritative runtime evidence', async () => {

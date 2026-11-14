@@ -1,5 +1,6 @@
 import path from 'path';
 import fsExtra from 'fs-extra';
+import { AGENT_CONTEXT_GUIDANCE, AGENT_RESPONSE_GUIDANCE } from './agent-output-guidance.js';
 
 import {
   buildOperationalSkillsCatalogSection,
@@ -912,12 +913,6 @@ function buildAgentsMarkdown(input: {
     '',
     'Do **not** full-repo scan or inject the complete graph when a bounded query can answer the task.',
     '',
-    '## Proof-carrying mutations',
-    '',
-    'For source-changing work, use the active Goal Pack command `beginChange` before the first mutation.',
-    'Prediction is planning input, never proof. Execute only explicitly authorized effect classes, record typed effect receipts, then run `workspai change verify --change <id> --json`.',
-    'A task is not complete until its capsule is sealed or its remaining uncertainty is reported.',
-    '',
     '## Regenerate intelligence',
     '',
     '```bash',
@@ -949,8 +944,10 @@ function buildAgentsMarkdown(input: {
     '',
     '- Treat `.workspai/reports/*` as the source of truth for health, gates, and release posture.',
     '- Prefer deterministic Workspai CLI commands over heuristic framework guesses.',
-    '- If evidence is missing or stale, run the refresh commands above before proposing fixes.',
+    '- Refresh missing or stale evidence before relying on its workspace claims; ordinary project work can continue with native evidence and explicit limitations.',
     '- Keep project-scoped advice aligned with the active project named in the context pack.',
+    `- ${AGENT_RESPONSE_GUIDANCE}`,
+    `- ${AGENT_CONTEXT_GUIDANCE}`,
     '- Never claim that an active goal is satisfied until its CLI-owned verification lifecycle is `verified`.',
     ''
   );
@@ -1025,7 +1022,7 @@ function buildPortableProviderAdapter(provider: string): string {
     '- Use bounded Workspace Knowledge Graph search before broad source discovery.',
     '- Treat `.workspai/reports/*` JSON reports as canonical gate and health evidence.',
     '- Do not invent pass/fail state — cite `exitCode`, `blockers`, and `generatedAt` fields.',
-    '- Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    `- ${AGENT_RESPONSE_GUIDANCE}`,
     '- Refresh grounding with `workspai workspace agent-sync --write --refresh-context`.',
     '',
   ].join('\n');
@@ -1068,7 +1065,7 @@ function buildCursorRule(): string {
     '',
     '## Answer contract',
     '',
-    'Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    AGENT_RESPONSE_GUIDANCE,
     '',
     '## Refresh when stale',
     '',
@@ -1128,7 +1125,7 @@ function buildCursorWorkflowRule(input: {
     '',
     ...input.steps.map((step, i) => `${i + 1}. ${step}`),
     '',
-    'Use the standard Workspai answer contract: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    AGENT_RESPONSE_GUIDANCE,
     '',
   ].join('\n');
 }
@@ -1200,7 +1197,7 @@ function buildWindsurfGroundingRule(): string {
     '',
     '## Answer contract',
     '',
-    'Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    AGENT_RESPONSE_GUIDANCE,
     '',
     '## Refresh when stale',
     '',
@@ -1249,7 +1246,7 @@ function buildGrokGroundingRule(): string {
     '',
     '## Answer contract',
     '',
-    'Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    AGENT_RESPONSE_GUIDANCE,
     '',
     '## Refresh when stale',
     '',
@@ -1300,7 +1297,7 @@ function buildAmazonQWorkspaceRule(): string {
     '',
     '## Answer contract',
     '',
-    'Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    AGENT_RESPONSE_GUIDANCE,
     '',
   ].join('\n');
 }
@@ -1332,7 +1329,7 @@ function buildWindsurfRules(): string {
     '',
     '## Answer contract',
     '',
-    'Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    AGENT_RESPONSE_GUIDANCE,
     '',
     '## Refresh when stale',
     '',
@@ -1373,7 +1370,7 @@ function buildClaudeWorkspaceRule(): string {
     '',
     '## Answer contract',
     '',
-    'Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    AGENT_RESPONSE_GUIDANCE,
     '',
     '## Refresh when stale',
     '',
@@ -1421,7 +1418,7 @@ function buildCopilotWorkspaceInstructions(): string {
     '',
     '## Answer contract',
     '',
-    'Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    AGENT_RESPONSE_GUIDANCE,
     '',
   ].join('\n');
 }
@@ -1531,7 +1528,7 @@ function buildWorkflowPrompt(input: {
     '',
     ...input.expectedOutput.map((item, index) => `${index + 1}. ${item}`),
     '',
-    'Use the standard Workspai answer contract: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    AGENT_RESPONSE_GUIDANCE,
     '',
   ].join('\n');
 }
@@ -1788,7 +1785,7 @@ function buildWorkspaceIntelligenceSkill(catalogSection?: string): string {
     `3. Load \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\`.`,
     `4. Load \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}\` when operational playbooks are needed.`,
     '5. Load the smallest evidence report required for the task.',
-    '6. Answer with Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    `6. ${AGENT_RESPONSE_GUIDANCE}`,
     '',
     '## Rules',
     '',
@@ -1821,17 +1818,9 @@ function buildWorkspaiAgent(input: {
     '',
     `Mode: ${input.mode}.`,
     '',
-    `Start every task by reading \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\` and \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\`.`,
+    AGENT_CONTEXT_GUIDANCE,
     '',
-    'Use this answer contract:',
-    '',
-    '- Scope',
-    '- Evidence',
-    '- Diagnosis',
-    '- Fix Plan',
-    '- Run',
-    '- Verify',
-    '- Assumptions',
+    AGENT_RESPONSE_GUIDANCE,
     '',
     'Do not invent health, readiness, or policy status. Cite report paths and command outputs.',
     '',
@@ -1857,10 +1846,11 @@ function buildPortableGroundingSkill(input: {
     '',
     '## Workflow',
     '',
-    `1. Read \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\``,
-    `2. Read \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\``,
-    '3. Read fail/warn evidence artifacts listed in the index',
-    '4. Propose the smallest safe fix with explicit verification commands',
+    `1. In an adopted project, follow its \`${PROJECT_AGENT_ENTRY_RELATIVE_PATH}\` task context route; otherwise start from the workspace evidence index.`,
+    `2. Read only remaining project-lens or task-relevant context from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\` that the packet has not already supplied.`,
+    '3. Select one matching Skill from the compact Skills index. Query the bounded Graph with the actual task and project scope only when the existing packet does not answer the retrieval need.',
+    '4. Inspect returned proofs, targeted live source and only task-relevant fail/warn evidence; propose the smallest safe fix with explicit verification commands.',
+    AGENT_CONTEXT_GUIDANCE,
     '',
   ];
 
@@ -1897,7 +1887,7 @@ function buildPortableGroundingSkill(input: {
     '',
     '- Treat `.workspai/reports/*` JSON reports as canonical gate and health evidence.',
     '- Do not invent pass/fail state — cite `exitCode`, `blockers`, and `generatedAt` fields.',
-    '- Return answers with: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    `- ${AGENT_RESPONSE_GUIDANCE}`,
     '',
     '## Refresh stale evidence',
     '',
@@ -2108,7 +2098,7 @@ function buildAgentCustomizationPackReport(input: {
       staleReports: input.staleReports,
       strictViolations: input.strictViolations,
     },
-    answerContract: ['Scope', 'Evidence', 'Diagnosis', 'Fix Plan', 'Run', 'Verify', 'Assumptions'],
+    answerContract: [AGENT_RESPONSE_GUIDANCE],
     refreshCommand: displayRapidkitCommand(
       `workspace agent-sync --write --refresh-context --preset ${input.preset}`
     ),
@@ -2769,7 +2759,7 @@ async function syncWorkspaceAgentGroundingUnsafe(
             name: 'Workspai Advisor',
             description: 'Read-only workspace and project guidance using Workspai evidence',
             mode: 'read-only',
-            tools: ['search', 'read'],
+            tools: ['search', 'read', 'execute/runInTerminal'],
           }),
         ],
         [
@@ -2778,7 +2768,7 @@ async function syncWorkspaceAgentGroundingUnsafe(
             name: 'Workspai Repair',
             description: 'Turn Workspai blockers into minimal fixes and verification steps',
             mode: 'repair',
-            tools: ['search', 'read', 'edit'],
+            tools: ['search', 'read', 'edit', 'execute/runInTerminal'],
           }),
         ],
         [
@@ -2787,7 +2777,7 @@ async function syncWorkspaceAgentGroundingUnsafe(
             name: 'Workspai Release',
             description: 'Assess readiness, governance gates, and release safety from evidence',
             mode: 'release',
-            tools: ['search', 'read'],
+            tools: ['search', 'read', 'execute/runInTerminal'],
           }),
         ],
         [
@@ -2796,7 +2786,7 @@ async function syncWorkspaceAgentGroundingUnsafe(
             name: 'Workspai Project Onboarder',
             description: 'Guide create, import, and adopt flows with Workspai contracts',
             mode: 'onboard',
-            tools: ['search', 'read', 'edit'],
+            tools: ['search', 'read', 'edit', 'execute/runInTerminal'],
           }),
         ],
       ] as const;

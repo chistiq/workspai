@@ -311,7 +311,8 @@ describe('goal pack workspace adapter', () => {
     );
     expect(result.goalPack.preflight.retrieval.queries[1]).toBe('public APIs');
     expect(result.goalPack.preflight.retrieval.anchors[0]?.label).toContain('retry-backoff');
-    expect(result.goalPack.preflight.retrieval.status).toBe('partial');
+    expect(result.goalPack.preflight.retrieval.status).toBe('grounded');
+    expect(result.goalPack.preflight.retrieval.anchors.length).toBeGreaterThanOrEqual(3);
   });
 
   it('preserves language-specific compatibility clauses in bounded Goal retrieval', async () => {

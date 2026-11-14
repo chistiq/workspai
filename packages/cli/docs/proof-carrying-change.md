@@ -28,7 +28,8 @@ workspai change begin --json
 # Discover resumable and sealed changes without scanning directories.
 workspai change list --json
 
-# 3. Optionally attach an explicit prediction. It is never proof.
+# 3. For source, test, or configuration changes, attach an explicit artifact-level
+#    prediction before the first write. Prediction is intent, never proof.
 workspai change predict --change <change-id> --file prediction.json --json
 
 # 4. A human grants only the effect classes required by the change.
@@ -90,6 +91,13 @@ The runtime enforces these rules:
 - terminal transactions cannot accept later events;
 - optimistic compare-and-append prevents concurrent history forks;
 - capsule validation replays the event chain and checks local reference digests.
+
+The CLI accepts transactions without a prediction for compatibility and for
+callers whose effect does not change project artifacts. The generated agent
+mutation policy is stricter: every source, test, or configuration write must
+have a prediction first, with each expected file represented as an `artifact`
+operation using a project-relative `targetId`. This makes expected derived
+Graph evidence attributable without treating the prediction as proof.
 
 ## Architecture lease
 

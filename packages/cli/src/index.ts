@@ -8896,16 +8896,37 @@ async function runAgentEntryReceipt(input: {
   liveInputs?: boolean;
   strict?: boolean;
   json?: boolean;
+  view?: string;
+  maxBytes?: string;
   operation: 'agent bootstrap' | 'project agent-entry verify';
 }): Promise<void> {
   try {
+    const { agentBootstrapByteBudget, buildAgentBootstrapView } =
+      await import('./agent-bootstrap-view.js');
+    const view = input.view ?? 'full';
+    if (view !== 'full' && view !== 'agent') {
+      throw new Error('--view must be full or agent.');
+    }
+    if (view === 'agent' && !input.json) {
+      throw new Error('--view agent requires --json.');
+    }
+    if (input.maxBytes !== undefined && view !== 'agent') {
+      throw new Error('--max-bytes requires --view agent.');
+    }
+    const maxBytes = agentBootstrapByteBudget(input.maxBytes);
     const { buildAgentBootstrapReceipt } = await import('./project-agent-entry.js');
     const receipt = await buildAgentBootstrapReceipt({
       startPath: input.project,
       forAgent: input.forAgent,
       validateLiveInputs: input.liveInputs !== false,
     });
-    if (input.json) {
+    if (view === 'agent') {
+      const output = buildAgentBootstrapView(receipt, { maxBytes });
+      console.log(JSON.stringify(output));
+      if (output.status === 'insufficient-budget') {
+        process.exit(2);
+      }
+    } else if (input.json) {
       console.log(JSON.stringify(receipt, null, 2));
     } else {
       const color =
@@ -8962,6 +8983,11 @@ agentCommand
   .option('--no-live-inputs', 'Skip live project input validation and return degraded evidence')
   .option('--strict', 'Return exit 2 unless the complete entry receipt is ready')
   .option('--json', 'Emit the versioned machine-readable receipt')
+  .option('--view <view>', 'Receipt representation: full (default) or agent (requires --json)')
+  .option(
+    '--max-bytes <bytes>',
+    'UTF-8 JSON output budget for --view agent (1024–131072; default 12288)'
+  )
   .action(
     async (options: {
       project?: string;
@@ -8969,11 +8995,64 @@ agentCommand
       liveInputs?: boolean;
       strict?: boolean;
       json?: boolean;
+      view?: string;
+      maxBytes?: string;
     }) =>
       runAgentEntryReceipt({
         ...options,
         operation: 'agent bootstrap',
       })
+  );
+
+agentCommand
+  .command('context')
+  .description('Prepare bounded, project-scoped Workspai context for one agent task')
+  .requiredOption('--task <request>', 'The user’s current task; used as a retrieval query')
+  .option(
+    '--project <path>',
+    'Project directory (defaults to the current directory)',
+    process.cwd()
+  )
+  .option('--path <relative-path>', 'Select the closest runtime unit for a source file or manifest')
+  .option('--for-agent <agent>', 'Agent host identifier', 'generic')
+  .option('--limit <count>', 'Maximum project-scoped Graph matches (1–12)', '8')
+  .option('--max-bytes <bytes>', 'Maximum UTF-8 JSON packet size (8192–131072; default 32768)')
+  .action(
+    async (options: {
+      task: string;
+      project: string;
+      path?: string;
+      forAgent?: string;
+      limit?: string;
+      maxBytes?: string;
+    }) => {
+      try {
+        const limit = Number(options.limit ?? 8);
+        const { buildAgentTaskContext } = await import('./agent-task-context.js');
+        const output = await buildAgentTaskContext({
+          projectPath: options.project,
+          task: options.task,
+          ...(options.path ? { path: options.path } : {}),
+          forAgent: options.forAgent,
+          limit,
+          maxBytes: options.maxBytes,
+        });
+        console.log(JSON.stringify(output));
+        if (output.status === 'insufficient-budget') process.exitCode = 2;
+      } catch (error) {
+        console.log(
+          JSON.stringify(
+            cliOperationError({
+              operation: 'agent context',
+              code: 'agent.task-context.invalid-input',
+              message: portableAgentEntryError(error),
+              exitCode: 2,
+            })
+          )
+        );
+        process.exitCode = 2;
+      }
+    }
   );
 
 registerAgentFrameworkCommands(agentCommand);
@@ -9040,6 +9119,86 @@ projectCommand
   .action(async (options: { json?: boolean }) => {
     printProjectCommandCapabilities({ json: options.json });
   });
+
+const lifecycleCommand = projectCommand
+  .command('lifecycle')
+  .description('Inspect detected project lifecycle stages');
+
+lifecycleCommand
+  .command('plan')
+  .description('Show manifest-backed lifecycle checks relevant to this project or package')
+  .option('--project <path>', 'Project root (defaults to the current directory)', process.cwd())
+  .option(
+    '--path <relative-path>',
+    'Select the closest runtime unit containing this source or manifest'
+  )
+  .option('--max-bytes <bytes>', 'Maximum UTF-8 JSON output size (default 8192)')
+  .option('--json', 'Emit the versioned machine-readable context')
+  .action(
+    async (options: { project: string; path?: string; maxBytes?: string; json?: boolean }) => {
+      try {
+        const { buildProjectLifecycleContext } = await import('./project-lifecycle-context.js');
+        const context = buildProjectLifecycleContext(options.project, {
+          path: options.path,
+          maxBytes: options.maxBytes,
+        });
+        if (options.json) {
+          console.log(JSON.stringify(context));
+        } else if (context.status === 'ready' || context.status === 'no-lifecycle-units') {
+          console.log(chalk.bold('Workspai project lifecycle context'));
+          console.log(chalk.gray(`Scope: ${context.selection.path ?? 'all runtime units'}`));
+          for (const unit of context.units) {
+            console.log('');
+            console.log(
+              chalk.cyan(`${unit.root} · ${unit.runtime}/${unit.ecosystem} · ${unit.role}`)
+            );
+            console.log(chalk.gray(`Manifest: ${unit.manifest} (${unit.provenance})`));
+            for (const stage of unit.stages) {
+              console.log(
+                `  ${stage.stage}: ${stage.command} [${stage.confidence}; ${stage.preflight}]`
+              );
+            }
+          }
+          if (context.units.length === 0) {
+            console.log(
+              chalk.yellow('No supported manifest-backed lifecycle unit was discovered.')
+            );
+          }
+          console.log(
+            chalk.gray(`Output: ${context.budget.usedBytes}/${context.budget.maxBytes} bytes`)
+          );
+        } else if (
+          context.status === 'insufficient-budget' ||
+          context.status === 'path-not-mapped'
+        ) {
+          console.log(chalk.yellow(context.message));
+          for (const action of context.nextActions) console.log(chalk.gray(`Next: ${action}`));
+          if (context.budget) {
+            console.log(chalk.gray(`Required output: ${context.budget.requiredBytes} bytes`));
+          }
+          process.exitCode = 2;
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (options.json) {
+          console.log(
+            JSON.stringify(
+              cliOperationError({
+                operation: 'project lifecycle plan',
+                code: 'project.lifecycle-plan.invalid-input',
+                message,
+              }),
+              null,
+              2
+            )
+          );
+        } else {
+          console.log(chalk.red(message));
+        }
+        process.exitCode = 2;
+      }
+    }
+  );
 
 projectCommand
   .command('workspace [action]')
@@ -9659,6 +9818,22 @@ program
   .option('--limit <count>', 'Bound graph search results (default 12, maximum 100)')
   .option('--kind <kind>', 'Limit graph search to one canonical entity kind')
   .option(
+    '--view <view>',
+    'Graph search JSON representation: full or agent (omit for existing output)'
+  )
+  .option(
+    '--max-bytes <bytes>',
+    'Exact graph search agent-view UTF-8 budget (1024-131072; default 12288)'
+  )
+  .option(
+    '--context-receipt <id>',
+    'Reuse unchanged results from a prior agent-view delivery receipt in this workspace'
+  )
+  .option(
+    '--expected-graph-hash <hash>',
+    'Require this Graph revision when expanding graph evidence'
+  )
+  .option(
     '--refresh-graph',
     'Bypass the compatible persisted knowledge graph and rebuild from live workspace sources'
   )
@@ -9814,6 +9989,10 @@ See the command reference for action-specific required inputs and output artifac
       graphSourceBudget?: string;
       limit?: string;
       kind?: string;
+      view?: string;
+      maxBytes?: string;
+      contextReceipt?: string;
+      expectedGraphHash?: string;
       forAgent?: string | boolean;
       agentSync?: boolean;
       noAgentSync?: boolean;
@@ -9869,6 +10048,81 @@ See the command reference for action-specific required inputs and output artifac
       run?: boolean;
       reuseIntelligence?: boolean;
     };
+
+    let graphViewByteBudget: number | undefined;
+    if (
+      actionOptions.view !== undefined ||
+      actionOptions.maxBytes !== undefined ||
+      actionOptions.contextReceipt !== undefined ||
+      actionOptions.expectedGraphHash !== undefined
+    ) {
+      try {
+        if (action !== 'graph')
+          throw new Error(
+            '--view, --max-bytes and --expected-graph-hash are Graph output options.'
+          );
+        if (
+          (actionOptions.view !== undefined || actionOptions.maxBytes !== undefined) &&
+          subaction !== 'search'
+        )
+          throw new Error('--view and --max-bytes require workspace graph search.');
+        if (actionOptions.view !== undefined && !['full', 'agent'].includes(actionOptions.view))
+          throw new Error('--view must be full or agent.');
+        if (actionOptions.view === 'agent' && !actionOptions.json)
+          throw new Error('--view agent requires --json.');
+        if (actionOptions.maxBytes !== undefined && actionOptions.view !== 'agent')
+          throw new Error('--max-bytes requires --view agent.');
+        if (
+          actionOptions.contextReceipt !== undefined &&
+          (subaction !== 'search' ||
+            actionOptions.view !== 'agent' ||
+            !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(
+              actionOptions.contextReceipt
+            ))
+        )
+          throw new Error('--context-receipt requires graph search --view agent and a receipt ID.');
+        if (
+          actionOptions.expectedGraphHash !== undefined &&
+          (subaction !== 'evidence' || !/^[a-f0-9]{64}$/u.test(actionOptions.expectedGraphHash))
+        )
+          throw new Error(
+            '--expected-graph-hash requires graph evidence and a lowercase SHA-256 hash.'
+          );
+        if (
+          actionOptions.scope !== undefined &&
+          actionOptions.scope !== 'workspace' &&
+          (!actionOptions.scope.startsWith('project:') || !actionOptions.scope.slice(8).trim())
+        )
+          throw new Error('--scope must be workspace or project:<registered-name>.');
+        if (actionOptions.view === 'agent') {
+          if (!key?.trim()) throw new Error('workspace graph search requires a search query.');
+          if (
+            actionOptions.limit !== undefined &&
+            (!/^\d+$/u.test(actionOptions.limit) ||
+              Number(actionOptions.limit) < 1 ||
+              Number(actionOptions.limit) > 100)
+          )
+            throw new Error('--limit must be an integer between 1 and 100.');
+          const { graphSearchByteBudget } = await import('./workspace-graph-search-view.js');
+          graphViewByteBudget = graphSearchByteBudget(actionOptions.maxBytes);
+        }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        if (actionOptions.json)
+          console.log(
+            JSON.stringify(
+              cliOperationError({
+                operation: 'workspace graph',
+                code: 'workspace.graph.output.invalid',
+                message,
+                exitCode: 2,
+              })
+            )
+          );
+        else console.log(chalk.red(message));
+        process.exit(2);
+      }
+    }
 
     const requireWorkspaceRootForAction = (actionName: string): string => {
       const requestedWorkspace = actionOptions.workspace
@@ -11394,12 +11648,99 @@ See the command reference for action-specific required inputs and output artifac
             process.exit(1);
           }
         }
+        if (actionOptions.view === 'agent') {
+          const { buildWorkspaceGraphSearchView, workspaceKnowledgeGraphRevision } =
+            await import('./workspace-graph-search-view.js');
+          const {
+            createGraphSearchDeliveryId,
+            readGraphSearchDeliveryReceipt,
+            recordGraphSearchDelivery,
+          } = await import('./workspace-graph-delivery.js');
+          const deliveryId = createGraphSearchDeliveryId();
+          const graphHash = workspaceKnowledgeGraphRevision(knowledgeGraph);
+          const requestedScope = {
+            workspace: knowledgeGraph.workspace.name,
+            project: projectId ?? null,
+            kind: requestedKind ?? null,
+          };
+          let previousReceipt:
+            | NonNullable<Awaited<ReturnType<typeof readGraphSearchDeliveryReceipt>>['receipt']>
+            | undefined;
+          let previousUnavailable:
+            | 'receipt-not-found'
+            | 'expired'
+            | 'source-changed'
+            | 'scope-changed'
+            | 'ledger-unavailable'
+            | undefined;
+          if (actionOptions.contextReceipt) {
+            try {
+              const lookup = await readGraphSearchDeliveryReceipt(
+                workspacePath,
+                actionOptions.contextReceipt
+              );
+              if (lookup.expired) previousUnavailable = 'expired';
+              else if (!lookup.receipt) previousUnavailable = 'receipt-not-found';
+              else if (lookup.receipt.graphHash !== graphHash)
+                previousUnavailable = 'source-changed';
+              else if (JSON.stringify(lookup.receipt.scope) !== JSON.stringify(requestedScope))
+                previousUnavailable = 'scope-changed';
+              else previousReceipt = lookup.receipt;
+            } catch {
+              previousUnavailable = 'ledger-unavailable';
+            }
+          }
+          let view = buildWorkspaceGraphSearchView(knowledgeGraph, {
+            query,
+            limit: limitValue,
+            ...(requestedKind ? { kind: requestedKind } : {}),
+            ...(projectId ? { projectId } : {}),
+            maxBytes: graphViewByteBudget,
+            liveInputsValidated: true,
+            delivery: {
+              receiptId: deliveryId,
+              ...(actionOptions.contextReceipt
+                ? { previousReceiptId: actionOptions.contextReceipt }
+                : {}),
+              ...(previousReceipt
+                ? {
+                    previous: {
+                      graphHash: previousReceipt.graphHash,
+                      scope: previousReceipt.scope,
+                      matchDigests: previousReceipt.matchDigests,
+                      expiresAt: previousReceipt.expiresAt,
+                    },
+                  }
+                : {}),
+              ...(previousUnavailable ? { previousUnavailable } : {}),
+            },
+          });
+          if (view.status === 'results') {
+            try {
+              await recordGraphSearchDelivery(workspacePath, view, previousReceipt);
+            } catch {
+              // A failed ledger write must never suppress results on the next call.
+              view = buildWorkspaceGraphSearchView(knowledgeGraph, {
+                query,
+                limit: limitValue,
+                ...(requestedKind ? { kind: requestedKind } : {}),
+                ...(projectId ? { projectId } : {}),
+                maxBytes: graphViewByteBudget,
+                liveInputsValidated: true,
+                delivery: { receiptId: deliveryId, previousUnavailable: 'ledger-unavailable' },
+              });
+            }
+          }
+          console.log(JSON.stringify(view));
+          if (view.status === 'insufficient-budget') process.exit(2);
+          return;
+        }
         const result = searchKnowledgeGraph(knowledgeGraph, {
           query,
           limit: limitValue,
           ...(requestedKind ? { kind: requestedKind } : {}),
           ...(projectId ? { projectId } : {}),
-          projection: 'agent',
+          projection: actionOptions.view === 'full' ? 'full' : 'agent',
         });
         if (actionOptions.json) {
           console.log(JSON.stringify(result, null, 2));
@@ -11425,12 +11766,36 @@ See the command reference for action-specific required inputs and output artifac
         }
         const knowledgeGraph = await buildKnowledgeGraph();
         const { queryKnowledgeEvidence } = await import('./workspace-knowledge-graph-query.js');
+        let graphHash: string | undefined;
+        if (actionOptions.expectedGraphHash) {
+          const { workspaceKnowledgeGraphRevision } =
+            await import('./workspace-graph-search-view.js');
+          graphHash = workspaceKnowledgeGraphRevision(knowledgeGraph);
+          if (graphHash !== actionOptions.expectedGraphHash) {
+            const message =
+              'Graph evidence changed since search. Rerun the scoped search before expanding its results.';
+            if (actionOptions.json)
+              console.log(
+                JSON.stringify(
+                  cliOperationError({
+                    operation: 'workspace graph evidence',
+                    code: 'workspace.graph.revision.changed',
+                    message,
+                    exitCode: 2,
+                    context: { expected: actionOptions.expectedGraphHash, actual: graphHash },
+                  })
+                )
+              );
+            else console.log(chalk.red(message));
+            process.exit(2);
+          }
+        }
         const projectId = actionOptions.scope?.startsWith('project:')
           ? actionOptions.scope.slice('project:'.length).trim()
           : undefined;
         const result = queryKnowledgeEvidence(knowledgeGraph, query, projectId);
         if (actionOptions.json) {
-          console.log(JSON.stringify(result, null, 2));
+          console.log(JSON.stringify({ ...result, ...(graphHash ? { graphHash } : {}) }, null, 2));
         } else if (result.found) {
           console.log(chalk.green(`✔ Graph evidence: ${query}`));
           for (const proof of result.proofs) {
@@ -12876,11 +13241,16 @@ See the command reference for action-specific required inputs and output artifac
         console.log(chalk.green('✔ Workspace Intelligence evaluation comparison'));
         console.log(chalk.gray(`   Task aligned: ${comparison.taskAligned ? 'yes' : 'no'}`));
         console.log(chalk.gray(`   Token delta: ${comparison.delta.tokens}`));
-        console.log(
-          chalk.gray(
-            `   Reduction: ${comparison.delta.reductionPercent === null ? 'unavailable' : `${comparison.delta.reductionPercent}%`}`
-          )
-        );
+        let reduction = `${comparison.delta.reductionPercent}%`;
+        if (comparison.baseline.tokens === 0) {
+          reduction = 'unavailable (baseline has zero tokens)';
+        } else if (comparison.delta.reductionPercent === null && !comparison.taskAligned) {
+          reduction = 'not comparable (different tasks)';
+        } else if (comparison.delta.reductionPercent === null) {
+          reduction =
+            'not comparable (requires the same recorded model and complete, consistently measured token usage)';
+        }
+        console.log(chalk.gray(`   Reduction: ${reduction}`));
         console.log(
           chalk.gray(
             `   Comparable verified outcome: ${comparison.comparableOutcome ? 'yes' : 'no'}`

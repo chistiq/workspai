@@ -9,6 +9,8 @@ import {
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
 } from './contracts/workspace-intelligence-runtime-registry.js';
 import type { WorkspaceKnowledgeGraph } from './contracts/workspace-knowledge-graph-contract.js';
+import type { WorkspaceGraphInputValidation } from './workspace-knowledge-graph.js';
+import type { WorkspaceKnowledgeGraphSnapshotResult } from './workspace-knowledge-graph-snapshot.js';
 import { assertWorkspaceArtifactContract } from './contracts/artifact-contract-registry.js';
 import { inspectGoalLifecycle } from './goal-lifecycle.js';
 import {
@@ -99,13 +101,14 @@ export interface ProjectAgentEntryManifest {
   protocol: {
     mode: 'canonical-first';
     bootstrapCommand: string;
+    taskContextCommand?: string;
     verifyCommand: string;
     requiredReadOrder: string[];
     sourcePolicy: {
       liveSourceAuthority: 'exact-implementation';
       workspaceEvidenceAuthority: 'identity-topology-readiness-goals';
       broadScanBeforeBootstrap: false;
-      sourceMutation: 'governed-only';
+      sourceMutation: 'governed-only' | 'risk-and-project-policy-based';
       verificationClaims: 'cli-evidence-only';
     };
     degradedMode: {
@@ -188,7 +191,7 @@ export interface AgentBootstrapReceipt {
   claims: {
     architecture: 'allowed-with-citations' | 'prohibited';
     sourceInspection: 'bounded-and-targeted';
-    sourceMutation: 'governed-cli-transaction-only';
+    sourceMutation: 'governed-cli-transaction-only' | 'risk-and-project-policy-based';
     verification: 'cli-evidence-only';
   };
   checks: Array<{
@@ -196,6 +199,7 @@ export interface AgentBootstrapReceipt {
     status: AgentEntryCheckStatus;
     message: string;
     artifact?: string;
+    inputValidation?: WorkspaceGraphInputValidation;
   }>;
   nextActions: string[];
   integrity: {
@@ -275,6 +279,7 @@ export function buildProjectAgentEntryManifest(input: {
     protocol: {
       mode: 'canonical-first',
       bootstrapCommand: 'workspai agent bootstrap --for-agent generic --strict --json',
+      taskContextCommand: 'workspai agent context --task "<user request>" --for-agent generic',
       verifyCommand: 'workspai project agent-entry verify --for-agent all --strict --json',
       requiredReadOrder: [
         PROJECT_AGENT_ENTRY_RELATIVE_PATH,
@@ -290,7 +295,7 @@ export function buildProjectAgentEntryManifest(input: {
         liveSourceAuthority: 'exact-implementation',
         workspaceEvidenceAuthority: 'identity-topology-readiness-goals',
         broadScanBeforeBootstrap: false,
-        sourceMutation: 'governed-only',
+        sourceMutation: 'risk-and-project-policy-based',
         verificationClaims: 'cli-evidence-only',
       },
       degradedMode: {
@@ -391,6 +396,8 @@ export async function buildAgentBootstrapReceipt(input: {
   startPath?: string;
   forAgent?: string;
   validateLiveInputs?: boolean;
+  /** Reuse this operation's validated snapshot without a second live-input scan. */
+  onSnapshot?: (snapshot: WorkspaceKnowledgeGraphSnapshotResult) => void;
   now?: Date;
 }): Promise<AgentBootstrapReceipt> {
   const resolution = resolveProjectWorkspaceSync({
@@ -599,7 +606,10 @@ export async function buildAgentBootstrapReceipt(input: {
   let liveInputCheck: AgentBootstrapReceipt['checks'][number];
   if (input.validateLiveInputs !== false) {
     try {
-      const snapshot = await readWorkspaceKnowledgeGraphSnapshot(workspacePath);
+      const snapshot = await readWorkspaceKnowledgeGraphSnapshot(workspacePath, {
+        includeInputDiagnostics: true,
+      });
+      input.onSnapshot?.(snapshot);
       liveInputsValidated = snapshot.status === 'hit';
       const liveInputMessage =
         snapshot.status === 'hit'
@@ -609,8 +619,12 @@ export async function buildAgentBootstrapReceipt(input: {
         id: 'live-inputs',
         status: liveInputsValidated ? 'passed' : 'failed',
         message: liveInputMessage,
+        ...(snapshot.status === 'miss' && snapshot.inputValidation
+          ? { inputValidation: snapshot.inputValidation }
+          : {}),
       };
     } catch {
+      input.onSnapshot?.({ status: 'miss', reason: 'input-scan-failed' });
       liveInputCheck = {
         id: 'live-inputs',
         status: 'failed',
@@ -829,7 +843,11 @@ export async function buildAgentBootstrapReceipt(input: {
           ? ('allowed-with-citations' as const)
           : ('prohibited' as const),
       sourceInspection: 'bounded-and-targeted' as const,
-      sourceMutation: 'governed-cli-transaction-only' as const,
+      // Accept durable v1 manifests without silently relaxing their older policy.
+      sourceMutation:
+        manifest.protocol.sourcePolicy.sourceMutation === 'governed-only'
+          ? ('governed-cli-transaction-only' as const)
+          : ('risk-and-project-policy-based' as const),
       verification: 'cli-evidence-only' as const,
     },
     checks,

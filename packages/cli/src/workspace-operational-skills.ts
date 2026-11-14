@@ -1,6 +1,11 @@
 import path from 'node:path';
 
 import fsExtra from 'fs-extra';
+import {
+  AGENT_RESPONSE_GUIDANCE,
+  AGENT_CONTINUATION_GUIDANCE,
+  AGENT_VERIFICATION_GUIDANCE,
+} from './agent-output-guidance.js';
 
 import { WORKSPACE_CONTEXT_AGENT_REPORT_PATH } from './workspace-context.js';
 import { WORKSPACE_VERIFY_REPORT_PATH } from './workspace-verify.js';
@@ -52,6 +57,7 @@ type SkillTemplate = {
   steps: string[];
   scopedProjects?: string[];
   applicability: 'workspace' | 'api' | 'schema' | 'dependency' | 'contract' | 'derived';
+  evidenceScope?: 'project';
 };
 
 export type WorkspaceOperationalSkillsPlan = {
@@ -67,13 +73,14 @@ const SKILL_TEMPLATES: SkillTemplate[] = [
     objective:
       'Investigate a failing API or service using Workspai evidence before editing application code.',
     steps: [
-      `Read \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentIndex}\` and identify fail/warn reports for the scoped project.`,
-      `Read \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.doctor}\`, \`doctor-project-last-run.json\`, and project-scoped run evidence if present.`,
+      'Use the task packet and project-scoped failure evidence. Read the workspace report index only when the owning failure artifact must be located.',
+      'Read exact project Doctor or run evidence when it owns the reported failure; inspect workspace Doctor evidence only for a workspace-owned failure.',
       'If a fix was requested, read `artifact-remediation-plan-last-run.json` for cross-artifact next steps, then `doctor-remediation-plan-last-run.json` for Doctor-specific file edits.',
       'Map the failure to workspace vs project scope; cite exit codes and blocker messages.',
       'Propose the smallest safe fix (config, env, dependency) with explicit verification commands.',
     ],
     applicability: 'api',
+    evidenceScope: 'project',
   },
   {
     skillId: 'workspai-release-readiness',
@@ -111,9 +118,10 @@ const SKILL_TEMPLATES: SkillTemplate[] = [
       'Scope the upgrade to the owning project from workspace model.',
       'Check transitive dependents via workspace graph / impact reports.',
       'Use registered test/build commands for affected projects; when none are registered, resolve repository-authored commands from cited manifests instead of inventing one.',
-      'Re-run `workspace verify` after evidence refresh.',
+      'Run workspace verification after evidence refresh only when a governed dependency finding or cross-project change requires it.',
     ],
     applicability: 'dependency',
+    evidenceScope: 'project',
   },
   {
     skillId: 'workspai-rename-contract',
@@ -166,7 +174,13 @@ function buildSkillMarkdown(input: {
     '',
     '## Required evidence (read first)',
     '',
-    ...CORE_REQUIRED_REPORTS.map((report) => `- \`${report}\``),
+    ...(input.template.evidenceScope === 'project'
+      ? [
+          'Use the current task packet and its scoped findings; no additional workspace report is required for routine project validation.',
+          AGENT_CONTINUATION_GUIDANCE,
+          AGENT_VERIFICATION_GUIDANCE,
+        ]
+      : CORE_REQUIRED_REPORTS.map((report) => `- \`${report}\``)),
     '',
     '## Why this skill exists here',
     '',
@@ -214,7 +228,7 @@ function buildSkillMarkdown(input: {
   lines.push(
     '## Answer contract',
     '',
-    'Return: Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions.',
+    AGENT_RESPONSE_GUIDANCE,
     '',
     '## Refresh stale evidence',
     '',
@@ -260,12 +274,13 @@ function dynamicSkillTemplates(model: WorkspaceModel): SkillTemplate[] {
       triggers: [`${runtime} build`, `${runtime} test`, `${runtime} runtime failure`],
       objective: `Validate ${runtime} changes against the detected runtime boundary, registered project commands, and canonical Workspai evidence.`,
       steps: [
-        'Read the scoped project lens and current fail/warn evidence before changing source.',
+        'Use the existing task packet and its scoped findings before changing source. If no packet is available, request task context once; do not reread the project lens or workspace reports already validated by it.',
         `Use a registered ${runtime} command only when the project model identifies ${runtime} as the primary runtime; for a composite secondary boundary, inspect its manifest and Graph proofs instead of assuming the primary adapter covers it.`,
         'Run only the affected project validation first, then verify the workspace when the change crosses a contract boundary.',
       ],
       scopedProjects: [...projects].sort(),
       applicability: 'derived',
+      evidenceScope: 'project',
     });
   }
 
@@ -303,12 +318,13 @@ function dynamicSkillTemplates(model: WorkspaceModel): SkillTemplate[] {
       objective:
         'Repair a test or coverage blocker by proving changed behavior, not merely improving a metric.',
       steps: [
-        'Read the exact Analyze, Doctor, or Goal evidence that owns the test finding.',
+        'Use the task packet and native test failure. Read exact Analyze, Doctor or Goal evidence only when it owns the reported finding.',
         'Inspect the behavior and relevant test boundary before proposing a source change.',
-        'Run the scoped test command, then the exact producer and canonical verification.',
+        'Run the scoped test command. Refresh an evidence producer or workspace verification only when a governed finding requires it.',
       ],
       scopedProjects: testProjects,
       applicability: 'derived',
+      evidenceScope: 'project',
     });
   }
 
@@ -332,10 +348,11 @@ function dynamicSkillTemplates(model: WorkspaceModel): SkillTemplate[] {
       steps: [
         'Identify whether the failing evidence is project-owned or workspace-owned.',
         'Inspect the referenced workflow or delivery artifact and its bounded proof paths.',
-        'Validate the affected project first, then refresh the exact evidence producer and verify the workspace.',
+        'Validate the affected project first; refresh an evidence producer or workspace verification only when the delivery finding requires it.',
       ],
       scopedProjects: deliveryProjects,
       applicability: 'derived',
+      evidenceScope: 'project',
     });
   }
 
@@ -344,9 +361,11 @@ function dynamicSkillTemplates(model: WorkspaceModel): SkillTemplate[] {
 
 function collectVerificationCommands(
   context: WorkspaceAgentContext | null,
-  scopedProjects: string[]
+  scopedProjects: string[],
+  projectOnly = false
 ): string[] {
   if (!context?.safeCommands?.length) {
+    if (projectOnly) return [];
     return [
       displayRapidkitCommand('workspace verify --json'),
       displayRapidkitCommand('doctor workspace --json'),
@@ -354,7 +373,11 @@ function collectVerificationCommands(
   }
   const scope = new Set(scopedProjects);
   return context.safeCommands
-    .filter((entry) => entry.scope === 'workspace' || (entry.project && scope.has(entry.project)))
+    .filter(
+      (entry) =>
+        (!projectOnly && entry.scope === 'workspace') ||
+        (entry.scope === 'project' && entry.project && scope.has(entry.project))
+    )
     .slice(0, 8)
     .map((entry) => entry.display);
 }
@@ -676,7 +699,11 @@ export function buildWorkspaceOperationalSkillsPlan(
     if (decision.status === 'suppressed') continue;
 
     const scopedProjects = decision.scopedProjects;
-    const verificationCommands = collectVerificationCommands(input.context ?? null, scopedProjects);
+    const verificationCommands = collectVerificationCommands(
+      input.context ?? null,
+      scopedProjects,
+      template.evidenceScope === 'project'
+    );
     const contractSummary = summarizeContract(input.contract ?? null, scopedProjects);
     const markdown = buildSkillMarkdown({
       template,
@@ -693,7 +720,7 @@ export function buildWorkspaceOperationalSkillsPlan(
         skillId: template.skillId,
         title: template.title,
         triggers: template.triggers,
-        requiredReports: [...CORE_REQUIRED_REPORTS],
+        requiredReports: template.evidenceScope === 'project' ? [] : [...CORE_REQUIRED_REPORTS],
         scopedProjects,
         verificationCommands,
         ...(isBuiltinOperationalSkillId(template.skillId)

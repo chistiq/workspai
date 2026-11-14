@@ -112,6 +112,42 @@ describe('workspace operational skills (Phase 4.A)', () => {
     expect(ids).not.toContain('workspai-diagnose-api-failure');
     expect(ids).not.toContain('workspai-safe-schema-migration');
     expect(ids).not.toContain('workspai-rename-contract');
+    for (const id of [
+      'workspai-node-runtime-validation',
+      'workspai-python-runtime-validation',
+      'workspai-test-evidence-recovery',
+      'workspai-delivery-evidence',
+    ]) {
+      const skill = skills.find((skill) => skill.skillId === id)!;
+      expect(skill.requiredReports).toEqual([]);
+      expect(skill.verificationCommands).toEqual([]);
+      expect(skill.markdown).toContain('locators, not a reading checklist');
+      expect(skill.markdown).toContain('silence alone is not failure');
+      expect(skill.markdown).not.toContain('`workspai workspace verify --json`');
+    }
+    const release = skills.find((skill) => skill.skillId === 'workspai-release-readiness')!;
+    expect(release.requiredReports).toContain('.workspai/reports/workspace-verify-last-run.json');
+    expect(release.verificationCommands.length).toBeGreaterThan(0);
+    const withCommands = buildWorkspaceOperationalSkills({
+      workspacePath,
+      model,
+      context: {
+        safeCommands: [
+          { scope: 'workspace', display: 'workspai workspace verify --json' },
+          {
+            scope: 'workspace',
+            project: 'web',
+            display: 'workspai workspace verify --project web --json',
+          },
+          { scope: 'project', project: 'web', display: 'workspai test --project web' },
+          { scope: 'project', project: 'unrelated', display: 'workspai test --project unrelated' },
+        ],
+      } as unknown as NonNullable<Parameters<typeof buildWorkspaceOperationalSkills>[0]['context']>,
+    });
+    expect(
+      withCommands.find((skill) => skill.skillId === 'workspai-node-runtime-validation')!
+        .verificationCommands
+    ).toEqual(['workspai test --project web']);
     expect(
       skills.find((skill) => skill.skillId === 'workspai-dependency-upgrade')?.markdown
     ).toContain('artifact:pyproject.toml');
@@ -162,8 +198,20 @@ describe('workspace operational skills (Phase 4.A)', () => {
     );
     const apiSkill = plan.skills.find((skill) => skill.skillId === 'workspai-diagnose-api-failure');
     expect(apiSkill?.scopedProjects).toEqual(['orders']);
+    expect(apiSkill?.requiredReports).toEqual([]);
+    expect(apiSkill?.markdown).toContain(
+      'Read the workspace report index only when the owning failure artifact must be located.'
+    );
+    expect(apiSkill?.markdown).not.toContain('`workspai workspace verify --json`');
     expect(apiSkill?.markdown).toContain('contract:api:orders:/orders');
     expect(apiSkill?.markdown).toContain('Registered lifecycle commands: `build`, `test`.');
+    const dependencySkill = plan.skills.find(
+      (skill) => skill.skillId === 'workspai-dependency-upgrade'
+    );
+    expect(dependencySkill?.requiredReports).toEqual([]);
+    expect(dependencySkill?.markdown).toContain(
+      'only when a governed dependency finding or cross-project change requires it'
+    );
     expect(
       plan.decisions.find((decision) => decision.skillId === 'workspai-safe-schema-migration')
     ).toMatchObject({ status: 'generated', confidence: 'high', scopedProjects: ['orders'] });

@@ -8,11 +8,9 @@ export default defineConfig({
     environment: 'node',
     setupFiles: ['src/__tests__/setup.ts'],
     // Full workspace operations perform real filesystem transactions on all
-    // three CI platforms; Linux also collects V8 coverage. Windows CI shards
-    // the full suite across runners, retaining two workers on each runner.
-    // Bound local concurrency instead of allowing
-    // timed-out work to race teardown and create EBUSY/ENOTEMPTY cascades.
-    ...(isWindows ? { maxWorkers: 2 } : {}),
+    // three CI platforms; Linux also collects V8 coverage. Bound concurrency
+    // so large runners do not overload local HTTP fixtures and race teardown.
+    maxWorkers: isWindows ? 2 : 4,
     testTimeout: isWindows ? 90_000 : 30_000,
     hookTimeout: isWindows ? 120_000 : 60_000,
     teardownTimeout: isWindows ? 60_000 : 30_000,

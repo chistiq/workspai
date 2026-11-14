@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 
-import { detectNodePackageManager } from './utils/node-package-manager.js';
+import { detectNodePackageManager, type NodePackageManager } from './utils/node-package-manager.js';
 import {
   argvPathFrom,
   getDefaultPythonCommand,
@@ -66,6 +66,7 @@ export type PolyglotRuntimeUnit = {
   root: string;
   manifest: string;
   stages: PolyglotLifecycleStage[];
+  workspaceOwner?: { root: string; manifest: string; packageManager: NodePackageManager };
 };
 
 export type PolyglotLifecyclePlan = {
@@ -634,7 +635,11 @@ function pythonLifecycleStages(input: {
   ];
 }
 
-function nodeStages(root: string, contents: string): PolyglotLifecycleStage[] {
+function nodeStages(
+  root: string,
+  contents: string,
+  workspaceOwner?: WorkspaceBoundary
+): PolyglotLifecycleStage[] {
   let scripts: Record<string, unknown> = {};
   try {
     const payload = JSON.parse(contents) as { scripts?: unknown };
@@ -644,10 +649,12 @@ function nodeStages(root: string, contents: string): PolyglotLifecycleStage[] {
   } catch {
     // The install stage remains usable for a malformed scripts object.
   }
-  const runner = detectNodePackageManager(root);
+  const runner = detectNodePackageManager(workspaceOwner?.root ?? root);
   const run = (name: string): string => `${runner} run ${name}`;
   return [
-    stage('init', runner === 'yarn' ? 'yarn install' : `${runner} install`),
+    // Workspace dependency installation belongs to the owning root. A targeted
+    // member view must not recommend an independent install or lockfile.
+    ...(!workspaceOwner ? [stage('init', `${runner} install`)] : []),
     ...(typeof scripts.test === 'string' ? [stage('test', run('test'))] : []),
     ...(typeof scripts.build === 'string' ? [stage('build', run('build'))] : []),
     ...(typeof scripts.start === 'string' ? [stage('start', run('start'))] : []),
@@ -685,7 +692,11 @@ function pythonTestCommand(
     : `${python} -m unittest discover -s tests`;
 }
 
-function manifestUnit(projectRoot: string, manifest: string): PolyglotRuntimeUnit | null {
+function manifestUnit(
+  projectRoot: string,
+  manifest: string,
+  nodeWorkspaceOwner?: WorkspaceBoundary
+): PolyglotRuntimeUnit | null {
   const name = path.basename(manifest);
   const root = path.dirname(manifest);
   const relativeRoot = portableRelative(projectRoot, root);
@@ -734,7 +745,7 @@ function manifestUnit(projectRoot: string, manifest: string): PolyglotRuntimeUni
       fs.existsSync(path.join(root, '.bunfig.toml'));
     runtime = bunOwned ? 'bun' : 'node';
     ecosystem = bunOwned ? 'bun' : 'npm';
-    stages = nodeStages(root, contents);
+    stages = nodeStages(root, contents, nodeWorkspaceOwner);
   } else if (name === 'deno.json' || name === 'deno.jsonc') {
     runtime = 'deno';
     ecosystem = 'deno';
@@ -929,12 +940,24 @@ function manifestUnit(projectRoot: string, manifest: string): PolyglotRuntimeUni
     root: relativeRoot,
     manifest: relativeManifest,
     stages,
+    ...(nodeWorkspaceOwner
+      ? {
+          workspaceOwner: {
+            root: portableRelative(projectRoot, nodeWorkspaceOwner.root),
+            manifest: portableRelative(
+              projectRoot,
+              path.join(nodeWorkspaceOwner.root, 'package.json')
+            ),
+            packageManager: detectNodePackageManager(nodeWorkspaceOwner.root),
+          },
+        }
+      : {}),
   };
 }
 
 export function buildPolyglotLifecyclePlan(
   projectPath: string,
-  options: { maxDepth?: number; includeExamples?: boolean } = {}
+  options: { maxDepth?: number; includeExamples?: boolean; includeWorkspaceMembers?: boolean } = {}
 ): PolyglotLifecyclePlan {
   const projectRoot = path.resolve(projectPath);
   const manifests = listManifests(projectRoot, Math.max(0, Math.min(options.maxDepth ?? 4, 12)));
@@ -946,9 +969,25 @@ export function buildPolyglotLifecyclePlan(
     .filter((manifest) => !isNestedGradleSubproject(projectRoot, manifest))
     .filter((manifest) => !isOwnedCmakeSubproject(projectRoot, manifest))
     .filter((manifest) => hasNodeLifecycleEvidence(manifest))
-    .filter((manifest) => !isOwnedWorkspaceMember(manifest, nodeBoundaries, 'package.json'))
-    .filter((manifest) => !isOwnedWorkspaceMember(manifest, cargoBoundaries, 'Cargo.toml'))
-    .map((manifest) => manifestUnit(projectRoot, manifest))
+    .filter(
+      (manifest) =>
+        options.includeWorkspaceMembers === true ||
+        !isOwnedWorkspaceMember(manifest, nodeBoundaries, 'package.json')
+    )
+    .filter(
+      (manifest) =>
+        options.includeWorkspaceMembers === true ||
+        !isOwnedWorkspaceMember(manifest, cargoBoundaries, 'Cargo.toml')
+    )
+    .map((manifest) => {
+      const owner =
+        path.basename(manifest) === 'package.json'
+          ? nodeBoundaries
+              .filter((boundary) => boundaryOwnsDirectory(boundary, path.dirname(manifest)))
+              .sort((left, right) => right.root.length - left.root.length)[0]
+          : undefined;
+      return manifestUnit(projectRoot, manifest, owner);
+    })
     .filter((unit): unit is PolyglotRuntimeUnit => Boolean(unit))
     .filter((unit) => options.includeExamples === true || unit.role !== 'example')
     .sort(

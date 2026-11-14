@@ -229,7 +229,7 @@ export function createWorkspaceEvaluation(input: {
     methodology: {
       id: 'provider-usage-and-verified-outcome.v1',
       claimBoundary:
-        'Provider-reported and tokenizer-counted values are measured; estimated values remain explicitly labelled. Verified task success is required before reporting tokens per successful outcome.',
+        'Provider-reported and tokenizer-counted values are measured; estimated values remain explicitly labelled. Token reduction requires aligned tasks, recorded model configuration, and complete consistent usage. Verified success is required before reporting tokens per successful outcome.',
     },
     events: [],
     summary: emptySummary(),
@@ -354,6 +354,40 @@ export async function finalizeWorkspaceEvaluation(input: {
   });
 }
 
+function comparableModelIdentity(report: WorkspaceIntelligenceEvaluation): string | null {
+  const modelCalls = report.events.filter((event) => event.kind === 'model-call');
+  if (modelCalls.length === 0) return null;
+  const identities = new Set(
+    modelCalls.map((event) => JSON.stringify([event.modelCall.provider, event.modelCall.model]))
+  );
+  return identities.size === 1 ? ([...identities][0] ?? null) : null;
+}
+
+function comparableTokenSource(report: WorkspaceIntelligenceEvaluation): string | null {
+  const modelCalls = report.events.filter((event) => event.kind === 'model-call');
+  if (modelCalls.length === 0) return null;
+  if (
+    modelCalls.some(
+      (event) =>
+        (event.modelCall.source !== 'provider-reported' &&
+          event.modelCall.source !== 'tokenizer-counted') ||
+        event.modelCall.inputTokens === null ||
+        event.modelCall.outputTokens === null ||
+        (event.modelCall.source === 'tokenizer-counted' && !event.modelCall.tokenizer?.trim())
+    )
+  ) {
+    return null;
+  }
+  const sources = new Set(
+    modelCalls.map((event) =>
+      event.modelCall.source === 'tokenizer-counted'
+        ? `${event.modelCall.source}:${event.modelCall.tokenizer ?? ''}`
+        : event.modelCall.source
+    )
+  );
+  return sources.size === 1 ? ([...sources][0] ?? null) : null;
+}
+
 export function compareWorkspaceEvaluations(
   current: WorkspaceIntelligenceEvaluation,
   baseline: WorkspaceIntelligenceEvaluation
@@ -361,10 +395,19 @@ export function compareWorkspaceEvaluations(
   const currentTokens = current.summary.tokens.observedTotal;
   const baselineTokens = baseline.summary.tokens.observedTotal;
   const tokenDelta = currentTokens - baselineTokens;
+  const taskAligned = current.configuration.taskId === baseline.configuration.taskId;
+  const sameModelConfiguration =
+    comparableModelIdentity(current) !== null &&
+    comparableModelIdentity(current) === comparableModelIdentity(baseline) &&
+    current.configuration.temperature === baseline.configuration.temperature;
+  const tokenSource = comparableTokenSource(current);
+  const tokenMeasurementAligned =
+    tokenSource !== null && tokenSource === comparableTokenSource(baseline);
+  const tokenComparisonAllowed = taskAligned && sameModelConfiguration && tokenMeasurementAligned;
   const comparison: WorkspaceIntelligenceEvaluationComparison = {
     schemaVersion: WORKSPACE_INTELLIGENCE_EVALUATION_COMPARISON_SCHEMA_VERSION,
     generatedAt: new Date().toISOString(),
-    taskAligned: current.configuration.taskId === baseline.configuration.taskId,
+    taskAligned,
     current: {
       runId: current.runId,
       strategy: current.configuration.strategy,
@@ -382,12 +425,16 @@ export function compareWorkspaceEvaluations(
     delta: {
       tokens: tokenDelta,
       reductionPercent:
-        baselineTokens === 0 ? null : Number(((-tokenDelta / baselineTokens) * 100).toFixed(2)),
+        !tokenComparisonAllowed || baselineTokens === 0
+          ? null
+          : Number(((-tokenDelta / baselineTokens) * 100).toFixed(2)),
       modelCalls: current.summary.modelCalls - baseline.summary.modelCalls,
       toolCalls: current.summary.toolCalls - baseline.summary.toolCalls,
       latencyMs: Number((current.summary.latencyMs - baseline.summary.latencyMs).toFixed(2)),
     },
     comparableOutcome:
+      taskAligned &&
+      sameModelConfiguration &&
       current.summary.outcome.verified &&
       baseline.summary.outcome.verified &&
       current.summary.outcome.status === baseline.summary.outcome.status,

@@ -1915,6 +1915,64 @@ export async function inspectProofCarryingChange(input: {
 }): Promise<ChangeOperationResult> {
   const { lease, record } = await loadChange(input.workspacePath, input.changeId);
   const capsule = await buildCapsule({ workspacePath: input.workspacePath, lease, record });
+  const transaction = record.transaction;
+  const blockers = new Set(transaction.blockers.map((blocker) => blocker.code));
+  const latestReceipt = (criterionId: string) =>
+    transaction.verifications.filter((receipt) => receipt.criterionId === criterionId).at(-1);
+  const missingCriteria = transaction.requiredCriteria.filter(
+    (criterionId) => latestReceipt(criterionId)?.status !== 'passed'
+  );
+  let recoveryActions: string[] = [];
+  if (transaction.state === 'blocked' || transaction.state === 'awaiting-human') {
+    if (
+      blockers.has('change.effect_receipt.missing') ||
+      blockers.has('change.effect_receipt.coverage_missing')
+    ) {
+      recoveryActions = [
+        `workspai change resume --change ${input.changeId} --to authorized --reason "Record receipts for observed changes" --json`,
+        `workspai change effect record --change ${input.changeId} --file <effect-receipt.json> --json`,
+      ];
+    } else if (blockers.has('decision.verification.failed')) {
+      const workspaceVerificationPassed = latestReceipt('workspace-verify')?.status === 'passed';
+      recoveryActions = workspaceVerificationPassed
+        ? [
+            `Resolve the failed criterion, then record a fresh passing receipt.`,
+            `workspai change resume --change ${input.changeId} --to verifying --reason "Retry verification after remediation" --json`,
+            `workspai change verification record --change ${input.changeId} --file <verification-receipt.json> --json`,
+          ]
+        : [
+            `Resolve the reported Workspace Verify blockers, then rerun verification.`,
+            `workspai change resume --change ${input.changeId} --to authorized --reason "Rerun Workspace Verify after remediation" --json`,
+            `workspai change verify --change ${input.changeId} --json`,
+          ];
+    } else if (blockers.has('change.verification.criteria_missing')) {
+      const workspaceVerificationPassed = latestReceipt('workspace-verify')?.status === 'passed';
+      recoveryActions = workspaceVerificationPassed
+        ? [
+            `Record passing verification receipt(s) for: ${missingCriteria.join(', ') || 'the remaining Goal criteria'}.`,
+            `workspai change verification record --change ${input.changeId} --file <verification-receipt.json> --json`,
+          ]
+        : [
+            `Resolve the reported Workspace Verify blockers, then resume and rerun verification.`,
+            `workspai change resume --change ${input.changeId} --to authorized --reason "Rerun Workspace Verify after resolving blockers" --json`,
+            `workspai change verify --change ${input.changeId} --json`,
+          ];
+    } else if (
+      transaction.state === 'awaiting-human' ||
+      blockers.has('decision.verification.inconclusive')
+    ) {
+      recoveryActions = [
+        `Resolve the pending human verification question before resuming this change.`,
+        `workspai change explain --change ${input.changeId} --json`,
+        `workspai change resume --change ${input.changeId} --to verifying --reason "Human resolved the pending verification question" --json`,
+      ];
+    } else {
+      recoveryActions = [
+        `workspai change explain --change ${input.changeId} --json`,
+        `This blocker is not automatically resumable; resolve it or start a new Goal/change rather than replaying completed effects.`,
+      ];
+    }
+  }
   return result({
     operation: input.operation ?? 'status',
     lease,
@@ -1927,7 +1985,7 @@ export async function inspectProofCarryingChange(input: {
           ]
         : record.transaction.state === 'authorized' || record.transaction.state === 'executing'
           ? [`workspai change verify --change ${input.changeId} --json`]
-          : [],
+          : recoveryActions,
   });
 }
 

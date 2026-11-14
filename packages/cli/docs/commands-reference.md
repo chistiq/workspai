@@ -85,6 +85,7 @@ npx workspai create project agent.microsoft.dotnet <name> [--agent-name <name>] 
 npx workspai create project gateway.openrouter.typescript <name> [--skip-git] [--json]
 npx workspai create project gateway.openrouter.python <name> [--skip-git] [--json]
 npx workspai agent bootstrap [--project <path>] [--for-agent <host>] [--no-live-inputs] [--strict] [--json]
+npx workspai agent context --task <request> [--project <path>] [--path <relative-path>] [--for-agent <host>] [--limit <1–12>] [--max-bytes <8192–131072>]
 npx workspai agent framework list [--json]
 npx workspai agent framework plan --project <name> --runtime <python|dotnet|node> [--framework <id>] --name <agent> [--goal <goal-id>] [--workspace <path>] [--json]
 npx workspai agent framework attach --project <name> --runtime <python|dotnet|node> [--framework <id>] --name <agent> [-y] [--granted-by <identity>] [--workspace <path>] [--json]
@@ -276,6 +277,18 @@ the same receipt and can audit every supported host with `--for-agent all`.
 Blocked receipts exit `2`; strict mode also maps degraded evidence to exit `2`.
 See [Canonical-first agent entry](./agent-entry.md).
 
+`agent context` prepares one bounded, read-only packet for a specific task. It
+combines the exact project binding, compact bootstrap grounding, project-scoped
+Graph discovery and lifecycle checks for the nearest runtime manifest. Missing
+or stale Workspai evidence is explicit and does not prevent native project
+work. The packet grants no mutation authority; existing-project adoption stays
+an explicit user choice. The default budget is 32 KiB, and an over-budget
+packet is rejected whole rather than silently truncated.
+This is the primary generated task-entry route; separate bootstrap and
+membership commands are not additional prerequisites. Budget recovery reports
+the aggregate retry size, and targeted `--path` selection can discover Node
+and Cargo workspace members without changing default workspace execution.
+
 `agent framework` is the governed bridge between Workspai evidence and an
 agent runtime. `list` exposes every built-in adapter and its release-admission
 state. The current candidates are Microsoft Python `1.23.0` and .NET `1.26.0`,
@@ -387,6 +400,12 @@ cost, latency, and verified task outcome. `eval record` accepts a
 `model-usage-event.v1` JSON document on stdin. The live and finalized artifacts
 are suitable for IDE dashboards and conform to
 `workspace-intelligence-evaluation.v1`.
+
+`workspace eval compare` always preserves raw deltas, but reports a token
+reduction percentage only for the same task and recorded provider/model,
+temperature, complete token counts, and consistent measured source. Estimated,
+unavailable, partial, mixed-source, or multi-model runs do not support a token
+reduction claim.
 
 `workspace model --write` also materializes the derived, contract-validated
 knowledge graph once at

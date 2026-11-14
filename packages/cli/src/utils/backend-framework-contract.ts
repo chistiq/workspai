@@ -1072,13 +1072,44 @@ function detectDotnetBackendFromProject(projectPath: string): BackendFrameworkDe
 
 function detectRustBackendFromProject(projectPath: string): BackendFrameworkDetection {
   const cargoToml = readTextIfExists(path.join(projectPath, 'Cargo.toml'));
-  if (cargoToml.includes('actix-web')) {
+  // Workspace catalogs, dev/build dependencies and comments do not establish
+  // an application's framework. A member may explicitly opt into a shared
+  // dependency with `workspace = true`; the catalog by itself is not usage.
+  const dependencies = new Map<string, string>();
+  let table = '';
+  for (const line of cargoToml.split(/\r?\n/u)) {
+    const header = /^\s*\[([^\]]+)\]\s*(?:#.*)?$/u.exec(line);
+    if (header) {
+      table = header[1];
+      continue;
+    }
+    const entry = /^\s*["']?([a-z0-9_-]+)["']?\s*=\s*(.*)/u.exec(line);
+    if (!entry || table.startsWith('workspace.')) continue;
+    if (/^(?:target\..+\.)?dependencies$/u.test(table)) {
+      const renamed = /(?:^|[,{])\s*package\s*=\s*["']([^"']+)["']/u.exec(entry[2]);
+      dependencies.set(entry[1], renamed?.[1] ?? entry[1]);
+    } else {
+      const dependencyTable = /^(?:target\..+\.)?dependencies\.["']?([a-z0-9_-]+)["']?$/u.exec(
+        table
+      );
+      if (dependencyTable) {
+        if (!dependencies.has(dependencyTable[1]))
+          dependencies.set(dependencyTable[1], dependencyTable[1]);
+        if (entry[1] === 'package') {
+          const renamed = /^["']([^"']+)["']/u.exec(entry[2]);
+          if (renamed) dependencies.set(dependencyTable[1], renamed[1]);
+        }
+      }
+    }
+  }
+  const packages = new Set(dependencies.values());
+  if (packages.has('actix-web')) {
     return buildDetection('actix', 'high', 'manifest');
   }
-  if (cargoToml.includes('axum')) {
+  if (packages.has('axum')) {
     return buildDetection('axum', 'high', 'manifest');
   }
-  if (cargoToml.includes('rocket')) {
+  if (packages.has('rocket')) {
     return buildDetection('rocket', 'high', 'manifest');
   }
   if (cargoToml.trim()) {

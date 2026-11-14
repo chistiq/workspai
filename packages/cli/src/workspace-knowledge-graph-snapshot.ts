@@ -8,8 +8,10 @@ import type { WorkspaceKnowledgeGraph } from './contracts/workspace-knowledge-gr
 import type { WorkspaceModel } from './workspace-model.js';
 import {
   assertWorkspaceKnowledgeGraphSourceBinding,
-  workspaceKnowledgeGraphInputsMatchLiveState,
+  inspectWorkspaceKnowledgeGraphInputs,
+  workspaceKnowledgeGraphProvidersMatchRuntime,
 } from './workspace-knowledge-graph.js';
+import type { WorkspaceGraphInputValidation } from './workspace-knowledge-graph.js';
 import { firstExistingWorkspaceArtifactPath } from './utils/artifact-path-compat.js';
 
 export type WorkspaceKnowledgeGraphSnapshotResult =
@@ -32,7 +34,9 @@ export type WorkspaceKnowledgeGraphSnapshotResult =
         | 'live-input-mismatch'
         | 'input-scan-failed'
         | 'stale-proof'
+        | 'provider-mismatch'
         | 'source-mismatch';
+      inputValidation?: WorkspaceGraphInputValidation;
     };
 
 function record(value: unknown): Record<string, unknown> | null {
@@ -82,7 +86,8 @@ async function readJson(path: string): Promise<unknown> {
  * authoritative refresh operations.
  */
 export async function readWorkspaceKnowledgeGraphSnapshot(
-  workspacePath: string
+  workspacePath: string,
+  options: { includeInputDiagnostics?: boolean } = {}
 ): Promise<WorkspaceKnowledgeGraphSnapshotResult> {
   const [modelPath, graphPath] = await Promise.all([
     firstExistingWorkspaceArtifactPath(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.model),
@@ -101,6 +106,9 @@ export async function readWorkspaceKnowledgeGraphSnapshot(
   if (!isWorkspaceModel(modelCandidate)) return { status: 'miss', reason: 'invalid-model' };
   if (!isWorkspaceKnowledgeGraph(graphCandidate)) {
     return { status: 'miss', reason: 'invalid-graph' };
+  }
+  if (!workspaceKnowledgeGraphProvidersMatchRuntime(graphCandidate)) {
+    return { status: 'miss', reason: 'provider-mismatch' };
   }
   if (graphCandidate.proofs.some((proof) => proof.freshness === 'stale')) {
     return { status: 'miss', reason: 'stale-proof' };
@@ -127,9 +135,9 @@ export async function readWorkspaceKnowledgeGraphSnapshot(
   ) {
     return { status: 'miss', reason: 'invalid-input-fingerprint' };
   }
-  let liveInputsMatch: boolean;
+  let inputValidation: WorkspaceGraphInputValidation;
   try {
-    liveInputsMatch = await workspaceKnowledgeGraphInputsMatchLiveState({
+    inputValidation = await inspectWorkspaceKnowledgeGraphInputs({
       workspacePath,
       projects: modelCandidate.projects.map((project) => ({
         id: project.name,
@@ -141,8 +149,14 @@ export async function readWorkspaceKnowledgeGraphSnapshot(
   } catch {
     return { status: 'miss', reason: 'input-scan-failed' };
   }
-  if (!liveInputsMatch) {
-    return { status: 'miss', reason: 'live-input-mismatch' };
+  if (!inputValidation.matches) {
+    return {
+      status: 'miss',
+      reason: inputValidation.findings.some((finding) => finding.reason === 'scan-failed')
+        ? 'input-scan-failed'
+        : 'live-input-mismatch',
+      ...(options.includeInputDiagnostics ? { inputValidation } : {}),
+    };
   }
   return {
     status: 'hit',

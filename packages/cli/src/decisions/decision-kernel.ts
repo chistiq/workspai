@@ -217,12 +217,29 @@ function applyEvent(
       assert(current.state === 'verifying', 'verification-recorded requires verifying state');
       assert(event.payload.verification, 'verification-recorded requires a receipt');
       verifications = appendVerification(current, event.payload.verification, ports);
-      state =
-        event.payload.verification.status === 'failed'
-          ? 'blocked'
-          : event.payload.verification.status === 'inconclusive'
-            ? 'awaiting-human'
-            : 'verifying';
+      if (event.payload.verification.status === 'failed') {
+        state = 'blocked';
+        blockers = [
+          ...blockers,
+          {
+            code: 'decision.verification.failed',
+            actionable: true,
+            details: `${event.payload.verification.criterionId}: ${event.payload.verification.summary}`,
+          },
+        ];
+      } else if (event.payload.verification.status === 'inconclusive') {
+        state = 'awaiting-human';
+        blockers = [
+          ...blockers,
+          {
+            code: 'decision.verification.inconclusive',
+            actionable: true,
+            details: `${event.payload.verification.criterionId}: ${event.payload.verification.summary}`,
+          },
+        ];
+      } else {
+        state = 'verifying';
+      }
       break;
     }
     case 'human-required':

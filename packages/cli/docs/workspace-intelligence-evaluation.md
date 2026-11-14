@@ -119,9 +119,15 @@ compare:
 npx workspai workspace eval compare --from .workspai/reports/baselines/full-corpus.json --json
 ```
 
-The comparison reports token, model-call, tool-call, latency, and verified
-outcome differences. A smaller prompt is not treated as a better result unless
-the outcomes are task-aligned and independently verified.
+The comparison reports raw token, model-call, tool-call and latency deltas, but
+emits a token-reduction percentage only when task IDs match, every recorded call
+uses the same provider/model and temperature, and both runs have complete input
+and output counts from the same measured source (`provider-reported` or the same
+named tokenizer). Estimated, unavailable, partial, mixed-source, or multi-model
+usage remains visible in the run reports but is not used for a reduction claim.
+A verified-outcome comparison additionally requires both outcomes to be
+independently verified and have the same status. Raw deltas remain available for
+inspection when these comparison conditions do not hold.
 
 Comparison JSON conforms to
 [`workspace-intelligence-evaluation-comparison.v1.json`](../contracts/workspace-intelligence/workspace-intelligence-evaluation-comparison.v1.json),

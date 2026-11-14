@@ -329,6 +329,7 @@ function isTestOrFixtureArtifact(root: string, filePath: string): boolean {
     segments.some((segment) => TEST_OR_FIXTURE_DIRECTORIES.has(segment)) ||
     /(?:\.test|\.spec|_test)\.[a-z0-9]+$/i.test(base) ||
     /^test_.+\.[a-z0-9]+$/i.test(base) ||
+    /^(?:tests?|specs?)\.[a-z0-9]+$/i.test(base) ||
     /(?:tests?|specs?)\.(?:cs|fs|vb|java|kt|kts)$/i.test(base)
   );
 }
@@ -343,6 +344,18 @@ function isExampleArtifact(root: string, filePath: string): boolean {
 
 function isNonProductionArtifact(root: string, filePath: string): boolean {
   return isTestOrFixtureArtifact(root, filePath) || isExampleArtifact(root, filePath);
+}
+
+function isTestSourceArtifact(root: string, filePath: string): boolean {
+  const segments = toPosix(path.relative(root, filePath)).toLowerCase().split('/');
+  return (
+    SOURCE_EXTENSIONS.has(path.extname(filePath).toLowerCase()) &&
+    isTestOrFixtureArtifact(root, filePath) &&
+    !segments.some((segment) =>
+      ['fixture', 'fixtures', '__fixtures__', 'testdata'].includes(segment)
+    ) &&
+    !isExampleArtifact(root, filePath)
+  );
 }
 
 function isGeneratedArtifact(root: string, filePath: string): boolean {
@@ -379,6 +392,41 @@ const MANIFEST_NAMES = new Set([
 ]);
 
 const ARCHITECTURE_CONTROL_NAMES = new Set([...MANIFEST_NAMES, 'go.work', 'go.work.sum']);
+
+/** Directory evidence, not an inferred primary framework for the whole repo. */
+function packageManifestLocator(project: ResolvedProject, files: readonly string[]) {
+  const manifestsByDirectory = new Map<string, string[]>();
+  for (const file of files) {
+    if (!MANIFEST_NAMES.has(path.basename(file)) || isNonProductionArtifact(project.root, file))
+      continue;
+    const directory = path.dirname(file);
+    const manifests = manifestsByDirectory.get(directory) ?? [];
+    manifests.push(
+      safeArtifact(
+        path.posix.join(project.artifactPrefix, toPosix(path.relative(project.root, file)))
+      )
+    );
+    manifestsByDirectory.set(directory, manifests);
+  }
+  return (file: string): string[] => {
+    let directory = path.dirname(file);
+    while (true) {
+      const manifests = manifestsByDirectory.get(directory);
+      if (manifests) return [...manifests].sort();
+      if (directory === project.root) return [];
+      const parent = path.dirname(directory);
+      const relative = path.relative(project.root, parent);
+      if (
+        parent === directory ||
+        relative === '..' ||
+        relative.startsWith(`..${path.sep}`) ||
+        path.isAbsolute(relative)
+      )
+        return [];
+      directory = parent;
+    }
+  };
+}
 
 const HTTP_METHODS = new Set(['get', 'put', 'post', 'delete', 'options', 'head', 'patch', 'trace']);
 const SOURCE_EXTENSIONS = new Set([
@@ -1061,6 +1109,74 @@ function sourceCodeForExtraction(filePath: string, contents: string): string {
   );
 }
 
+function testReferenceIdentifiers(filePath: string, contents: string): string[] {
+  const hashComments = ['.py', '.rb', '.sh', '.ex', '.exs', '.r', '.jl', '.pl', '.ps1'].includes(
+    path.extname(filePath).toLowerCase()
+  );
+  const rust = path.extname(filePath).toLowerCase() === '.rs';
+  let code = '';
+  let cursor = 0;
+  while (cursor < contents.length) {
+    const rest = contents.slice(cursor);
+    if (rest.startsWith('//') || (hashComments && rest.startsWith('#'))) {
+      const end = contents.indexOf('\n', cursor);
+      cursor = end < 0 ? contents.length : end;
+      code += ' ';
+      continue;
+    }
+    if (rest.startsWith('/*')) {
+      const end = contents.indexOf('*/', cursor + 2);
+      cursor = end < 0 ? contents.length : end + 2;
+      code += ' ';
+      continue;
+    }
+    const raw = rust ? /^(?:br|r)(#{0,32})"/u.exec(rest) : null;
+    if (raw) {
+      const endMarker = `"${raw[1]}`;
+      const end = contents.indexOf(endMarker, cursor + raw[0].length);
+      cursor = end < 0 ? contents.length : end + endMarker.length;
+      code += ' ';
+      continue;
+    }
+    const character = contents[cursor];
+    // Rust lifetime annotations are not character literals.
+    const lifetime = rust && character === "'" ? /^'[A-Za-z_]\w*(?![\w'])/u.exec(rest) : null;
+    if (lifetime && rest[lifetime[0].length] !== "'") {
+      code += lifetime[0];
+      cursor += lifetime[0].length;
+      continue;
+    }
+    if (character === '"' || character === "'" || character === '`') {
+      const triple = contents.startsWith(character.repeat(3), cursor);
+      const delimiter = triple ? character.repeat(3) : character;
+      cursor += delimiter.length;
+      while (cursor < contents.length) {
+        if (contents[cursor] === '\\') {
+          cursor += 2;
+          continue;
+        }
+        if (contents.startsWith(delimiter, cursor)) {
+          cursor += delimiter.length;
+          break;
+        }
+        cursor += 1;
+      }
+      code += ' ';
+      continue;
+    }
+    code += character;
+    cursor += 1;
+  }
+  const identifiers = new Set<string>();
+  for (const match of code.matchAll(
+    /\b([A-Za-z_]\w{2,79})\s*(?:\(|::|\.)|(?:[:*&]|->)\s*([A-Za-z_]\w{2,79})/gu
+  )) {
+    identifiers.add(match[1] ?? match[2]);
+    if (identifiers.size >= 256) break;
+  }
+  return [...identifiers].sort();
+}
+
 const ROUTE_PATTERNS = [
   {
     pattern: /@(?:Get|Post|Put|Delete|Patch|Options|Head)\s*\(\s*["']([^"']*)["']/i,
@@ -1594,14 +1710,13 @@ async function gitFingerprintScope(input: {
   }
 }
 
-async function persistedGitFingerprintMatches(input: {
+async function persistedGitFingerprintHash(input: {
   kind: 'workspace' | 'project';
   id: string;
   root: string;
   fileLimit: number;
-  expectedHash: string;
   excludedRoots?: readonly string[];
-}): Promise<boolean | null> {
+}): Promise<string | null> {
   try {
     const rawScopePrefix = (await gitOutput(input.root, ['rev-parse', '--show-prefix']))
       .toString('utf8')
@@ -1701,7 +1816,7 @@ async function persistedGitFingerprintMatches(input: {
     digest.update(tree);
     digest.update(createHash('sha256').update(diff).digest());
     for (const entry of extras) digest.update(`${entry.path}\0${entry.hash}\0`);
-    return digest.digest('hex') === input.expectedHash;
+    return digest.digest('hex');
   } catch {
     return null;
   }
@@ -1899,13 +2014,44 @@ function workspaceKnowledgeGraphInputAggregate(
  * use the exact git-worktree-v2 digest without walking every tracked file;
  * scopes that cannot prove that fast path fall back to the complete inventory.
  */
-export async function workspaceKnowledgeGraphInputsMatchLiveState(input: {
+export type WorkspaceGraphInputFinding = {
+  scope: { kind: 'workspace' | 'project'; id: string };
+  reason:
+    | 'aggregate-mismatch'
+    | 'membership-mismatch'
+    | 'content-changed'
+    | 'inventory-changed'
+    | 'scan-failed';
+  expectedHash?: string;
+  actualHash?: string;
+};
+
+export type WorkspaceGraphInputValidation = {
+  matches: boolean;
+  findings: WorkspaceGraphInputFinding[];
+  omittedFindings: number;
+};
+
+/** Read-only diagnostics use logical scopes and hashes, never absolute paths or contents. */
+export async function inspectWorkspaceKnowledgeGraphInputs(input: {
   workspacePath: string;
   projects: readonly KnowledgeGraphFingerprintProject[];
   expected: WorkspaceKnowledgeGraphInputFingerprint;
-}): Promise<boolean> {
+}): Promise<WorkspaceGraphInputValidation> {
+  const findings: WorkspaceGraphInputFinding[] = [];
+  let omittedFindings = 0;
+  const add = (finding: WorkspaceGraphInputFinding): void => {
+    if (findings.length < 8) findings.push(finding);
+    else omittedFindings += 1;
+  };
+  const result = (): WorkspaceGraphInputValidation => ({
+    matches: findings.length === 0 && omittedFindings === 0,
+    findings,
+    omittedFindings,
+  });
   if (workspaceKnowledgeGraphInputAggregate(input.expected.scopes).hash !== input.expected.hash) {
-    return false;
+    add({ scope: { kind: 'workspace', id: 'workspace' }, reason: 'aggregate-mismatch' });
+    return result();
   }
   const workspacePath = path.resolve(input.workspacePath);
   const projects = [...input.projects].sort((left, right) => left.id.localeCompare(right.id));
@@ -1913,78 +2059,109 @@ export async function workspaceKnowledgeGraphInputsMatchLiveState(input: {
     resolveKnowledgeProjectRoot(workspacePath, project)
   );
   const projectById = new Map(projects.map((project) => [project.id, project] as const));
+  const expectedIds = input.expected.scopes
+    .filter((scope) => scope.kind === 'project')
+    .map((scope) => scope.id)
+    .sort();
+  if (JSON.stringify(expectedIds) !== JSON.stringify(projects.map((project) => project.id))) {
+    add({ scope: { kind: 'workspace', id: 'workspace' }, reason: 'membership-mismatch' });
+  }
 
   for (const expectedScope of input.expected.scopes) {
-    const project =
-      expectedScope.kind === 'project' ? projectById.get(expectedScope.id) : undefined;
-    if (expectedScope.kind === 'project' && !project) return false;
-    const root = project ? resolveKnowledgeProjectRoot(workspacePath, project) : workspacePath;
+    const scope = { kind: expectedScope.kind, id: expectedScope.id };
+    try {
+      const project =
+        expectedScope.kind === 'project' ? projectById.get(expectedScope.id) : undefined;
+      if (expectedScope.kind === 'project' && !project) {
+        add({ scope, reason: 'membership-mismatch' });
+        continue;
+      }
+      const root = project ? resolveKnowledgeProjectRoot(workspacePath, project) : workspacePath;
 
-    if (expectedScope.strategy === 'git-worktree-v2') {
-      const fastMatch = await persistedGitFingerprintMatches({
+      if (expectedScope.strategy === 'git-worktree-v2') {
+        const actualHash = await persistedGitFingerprintHash({
+          kind: expectedScope.kind,
+          id: expectedScope.id,
+          root,
+          fileLimit: expectedScope.fileLimit,
+          ...(expectedScope.kind === 'workspace' ? { excludedRoots: projectRoots } : {}),
+        });
+        if (actualHash !== null) {
+          if (actualHash !== expectedScope.hash)
+            add({ scope, reason: 'content-changed', expectedHash: expectedScope.hash, actualHash });
+          continue;
+        }
+      }
+
+      const rawInventory = await projectFileInventory(
+        root,
+        expectedScope.fileLimit,
+        expectedScope.kind === 'workspace' ? projectRoots : []
+      );
+      const files =
+        expectedScope.kind === 'workspace'
+          ? rawInventory.files.filter(
+              (file) =>
+                !projectRoots.some(
+                  (projectRoot) =>
+                    file === projectRoot || file.startsWith(`${projectRoot}${path.sep}`)
+                )
+            )
+          : rawInventory.files;
+      const inventory: ProjectFileInventory = {
+        ...rawInventory,
+        files,
+        eligibleFileCount:
+          rawInventory.eligibleFileCountExact && !rawInventory.truncated
+            ? files.length
+            : rawInventory.eligibleFileCount,
+      };
+      const selection = expectedScope.selection
+        ? {
+            strategy: 'component-language-round-robin-v1' as const,
+            semanticFileCount: Math.min(
+              inventory.files.length,
+              expectedScope.selection.semanticFileBudget
+            ),
+            semanticFileBudget: expectedScope.selection.semanticFileBudget,
+            deepFileCount: Math.min(inventory.files.length, expectedScope.selection.deepFileBudget),
+            deepFileBudget: expectedScope.selection.deepFileBudget,
+            sourceExtractionFileBudget: expectedScope.selection.sourceExtractionFileBudget,
+          }
+        : undefined;
+      const actualScope = await fingerprintScope({
         kind: expectedScope.kind,
         id: expectedScope.id,
         root,
+        files: inventory.files,
         fileLimit: expectedScope.fileLimit,
-        expectedHash: expectedScope.hash,
-        ...(expectedScope.kind === 'workspace' ? { excludedRoots: projectRoots } : {}),
+        eligibleFileCount: inventory.eligibleFileCount,
+        eligibleFileCountExact: inventory.eligibleFileCountExact,
+        inventoryStrategy: inventory.strategy,
+        ...(selection ? { selection } : {}),
       });
-      if (fastMatch !== null) {
-        if (!fastMatch) return false;
-        continue;
+      if (hashCanonicalJson(actualScope) !== hashCanonicalJson(expectedScope)) {
+        add({
+          scope,
+          reason: actualScope.hash !== expectedScope.hash ? 'content-changed' : 'inventory-changed',
+          expectedHash: expectedScope.hash,
+          actualHash: actualScope.hash,
+        });
       }
+    } catch {
+      add({ scope, reason: 'scan-failed' });
     }
-
-    const rawInventory = await projectFileInventory(
-      root,
-      expectedScope.fileLimit,
-      expectedScope.kind === 'workspace' ? projectRoots : []
-    );
-    const files =
-      expectedScope.kind === 'workspace'
-        ? rawInventory.files.filter(
-            (file) =>
-              !projectRoots.some(
-                (projectRoot) =>
-                  file === projectRoot || file.startsWith(`${projectRoot}${path.sep}`)
-              )
-          )
-        : rawInventory.files;
-    const inventory: ProjectFileInventory = {
-      ...rawInventory,
-      files,
-      eligibleFileCount:
-        rawInventory.eligibleFileCountExact && !rawInventory.truncated
-          ? files.length
-          : rawInventory.eligibleFileCount,
-    };
-    const selection = expectedScope.selection
-      ? {
-          strategy: 'component-language-round-robin-v1' as const,
-          semanticFileCount: Math.min(
-            inventory.files.length,
-            expectedScope.selection.semanticFileBudget
-          ),
-          semanticFileBudget: expectedScope.selection.semanticFileBudget,
-          deepFileCount: Math.min(inventory.files.length, expectedScope.selection.deepFileBudget),
-          deepFileBudget: expectedScope.selection.deepFileBudget,
-          sourceExtractionFileBudget: expectedScope.selection.sourceExtractionFileBudget,
-        }
-      : undefined;
-    const actualScope = await fingerprintScope({
-      kind: expectedScope.kind,
-      id: expectedScope.id,
-      root,
-      files: inventory.files,
-      fileLimit: expectedScope.fileLimit,
-      eligibleFileCount: inventory.eligibleFileCount,
-      eligibleFileCountExact: inventory.eligibleFileCountExact,
-      inventoryStrategy: inventory.strategy,
-      ...(selection ? { selection } : {}),
-    });
-    if (hashCanonicalJson(actualScope) !== hashCanonicalJson(expectedScope)) return false;
   }
-  return true;
+  return result();
+}
+
+/** Compatibility predicate; diagnostic reads retain the same fingerprint checks. */
+export async function workspaceKnowledgeGraphInputsMatchLiveState(input: {
+  workspacePath: string;
+  projects: readonly KnowledgeGraphFingerprintProject[];
+  expected: WorkspaceKnowledgeGraphInputFingerprint;
+}): Promise<boolean> {
+  return (await inspectWorkspaceKnowledgeGraphInputs(input)).matches;
 }
 
 async function readStructuredDocuments(filePath: string): Promise<JsonRecord[]> {
@@ -3747,9 +3924,92 @@ const sourceLanguageProvider: Provider = {
   },
 };
 
+/** Test source is discovery evidence, never production API or execution proof. */
+const testSourceProvider: Provider = {
+  id: 'test-source-evidence',
+  version: '1.0.0',
+  scanTier: 'adaptive-deep',
+  applicable(context) {
+    return context.projects.some((project) =>
+      (context.filesByProject.get(project.id) ?? []).some((file) =>
+        isTestSourceArtifact(project.root, file)
+      )
+    );
+  },
+  async run(context) {
+    for (const project of context.projects) {
+      const packageManifestsFor = packageManifestLocator(
+        project,
+        context.filesByProject.get(project.id) ?? []
+      );
+      const candidates = (context.filesByProject.get(project.id) ?? []).filter((file) =>
+        isTestSourceArtifact(project.root, file)
+      );
+      const limit =
+        context.scanBudgetsByProject.get(project.id)?.sourceExtractionFileBudget ?? 2_000;
+      const files = balancedSourceSelection(candidates, limit, project.root);
+      let indexed = 0;
+      for (const file of files) {
+        try {
+          const stats = await fsExtra.stat(file);
+          if (stats.size > 2 * 1024 * 1024) continue;
+          const contents = await fsExtra.readFile(file, 'utf8');
+          // Bounded lexical references make test discovery possible without
+          // publishing test literals or asserting semantic coverage/call edges.
+          const identifiers = testReferenceIdentifiers(file, contents);
+          const artifact = context.state.artifactPath(file, project);
+          const proof = await context.state.addProof({
+            provider: this.id,
+            artifact,
+            absolutePath: file,
+            derivation: 'extracted',
+            trust: 'observed',
+            confidence: 'high',
+            detail: 'Test source discovery only; references are lexical, not executed coverage',
+          });
+          const entity = context.state.addEntity({
+            kind: 'file',
+            key: `file:${project.id}:${artifact}`,
+            label: artifact,
+            projectId: project.id,
+            aliases: [path.basename(file)],
+            attributes: {
+              artifact,
+              language: sourceLanguage(file, project.runtime),
+              role: 'test',
+              packageManifests: packageManifestsFor(file),
+              referencedIdentifiers: identifiers,
+              referenceSemantics: 'lexical-only',
+            },
+            proofIds: [proof],
+          });
+          context.state.addRelation({
+            from: stableId('project', `project:${project.id}`),
+            to: entity,
+            kind: 'contains',
+            proofIds: [proof],
+          });
+          indexed += 1;
+        } catch {
+          // Unreadable source cannot establish discovery or test coverage.
+        }
+      }
+      if (indexed < candidates.length) {
+        context.state.diagnostics.push({
+          code: 'graph.provider.test_source_evidence.incomplete',
+          severity: 'info',
+          message: `Test source discovery for ${project.id} indexed ${indexed}/${candidates.length} candidate files.`,
+          recommendation:
+            'Use scoped native search for missing tests; increase graphSourceBudget when appropriate. No executed test coverage is claimed.',
+        });
+      }
+    }
+  },
+};
+
 const sourceStructureProvider: Provider = {
   id: 'source-structure',
-  version: '1.2.1',
+  version: '1.4.0',
   scanTier: 'adaptive-deep',
   applicable(context) {
     return context.projects.some((project) =>
@@ -3766,6 +4026,7 @@ const sourceStructureProvider: Provider = {
         (file) => !isNonProductionArtifact(project.root, file)
       );
       const resolutionInventory = context.filesByProject.get(project.id) ?? projectInventory;
+      const packageManifestsFor = packageManifestLocator(project, resolutionInventory);
       const extractionLimit =
         context.scanBudgetsByProject.get(project.id)?.sourceExtractionFileBudget ?? 2_000;
       // Keep symbol and binding work proportional to the explicit source
@@ -3838,6 +4099,7 @@ const sourceStructureProvider: Provider = {
             artifact,
             language: sourceLanguage(file, project.runtime),
             bytes: Buffer.byteLength(contents),
+            packageManifests: packageManifestsFor(file),
             ...(generated ? { generated: true } : {}),
           },
           proofIds: [fileProof],
@@ -4040,6 +4302,7 @@ const sourceStructureProvider: Provider = {
         context.state.diagnostics.push({
           code: 'graph.provider.source_structure.limit_reached',
           severity: 'info',
+          entityIds: [stableId('project', `project:${project.id}`)],
           message: `Source extraction for ${project.id} sampled ${files.length} file(s) from ${fullSourceCandidates.length} complete-inventory source candidate(s).`,
           recommendation:
             'Use bounded graph search, evidence, and path queries for proof-backed retrieval; do not treat the sampled symbol inventory as exhaustive.',
@@ -4049,6 +4312,7 @@ const sourceStructureProvider: Provider = {
         context.state.diagnostics.push({
           code: 'graph.provider.source_structure.symbol_limit_reached',
           severity: 'info',
+          entityIds: [stableId('project', `project:${project.id}`)],
           message: `Symbol extraction for ${project.id} reached its adaptive ${symbolBudget}-symbol budget across ${files.length} selected source file(s).`,
           recommendation:
             'Increase graphSourceBudget when a more exhaustive symbol inventory is worth the additional graph size and extraction cost.',
@@ -4058,6 +4322,7 @@ const sourceStructureProvider: Provider = {
         context.state.diagnostics.push({
           code: 'graph.provider.source_structure.unresolved_local_imports',
           severity: 'warning',
+          entityIds: [stableId('project', `project:${project.id}`)],
           message: `${unresolvedLocalImports} local import(s) in ${project.id} could not be resolved to an indexed source file.`,
           recommendation:
             'Check path aliases, generated sources, extension mapping, or provider limits before treating the import graph as complete.',
@@ -4076,14 +4341,14 @@ const sourceStructureProvider: Provider = {
  */
 const sourceSymbolBindingProvider: Provider = {
   id: 'source-symbol-binding',
-  version: '1.0.0',
+  version: '1.1.0',
   scanTier: 'derived',
   applicable(context) {
     return [...context.state.entities.values()].some((entity) => entity.kind === 'symbol');
   },
   async run(context) {
-    let ambiguousBindings = 0;
     for (const project of context.projects) {
+      let ambiguousBindings = 0;
       const sourceFileBudget =
         context.scanBudgetsByProject.get(project.id)?.sourceExtractionFileBudget ?? 2_000;
       const maxBindings = Math.min(100_000, Math.max(10_000, sourceFileBudget * 10));
@@ -4091,7 +4356,9 @@ const sourceSymbolBindingProvider: Provider = {
       const entities = [...context.state.entities.values()].filter(
         (entity) => entity.projectId === project.id
       );
-      const fileEntities = entities.filter((entity) => entity.kind === 'file');
+      const fileEntities = entities.filter(
+        (entity) => entity.kind === 'file' && entity.attributes.role !== 'test'
+      );
       const symbols = new Map(
         entities.filter((entity) => entity.kind === 'symbol').map((entity) => [entity.id, entity])
       );
@@ -4187,20 +4454,22 @@ const sourceSymbolBindingProvider: Provider = {
         context.state.diagnostics.push({
           code: 'graph.provider.source_symbol_binding.limit_reached',
           severity: 'info',
+          entityIds: [stableId('project', `project:${project.id}`)],
           message: `Source call binding for ${project.id} reached its adaptive ${maxBindings}-relation budget.`,
           recommendation:
             'Increase graphSourceBudget or use compiler/language-server semantic evidence when more exhaustive call topology is required.',
         });
       }
-    }
-    if (ambiguousBindings > 0) {
-      context.state.diagnostics.push({
-        code: 'graph.provider.source_symbol_binding.ambiguous_calls',
-        severity: 'info',
-        message: `${ambiguousBindings} call site(s) were left unbound because more than one proven local symbol matched.`,
-        recommendation:
-          'Provide compiler or language-server semantic evidence when exact overload or dynamic dispatch resolution is required.',
-      });
+      if (ambiguousBindings > 0) {
+        context.state.diagnostics.push({
+          code: 'graph.provider.source_symbol_binding.ambiguous_calls',
+          severity: 'info',
+          entityIds: [stableId('project', `project:${project.id}`)],
+          message: `${ambiguousBindings} call site(s) in ${project.id} were left unbound because more than one proven local symbol matched.`,
+          recommendation:
+            'Provide compiler or language-server semantic evidence when exact overload or dynamic dispatch resolution is required.',
+        });
+      }
     }
   },
 };
@@ -6622,6 +6891,7 @@ const PROVIDERS: Provider[] = [
   vscodeExtensionManifestProvider,
   pythonProjectManifestProvider,
   sourceLanguageProvider,
+  testSourceProvider,
   sourceStructureProvider,
   sourceSymbolBindingProvider,
   runtimeBridgeSemanticProvider,
@@ -6639,6 +6909,24 @@ const PROVIDERS: Provider[] = [
   documentationProvider,
   decisionProvider,
 ];
+
+/** A live source fingerprint alone cannot qualify an older extractor's output. */
+export function workspaceKnowledgeGraphProvidersMatchRuntime(
+  graph: WorkspaceKnowledgeGraph
+): boolean {
+  const versions = new Map<string, string>();
+  for (const provider of graph.providers) {
+    if (
+      !provider ||
+      typeof provider.id !== 'string' ||
+      typeof provider.version !== 'string' ||
+      versions.has(provider.id)
+    )
+      return false;
+    versions.set(provider.id, provider.version);
+  }
+  return PROVIDERS.every((provider) => versions.get(provider.id) === provider.version);
+}
 
 function providerInputCoverage(
   provider: Provider,
@@ -6675,6 +6963,26 @@ function providerInputCoverage(
         eligibleFiles,
         suppliedFiles: 0,
         selectionStrategy: tier === 'derived' ? ('derived' as const) : ('complete' as const),
+      };
+    }
+    if (provider.id === 'test-source-evidence') {
+      const candidates = (context.filesByProject.get(project.id) ?? []).filter((file) =>
+        isTestSourceArtifact(project.root, file)
+      );
+      const fileBudget = budget?.sourceExtractionFileBudget ?? 2_000;
+      const suppliedFiles = Math.min(candidates.length, fileBudget);
+      return {
+        scope: 'project' as const,
+        scopeId: project.id,
+        tier,
+        status:
+          inventory?.truncated || suppliedFiles < candidates.length
+            ? ('bounded' as const)
+            : ('complete' as const),
+        eligibleFiles: candidates.length,
+        suppliedFiles,
+        fileBudget,
+        selectionStrategy: 'component-language-round-robin-v1' as const,
       };
     }
     if (tier === 'derived') {
@@ -6993,6 +7301,7 @@ export async function buildWorkspaceKnowledgeGraph(
     'vscode-extension-manifest',
     'python-project-manifest',
     'source-language-inventory',
+    'test-source-evidence',
     'source-structure',
     'source-symbol-binding',
     'runtime-bridge-semantics',

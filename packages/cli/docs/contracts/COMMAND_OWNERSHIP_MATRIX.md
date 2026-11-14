@@ -78,6 +78,7 @@ These nested Commander commands are implemented and orchestrated by Workspai CLI
 - `product manifest create`
 - `product plan`
 - `agent bootstrap`
+- `agent context`
 - `agent framework`
 - `agent framework list`
 - `agent framework plan`
@@ -88,6 +89,8 @@ These nested Commander commands are implemented and orchestrated by Workspai CLI
 - `project coverage`
 - `project archives`
 - `project archive`
+- `project lifecycle`
+- `project lifecycle plan`
 - `project restore`
 - `project delete`
 - `project workspace`

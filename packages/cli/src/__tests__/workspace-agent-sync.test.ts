@@ -333,6 +333,44 @@ describe('workspace agent sync', () => {
     expect(cursorRule).toContain('## Intelligent loop');
     expect(cursorRule).toContain('## Answer contract');
 
+    const profiles = await Promise.all(
+      ['advisor', 'repair', 'release', 'project-onboarder'].map((name) =>
+        fsExtra.readFile(
+          path.join(workspacePath, `.github/agents/workspai-${name}.agent.md`),
+          'utf8'
+        )
+      )
+    );
+    // Every generated entry uses proportional policy and can execute its documented CLI reads/checks.
+    for (const profile of profiles) {
+      expect(profile).toContain('workspai agent context --task');
+      expect(profile).toContain('execute/runInTerminal');
+      expect(profile).not.toMatch(
+        /^- (Scope|Evidence|Diagnosis|Fix Plan|Run|Verify|Assumptions)$/mu
+      );
+    }
+    expect(agents).not.toContain('For source-changing work, use the active Goal Pack');
+    expect(agents).toContain('Routine project-local changes follow repository instructions');
+    // Provider syntax may vary; response shape must not replace evidence obligations.
+    for (const text of [
+      agents,
+      cursorRule,
+      windsurfGrounding,
+      grokGrounding,
+      amazonqWorkspace,
+      claudeWorkspace,
+      agentsSkill,
+      ...profiles,
+    ]) {
+      expect(text).not.toContain('Scope, Evidence, Diagnosis, Fix Plan, Run, Verify, Assumptions');
+      expect(text).toContain("Answer in the user's language");
+      expect(text).toContain('checks actually run');
+      expect(text).toContain('CLI-owned approval, transaction and verification requirements');
+    }
+    expect(agentsSkill).toContain('actual task and project scope');
+    expect(agentsSkill).toContain('only when the existing packet does not answer');
+    expect(agentsSkill).toContain('only task-relevant fail/warn evidence');
+
     const cursorEvidence = await fsExtra.readFile(
       path.join(workspacePath, WORKSPAI_CURSOR_EVIDENCE_RULE_PATH),
       'utf8'
@@ -357,15 +395,9 @@ describe('workspace agent sync', () => {
       path.join(workspacePath, AGENT_CUSTOMIZATION_PACK_REPORT_PATH)
     );
     expect(pack.schemaVersion).toBe('rapidkit-agent-customization-pack.v1');
-    expect(pack.answerContract).toEqual([
-      'Scope',
-      'Evidence',
-      'Diagnosis',
-      'Fix Plan',
-      'Run',
-      'Verify',
-      'Assumptions',
-    ]);
+    expect(pack.answerContract).toHaveLength(1);
+    expect(pack.answerContract[0]).toContain('no mandatory headings');
+    expect(pack.answerContract[0]).toContain('checks actually run');
     expect(pack.outputInventory.map((output: { path: string }) => output.path)).toEqual(
       expect.arrayContaining([
         WORKSPAI_COPILOT_WORKSPACE_INSTRUCTIONS_PATH,

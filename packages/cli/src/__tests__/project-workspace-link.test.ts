@@ -113,6 +113,29 @@ afterEach(async () => {
 });
 
 describe('project workspace binding', () => {
+  it.each([
+    '# Team rules\n\n\nKeep intentional blank lines.\n\n',
+    '\r\n# Team rules\r\n\r\n\r\nKeep CRLF and trailing space.  \r\n',
+    '# Team rules\n\nKeep the absent final newline.',
+  ])('preserves authored AGENTS bytes across managed refresh and removal: %j', async (authored) => {
+    const { workspacePath, projectPath } = await fixture();
+    const agentsPath = path.join(projectPath, 'AGENTS.md');
+    await fsp.writeFile(agentsPath, authored);
+    const options = {
+      workspacePath,
+      projectPath,
+      projectName: 'web',
+      relationship: 'adopted' as const,
+    };
+    await syncProjectIntelligenceLens({ ...options, mode: 'managed' });
+    const first = await fsp.readFile(agentsPath, 'utf8');
+    expect(first.endsWith(authored)).toBe(true);
+    await syncProjectIntelligenceLens({ ...options, mode: 'managed' });
+    expect(await fsp.readFile(agentsPath, 'utf8')).toBe(first);
+    await syncProjectIntelligenceLens({ ...options, mode: 'off' });
+    expect(await fsp.readFile(agentsPath, 'utf8')).toBe(authored);
+  });
+
   it('stratifies the bounded project lens so late architectural kinds cannot starve', () => {
     const kinds: WorkspaceKnowledgeEntity['kind'][] = [
       'language',
@@ -675,8 +698,8 @@ describe('project workspace binding', () => {
     expect(context.agentRouting).toMatchObject({
       enforcement: 'required',
       mandatoryPreflight: {
-        command: 'workspai agent bootstrap --for-agent generic --strict --json',
-        successCondition: 'ready',
+        command: 'workspai agent context --task "<user request>" --for-agent generic',
+        successCondition: 'ready-or-disclosed-partial',
       },
       workspaceLocator: {
         command: 'workspai project workspace status --json',
@@ -721,8 +744,19 @@ describe('project workspace binding', () => {
     const agents = await fsp.readFile(path.join(projectPath, 'AGENTS.md'), 'utf8');
     expect(agents).toContain('Keep this text.');
     expect(agents).toContain('Workspai agent entry gate (mandatory)');
+    expect(agents).toContain(
+      'Routine project-local changes follow repository instructions and use native tools.'
+    );
+    expect(agents).toContain(
+      'Do not create a Goal/Change or run workspace-wide repair just to satisfy context retrieval.'
+    );
     expect(agents).toContain('Workspace identity: `workspace` (logical name');
-    expect(agents).toContain('execute `nextActions`, and rerun bootstrap');
+    expect(agents).toContain('workspai agent context --task');
+    expect(agents).toContain('before source search or implementation/test reads');
+    expect(agents).toContain("JSON.parse(fs.readFileSync(file, 'utf8'))");
+    expect(agents).toContain('never require or execute that file');
+    expect(agents).toContain('do not repeat bootstrap, membership lookup or Graph retrieval');
+    expect(agents).not.toContain("Follow the receipt's `requiredReadOrder` exactly");
     expect(agents).toContain('`workspace:` paths belong to the canonical workspace');
     expect(agents.startsWith('<!-- WORKSPAI:PROJECT-GROUNDING:START -->')).toBe(true);
     expect(agents.indexOf('Workspai agent entry gate')).toBeLessThan(
@@ -757,6 +791,9 @@ describe('project workspace binding', () => {
     };
     expect(entry).toMatchObject({
       schemaVersion: 'workspai.agent-entry.v1',
+      protocol: {
+        taskContextCommand: 'workspai agent context --task "<user request>" --for-agent generic',
+      },
       workspace: {
         identityIsFilesystemPath: false,
         resolverCommand: 'workspai project workspace status --json',
@@ -796,6 +833,7 @@ describe('project workspace binding', () => {
       expect(adapter).toContain(`Workspai host binding · ${host}`);
       expect(adapter).toContain('workspace locator privacy policy');
       expect(adapter).toContain('the imported instructions or replace repository-authored');
+      expect(adapter).not.toContain('Routine project-local changes follow repository instructions');
     }
     const amazonQ = await fsp.readFile(
       path.join(projectPath, '.amazonq/rules/workspai-agent-entry.md'),

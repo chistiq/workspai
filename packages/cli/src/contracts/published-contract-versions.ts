@@ -45,6 +45,10 @@ import { OPERATIONAL_JSON_SCHEMA_VERSIONS } from './operational-json-schemas.js'
 import { CLI_RUNTIME_COMMAND_INVENTORY_SCHEMA_VERSION } from '../utils/cli-command-surface.js';
 import { WORKSPACE_KNOWLEDGE_SEARCH_SCHEMA_VERSION } from '../workspace-knowledge-graph-query.js';
 import { WORKSPACE_GRAPH_TOKEN_EFFICIENCY_SCHEMA_VERSION } from '../workspace-graph-token-efficiency.js';
+import { AGENT_BOOTSTRAP_VIEW_SCHEMA_VERSION } from '../agent-bootstrap-view.js';
+import { WORKSPACE_GRAPH_SEARCH_VIEW_SCHEMA_VERSION } from '../workspace-graph-search-view.js';
+import { PROJECT_LIFECYCLE_CONTEXT_SCHEMA_VERSION } from '../project-lifecycle-context.js';
+import { AGENT_TASK_CONTEXT_SCHEMA_VERSION } from '../agent-task-context.js';
 import {
   MODEL_USAGE_EVENT_SCHEMA_VERSION,
   WORKSPACE_INTELLIGENCE_EVALUATION_COMPARISON_SCHEMA_VERSION,
@@ -134,6 +138,9 @@ export function getPublishedContractVersions() {
       WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectKnowledgeGraphReference.schemaVersion,
     projectAgentEntry: PROJECT_AGENT_ENTRY_SCHEMA_VERSION,
     agentBootstrapReceipt: AGENT_BOOTSTRAP_RECEIPT_SCHEMA_VERSION,
+    agentBootstrapView: AGENT_BOOTSTRAP_VIEW_SCHEMA_VERSION,
+    agentTaskContext: AGENT_TASK_CONTEXT_SCHEMA_VERSION,
+    projectLifecycleContext: PROJECT_LIFECYCLE_CONTEXT_SCHEMA_VERSION,
     doctorProjectEvidence: DOCTOR_PROJECT_EVIDENCE_SCHEMA,
     doctorWorkspaceEvidence: DOCTOR_WORKSPACE_EVIDENCE_SCHEMA,
     doctorGraphDiagnosis: DOCTOR_GRAPH_DIAGNOSIS_SCHEMA_VERSION,
@@ -182,6 +189,7 @@ export function getPublishedContractVersions() {
     workspaceGraphStream: WORKSPACE_GRAPH_STREAM_SCHEMA_VERSION,
     workspaceKnowledgeGraphChangeOverlay: WORKSPACE_KNOWLEDGE_GRAPH_CHANGE_OVERLAY_SCHEMA_VERSION,
     workspaceKnowledgeSearch: WORKSPACE_KNOWLEDGE_SEARCH_SCHEMA_VERSION,
+    workspaceGraphSearchView: WORKSPACE_GRAPH_SEARCH_VIEW_SCHEMA_VERSION,
     workspaceGraphTokenEfficiency: WORKSPACE_GRAPH_TOKEN_EFFICIENCY_SCHEMA_VERSION,
     workspaceIntelligenceBenchmark: WORKSPACE_INTELLIGENCE_BENCHMARK_SCHEMA_VERSION,
     modelUsageEvent: MODEL_USAGE_EVENT_SCHEMA_VERSION,
@@ -269,6 +277,9 @@ export function getPublishedContractCatalog() {
       'contracts/workspace-intelligence/project-knowledge-graph-reference.v1.json',
     projectAgentEntry: 'contracts/workspace-intelligence/project-agent-entry.v1.json',
     agentBootstrapReceipt: 'contracts/workspace-intelligence/agent-bootstrap-receipt.v1.json',
+    agentBootstrapView: 'contracts/workspace-intelligence/agent-bootstrap-view.v1.json',
+    agentTaskContext: 'contracts/workspace-intelligence/agent-task-context.v1.json',
+    projectLifecycleContext: 'contracts/project-lifecycle-context.v1.json',
     doctorProjectEvidence: 'contracts/doctor-project-evidence.v1.json',
     doctorWorkspaceEvidence: 'contracts/doctor-workspace-evidence.v1.json',
     doctorGraphDiagnosis: 'contracts/workspace-intelligence/doctor-graph-diagnosis.v1.json',
@@ -322,6 +333,8 @@ export function getPublishedContractCatalog() {
     workspaceKnowledgeGraphChangeOverlay:
       'contracts/workspace-intelligence/workspace-knowledge-graph-change-overlay.v1.json',
     workspaceKnowledgeSearch: 'contracts/workspace-intelligence/workspace-knowledge-search.v1.json',
+    workspaceGraphSearchView:
+      'contracts/workspace-intelligence/workspace-graph-search-view.v1.json',
     workspaceGraphTokenEfficiency:
       'contracts/workspace-intelligence/workspace-graph-token-efficiency.v1.json',
     workspaceIntelligenceBenchmark:
