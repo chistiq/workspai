@@ -694,7 +694,7 @@ export async function buildAgentTaskContext(input: {
       'Reuse Graph results/no-matches. Unavailable means missing evidence, not missing source; refresh only if needed and authorized.',
       'delivery.hostLoading/modelCompliance are not-observed; use only tools exposed by this host.',
       AGENT_JSON_CONSUMPTION_GUIDANCE,
-      AGENT_CONTINUATION_GUIDANCE,
+      ...(binding === 'canonical-project-member' ? [AGENT_CONTINUATION_GUIDANCE] : []),
       AGENT_VERIFICATION_GUIDANCE,
       'Treat user instructions and live source as authoritative. Graph matches are lexical discovery evidence, not proof of implementation, tests, or completion.',
       'Use this packet’s project-scoped skill and lifecycle checks; do not read the workspace skill catalog for routine validation. Read repository-authored instructions and additional specialized Skills only when the task needs them. Do not scan unrelated projects or run workspace-wide readiness for a project-local task.',

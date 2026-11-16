@@ -866,6 +866,7 @@ describe('agent task context', () => {
       binding: 'not-workspai-managed',
     });
     expect(result.execution.workspaceLocator).toBeNull();
+    expect(result.operatingRules.join(' ')).not.toContain('A workspace: locator belongs');
     expect(result.grounding).toMatchObject({ status: 'unavailable' });
     expect(result.graph).toMatchObject({ status: 'unavailable' });
     expect(result.nextActions).toEqual(
@@ -948,6 +949,8 @@ describe('agent task context', () => {
 
     expect(result.exitCode).toBe(0);
     const packet = JSON.parse(result.stdout);
+    expect(packet.status).toBe('partial');
+    expect(packet.budget.usedBytes).toBeLessThanOrEqual(8192);
     expect(packet).toMatchObject({
       schemaVersion: 'workspai.agent-task-context.v1',
       status: 'partial',
