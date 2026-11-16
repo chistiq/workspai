@@ -3767,7 +3767,7 @@ const pythonProjectManifestProvider: Provider = {
 
 const sourceLanguageProvider: Provider = {
   id: 'source-language-inventory',
-  version: '1.2.0',
+  version: '1.2.1',
   scanTier: 'complete-inventory',
   applicable(context) {
     return context.projects.some((project) =>
@@ -3916,6 +3916,7 @@ const sourceLanguageProvider: Provider = {
           code: 'graph.provider.source_language_inventory.limit_reached',
           severity: 'warning',
           message: `Language inventory for ${project.id} reached the ${inventoryState.fileLimit}-file emergency bound. Counts are lower bounds.`,
+          entityIds: [stableId('project', `project:${project.id}`)],
           recommendation:
             'Increase inventoryFileLimitPerProject or split the repository into explicit project boundaries before treating language counts as complete.',
         });
@@ -3927,7 +3928,7 @@ const sourceLanguageProvider: Provider = {
 /** Test source is discovery evidence, never production API or execution proof. */
 const testSourceProvider: Provider = {
   id: 'test-source-evidence',
-  version: '1.0.0',
+  version: '1.0.1',
   scanTier: 'adaptive-deep',
   applicable(context) {
     return context.projects.some((project) =>
@@ -3999,6 +4000,7 @@ const testSourceProvider: Provider = {
           code: 'graph.provider.test_source_evidence.incomplete',
           severity: 'info',
           message: `Test source discovery for ${project.id} indexed ${indexed}/${candidates.length} candidate files.`,
+          entityIds: [stableId('project', `project:${project.id}`)],
           recommendation:
             'Use scoped native search for missing tests; increase graphSourceBudget when appropriate. No executed test coverage is claimed.',
         });
@@ -5210,7 +5212,7 @@ const serviceContractProvider: Provider = {
 
 const openApiProvider: Provider = {
   id: 'openapi',
-  version: '1.1.0',
+  version: '1.1.1',
   scanTier: 'complete-inventory',
   applicable(context) {
     return context.projects.some((project) =>
@@ -5229,6 +5231,7 @@ const openApiProvider: Provider = {
             code: 'graph.provider.openapi.parse_failed',
             severity: 'warning',
             message: `Could not parse ${context.state.artifactPath(file, project)}: ${error instanceof Error ? error.message : String(error)}`,
+            entityIds: [stableId('project', `project:${project.id}`)],
           });
           continue;
         }

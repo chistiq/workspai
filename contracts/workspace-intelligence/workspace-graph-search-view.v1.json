@@ -31,10 +31,20 @@
           "additionalProperties": false,
           "required": ["mode", "omittedForeign", "retainedUnscoped", "aggregateScope"],
           "properties": {
-            "mode": { "enum": ["project-and-unscoped", "workspace"] },
-            "omittedForeign": { "type": "integer", "minimum": 0 },
-            "retainedUnscoped": { "type": "integer", "minimum": 0 },
-            "aggregateScope": { "const": "workspace" }
+            "mode": {
+              "enum": ["project-and-unscoped", "workspace"]
+            },
+            "omittedForeign": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "retainedUnscoped": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "aggregateScope": {
+              "const": "workspace"
+            }
           }
         },
         "schemaVersion": {
@@ -334,16 +344,29 @@
             },
             "reusedMatchIds": {
               "type": "array",
-              "items": { "type": "string", "minLength": 1 },
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
               "uniqueItems": true,
               "maxItems": 100
             },
             "reusedFrom": {
-              "oneOf": [{ "type": "string", "format": "uuid" }, { "type": "null" }]
+              "oneOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ]
             },
             "reason": {
               "oneOf": [
-                { "type": "null" },
+                {
+                  "type": "null"
+                },
                 {
                   "enum": [
                     "receipt-not-found",
@@ -395,6 +418,23 @@
             },
             "accounting": {
               "const": "utf8-json-with-newline"
+            }
+          }
+        },
+        "retrieval": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["method", "status", "nextAction"],
+          "properties": {
+            "method": {
+              "const": "lexical"
+            },
+            "status": {
+              "enum": ["candidates", "no-matches"]
+            },
+            "nextAction": {
+              "type": "string",
+              "minLength": 1
             }
           }
         }

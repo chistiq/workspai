@@ -202,6 +202,8 @@ describe('small published contract boundaries', () => {
       { ...index, schemaVersion: 'bad' },
       { ...index, generatedAt: null },
       { ...index, skills: null },
+      { ...index, skills: [{ ...index.skills[0], scopedProjects: 'foreign' }] },
+      { ...index, skills: [{ ...index.skills[0], scopedProjects: [42] }] },
       { ...index, selection: {} },
     ])
       expect(isWorkspaceSkillsIndex(value)).toBe(false);

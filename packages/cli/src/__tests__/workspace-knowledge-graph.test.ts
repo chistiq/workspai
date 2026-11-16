@@ -1721,7 +1721,7 @@ describe('workspace knowledge graph', () => {
     ).toBe(true);
     expect(
       graph.providers.find((provider) => provider.id === 'source-language-inventory')?.version
-    ).toBe('1.2.0');
+    ).toBe('1.2.1');
   });
 
   it('keeps deep Go workspace manifests and membership beyond the ordinary file budget', async () => {

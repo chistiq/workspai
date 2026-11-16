@@ -229,7 +229,23 @@
         },
         "status": { "enum": ["ready", "degraded", "blocked"] },
         "managed": { "type": "boolean" },
-        "reason": { "type": "string", "minLength": 1 }
+        "reason": { "type": "string", "minLength": 1 },
+        "statusScope": { "const": "entry-artifacts" },
+        "artifacts": {
+          "type": "array",
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path", "scope", "sha256"],
+            "properties": {
+              "path": { "$ref": "#/$defs/portablePath" },
+              "scope": { "enum": ["managed-blocks", "file"] },
+              "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+            }
+          }
+        }
       }
     }
   }

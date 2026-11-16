@@ -137,6 +137,10 @@
         {
           "flags": "--max-bytes <bytes>",
           "attributeName": "maxBytes"
+        },
+        {
+          "flags": "--strict",
+          "attributeName": "strict"
         }
       ]
     },

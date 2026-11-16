@@ -70,6 +70,16 @@ Checks:
 
 > Compatibility note: `npx workspai doctor --project` also works.
 
+Project and workspace selectors are mutually exclusive. Run project checks
+from the selected source directory; an adopted project's workspace binding does
+not turn a workspace-wide report into project evidence. Scoped `workspace run`
+gates require a project report whose canonical `project.path` matches the
+selected target. Missing, malformed or differently bound evidence blocks
+execution. Workspace release readiness is separate from this project gate;
+unscoped fleet runs retain workspace checks. Advisory project warnings remain
+visible and allow execution, but `workspace run --strict` returns nonzero for
+warning gates. See [workspace-run.md](./workspace-run.md).
+
 ### 4) Capability truth and validation
 
 ```bash
@@ -191,6 +201,12 @@ application source-tree, and application script checks are `not-applicable` for
 libraries, SDKs, platforms, plugins, and monorepo roots. Tooling dependencies at
 a private workspace root therefore do not create a false frontend application
 or an irrelevant repair such as adding an application test script.
+
+A standalone Node manifest proving no dependency requirements does not require
+`node_modules` for dependency readiness. This does not prove that arbitrary
+project commands work. Workspace roots, agent owners and malformed dependency
+groups retain conservative ownership checks; an empty shell manifest cannot
+prove that a nested runtime has no dependencies.
 
 The default terminal view is summary-first and uses portable boundaries such
 as `$WORKSPACE`, `$PROJECT`, and `external/<project>`. `--verbose` expands all

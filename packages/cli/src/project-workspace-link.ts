@@ -100,6 +100,8 @@ interface ResolveProjectWorkspaceOptions {
   platform?: NodeJS.Platform;
   strict?: boolean;
   requireProjectMembership?: boolean;
+  /** Only adoption may recover a valid link whose registration is absent. */
+  recoverUnregisteredAdoption?: boolean;
 }
 
 function markerFor(workspacePath: string): ProjectWorkspaceLink['workspace']['marker'] {
@@ -453,6 +455,54 @@ export function resolveProjectWorkspaceSync(
   }
 
   if (staleLink) {
+    // A prior local link is a destination hint, never proof of membership.
+    // Recover only after registry ambiguity checks and only for re-adoption.
+    // Re-registration and current grounding remain owned by its transaction.
+    if (options.recoverUnregisteredAdoption && !options.requireProjectMembership) {
+      const expectedBinding = bindingFor({
+        workspaceName: staleLink.workspace.name,
+        workspacePath: staleLink.workspace.root,
+        projectName: staleLink.project.name,
+        projectPath,
+        relativePath: staleLink.project.relativePath,
+        relationship: staleLink.project.relationship,
+      });
+      try {
+        const contract = readJsonSync(
+          path.join(staleLink.workspace.root, staleLink.workspace.contract)
+        ) as {
+          workspace?: { name?: string };
+          projects?: Array<{ slug?: string; relativePath?: string }>;
+        };
+        assertJsonSchemaContract(
+          contract,
+          'contracts/workspace-contract.v1.json',
+          'Adoption workspace contract'
+        );
+        if (
+          staleLink.integrity.binding === expectedBinding &&
+          hasWorkspaceRootMarkers(staleLink.workspace.root) &&
+          fs.existsSync(path.join(staleLink.workspace.root, staleLink.workspace.marker)) &&
+          contract.workspace?.name === staleLink.workspace.name &&
+          Array.isArray(contract.projects) &&
+          !contract.projects.some(
+            (project) =>
+              project.slug === staleLink.project.name ||
+              project.relativePath === staleLink.project.relativePath
+          )
+        ) {
+          return {
+            workspacePath: path.resolve(staleLink.workspace.root),
+            projectPath,
+            source: 'local-link',
+            linkPath,
+            recovered: true,
+          };
+        }
+      } catch {
+        // Invalid contracts and identity changes require an explicit destination.
+      }
+    }
     return strictOrNull(
       strict,
       new ProjectWorkspaceResolutionError(

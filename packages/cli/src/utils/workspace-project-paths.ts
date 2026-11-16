@@ -1,4 +1,5 @@
 import path from 'path';
+import fs from 'node:fs';
 import fsExtra from 'fs-extra';
 
 import { workspaceMetadataCandidates } from './workspace-paths.js';
@@ -234,15 +235,31 @@ export function resolveWorkspaceProjectFilesystemPath(
     return path.resolve(workspacePath, raw);
   }
   if (isPortableExternalProjectIdentity(posix)) {
-    for (const location of collectRegisteredProjectLocations(workspacePath)) {
-      if (!identityMatchesRegisteredProject(location, posix)) continue;
+    const locations = collectRegisteredProjectLocations(workspacePath);
+    const exact = locations.filter(
+      (location) => location.relativePath && toPosixWorkspacePath(location.relativePath) === posix
+    );
+    const matches =
+      exact.length > 0
+        ? exact
+        : locations.filter((location) => identityMatchesRegisteredProject(location, posix));
+    const paths = new Map<string, string>();
+    for (const location of matches) {
       const filesystemPath = location.externalPath || location.path;
       if (typeof filesystemPath === 'string' && filesystemPath.trim()) {
-        return path.isAbsolute(filesystemPath)
+        const resolved = path.isAbsolute(filesystemPath)
           ? path.resolve(filesystemPath)
           : path.resolve(workspacePath, filesystemPath);
+        const canonical = fs.existsSync(resolved) ? fs.realpathSync(resolved) : resolved;
+        paths.set(canonical, resolved);
       }
     }
+    if (paths.size > 1) {
+      throw new Error(
+        `Ambiguous registered project identity: ${posix}. Repair conflicting workspace registrations.`
+      );
+    }
+    if (paths.size === 1) return [...paths.values()][0];
   }
   return path.resolve(workspacePath, raw);
 }

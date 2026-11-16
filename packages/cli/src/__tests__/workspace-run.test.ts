@@ -62,6 +62,140 @@ describe('workspace-run', { timeout: 30_000 }, () => {
     vi.restoreAllMocks();
   });
 
+  it('gates a scoped run using only its project Doctor, without workspace release gates', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'scoped-gates-'));
+    try {
+      const selected = await createProject(workspacePath, 'services/api');
+      await createProject(workspacePath, 'services/unrelated');
+      const mock = noGateMock();
+      mock.mockImplementation(async (_cmd: string, args: string[], options: { cwd: string }) => {
+        if (args.includes('readiness') || (args.includes('doctor') && args.includes('workspace'))) {
+          throw new Error('Unrelated workspace release checks must not run');
+        }
+        if (args.includes('doctor')) {
+          expect(options.cwd).toBe(selected);
+          expect(args).toContain('project');
+          return {
+            exitCode: 0,
+            stdout: JSON.stringify({
+              scope: 'project',
+              project: { path: selected },
+              healthScore: { errors: 0 },
+            }),
+            stderr: '',
+          };
+        }
+        return { exitCode: 0, stdout: '{}', stderr: '' };
+      });
+      const report = await runWorkspaceStage({
+        workspacePath,
+        stage: 'test',
+        scope: 'project:api',
+        enforceGates: true,
+        json: true,
+      });
+      expect(report.gates.blocked).toBe(false);
+      expect(report.summary).toMatchObject({ selectedCount: 1, passed: 1, skipped: 1 });
+      expect(report.gates.results).toContainEqual(
+        expect.objectContaining({ gate: 'doctor-project', scope: 'project', status: 'pass' })
+      );
+    } finally {
+      await fsExtra.remove(workspacePath);
+    }
+  });
+
+  it.each([
+    { healthScore: { errors: 1 } },
+    {},
+    { healthScore: { errors: 'invalid' } },
+    { healthScore: { errors: 0, warnings: 'invalid' } },
+    { healthScore: { errors: 0, verdict: 'blocked' } },
+    { scope: 'project', project: { path: '/wrong/project' }, healthScore: { errors: 0 } },
+  ])('blocks a scoped run with failing or malformed project evidence: %j', async (payload) => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'scoped-gates-'));
+    try {
+      const selected = await createProject(workspacePath, 'services/api');
+      noGateMock({
+        doctor: {
+          exitCode: 0,
+          stdout: JSON.stringify({ scope: 'project', project: { path: selected }, ...payload }),
+        },
+      });
+      const report = await runWorkspaceStage({
+        workspacePath,
+        stage: 'test',
+        scope: 'project:api',
+        enforceGates: true,
+        json: true,
+      });
+      expect(report.gates.blocked).toBe(true);
+      expect(report.summary).toMatchObject({ passed: 0, blocked: 1, exitCode: 1 });
+    } finally {
+      await fsExtra.remove(workspacePath);
+    }
+  });
+
+  it('rejects ambiguous project aliases before gates or execution', async () => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'scoped-gates-'));
+    try {
+      await createProject(workspacePath, 'services/api');
+      await createProject(workspacePath, 'tools/api');
+      const mock = noGateMock();
+      mock.mockClear();
+      await expect(
+        runWorkspaceStage({ workspacePath, stage: 'test', scope: 'project:api', json: true })
+      ).rejects.toThrow('ambiguous');
+      expect(mock).not.toHaveBeenCalled();
+    } finally {
+      await fsExtra.remove(workspacePath);
+    }
+  });
+
+  it.each([false, true])('preserves scoped Doctor warnings under strict=%s', async (strict) => {
+    const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'scoped-warning-'));
+    try {
+      const selected = await createProject(workspacePath, 'api');
+      noGateMock({
+        doctor: {
+          exitCode: 0,
+          stdout: JSON.stringify({
+            scope: 'project',
+            project: { path: selected },
+            healthScore: { errors: 0, warnings: 1 },
+          }),
+        },
+      });
+      const report = await runWorkspaceStage({
+        workspacePath,
+        stage: 'test',
+        scope: 'project:api',
+        enforceGates: true,
+        json: true,
+        strict,
+      });
+      expect(report.gates.results[0].status).toBe('warn');
+      expect(report.gates.blocked).toBe(false);
+      expect(report.summary).toMatchObject({ passed: 1, exitCode: strict ? 1 : 0 });
+    } finally {
+      await fsExtra.remove(workspacePath);
+    }
+  });
+
+  it.each(['project:', ''])(
+    'rejects an empty explicit scope instead of executing the fleet: %j',
+    async (scope) => {
+      const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'scoped-gates-'));
+      try {
+        await createProject(workspacePath, 'api');
+        await expect(
+          runWorkspaceStage({ workspacePath, stage: 'test', scope, json: true })
+        ).rejects.toThrow('non-empty project scope');
+      } finally {
+        await fsExtra.remove(workspacePath);
+      }
+    }
+  );
+
   // ─── existing tests ────────────────────────────────────────────────────────
 
   it('uses runtime-aware cold-init budgets while preserving an explicit override', () => {

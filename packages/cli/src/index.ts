@@ -2804,12 +2804,19 @@ export function findWorkspaceUp(start: string): string | null {
   return resolved.workspacePath;
 }
 
-function resolveWorkspaceForIngestion(startPath: string): {
+function resolveWorkspaceForIngestion(
+  startPath: string,
+  recoverUnregisteredAdoption = false
+): {
   workspacePath: string | null;
   error: ProjectWorkspaceResolutionError | null;
 } {
   try {
-    const resolution = resolveProjectWorkspaceSync({ startPath, strict: true });
+    const resolution = resolveProjectWorkspaceSync({
+      startPath,
+      strict: true,
+      recoverUnregisteredAdoption,
+    });
     const workspacePath = resolution?.workspacePath ?? null;
     return {
       workspacePath:
@@ -3751,13 +3758,13 @@ export async function handleAdoptCommand(
 
   let ingestionResolution = explicitWorkspace
     ? { workspacePath: null as string | null, error: null }
-    : resolveWorkspaceForIngestion(process.cwd());
+    : resolveWorkspaceForIngestion(process.cwd(), path.resolve(process.cwd()) === sourcePath);
 
   // Preserve the current-workspace ownership rule for external adoption, but
   // when the caller is outside every workspace resolve an already-linked or
   // physically contained source from the source itself.
   if (!explicitWorkspace && !ingestionResolution.error && !ingestionResolution.workspacePath) {
-    ingestionResolution = resolveWorkspaceForIngestion(sourcePath);
+    ingestionResolution = resolveWorkspaceForIngestion(sourcePath, true);
   }
 
   if (ingestionResolution.error) {
@@ -9010,35 +9017,41 @@ agentCommand
   .requiredOption('--task <request>', 'The user’s current task; used as a retrieval query')
   .option(
     '--project <path>',
-    'Project directory (defaults to the current directory)',
-    process.cwd()
+    'Explicit source root; defaults to cwd only when a project boundary is present'
   )
   .option('--path <relative-path>', 'Select the closest runtime unit for a source file or manifest')
   .option('--for-agent <agent>', 'Agent host identifier', 'generic')
   .option('--limit <count>', 'Maximum project-scoped Graph matches (1–12)', '8')
   .option('--max-bytes <bytes>', 'Maximum UTF-8 JSON packet size (8192–131072; default 32768)')
+  .option('--strict', 'Exit nonzero when the bounded context packet cannot be produced')
   .action(
     async (options: {
       task: string;
-      project: string;
+      project?: string;
       path?: string;
       forAgent?: string;
       limit?: string;
       maxBytes?: string;
+      strict?: boolean;
     }) => {
       try {
         const limit = Number(options.limit ?? 8);
         const { buildAgentTaskContext } = await import('./agent-task-context.js');
         const output = await buildAgentTaskContext({
-          projectPath: options.project,
+          projectPath: options.project ?? process.cwd(),
+          projectSelected: options.project !== undefined,
           task: options.task,
-          ...(options.path ? { path: options.path } : {}),
+          ...(options.path === undefined ? {} : { path: options.path }),
           forAgent: options.forAgent,
           limit,
           maxBytes: options.maxBytes,
         });
         console.log(JSON.stringify(output));
-        if (output.status === 'insufficient-budget') process.exitCode = 2;
+        // Selection/budget refusal is a valid, actionable response. Keep the default
+        // transport successful so agent hosts deliver its JSON recovery hints.
+        if (options.strict && output.status !== 'ready' && output.status !== 'partial') {
+          process.exitCode = 2;
+        }
       } catch (error) {
         console.log(
           JSON.stringify(
@@ -9695,6 +9708,15 @@ program
           )
         );
         process.exit(1);
+      }
+
+      if (
+        (scope === 'project' || options.project) &&
+        (scope === 'workspace' || options.workspace)
+      ) {
+        throw new Error(
+          'Doctor project and workspace scopes are mutually exclusive. Select one explicit scope.'
+        );
       }
 
       if (typeof options.json === 'string' && !['full', 'summary'].includes(options.json)) {

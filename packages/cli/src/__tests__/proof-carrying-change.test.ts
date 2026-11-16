@@ -1,10 +1,12 @@
 import os from 'node:os';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 
 import fsExtra from 'fs-extra';
 import { afterEach, describe, expect, it } from 'vitest';
 
 import { planGoalPack } from '../goal-pack.js';
+import { publishWorkspaceRunStageReport } from '../utils/workspace-run-evidence.js';
 import {
   abortProofCarryingChange,
   authorizeProofCarryingChange,
@@ -22,6 +24,12 @@ import {
   verifyProofCarryingChange,
 } from '../proof-carrying-change.js';
 import { buildWorkspaceModel, writeWorkspaceModel } from '../workspace-model.js';
+import { buildWorkspaceVerify } from '../workspace-verify.js';
+import {
+  buildWorkspaceModelSnapshot,
+  writeWorkspaceModelSnapshot,
+} from '../workspace-intelligence.js';
+import type { WorkspaceRunReport } from '../workspace-run.js';
 import { resetCliRunIdForTests, setCliRunId } from '../observability/cli-log-event.js';
 
 const roots: string[] = [];
@@ -89,6 +97,186 @@ afterEach(async () => {
 });
 
 describe('proof-carrying change composition', () => {
+  it('seals a local project Change without unrelated workspace readiness evidence', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const modelSnapshot = await buildWorkspaceModelSnapshot({
+      workspacePath,
+      includeAbsolutePaths: true,
+      now: new Date('2026-08-29T00:00:00.000Z'),
+    });
+    await writeWorkspaceModelSnapshot(modelSnapshot, workspacePath);
+
+    const planned = await planGoalPack({
+      startPath: projectPath,
+      intent: 'Improve retry backoff behavior',
+    });
+    expect(planned.goalPack.successCriteria).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'project-verify' })])
+    );
+    const begun = await beginProofCarryingChange({
+      workspacePath,
+      goalId: planned.goalPack.id,
+    });
+    await recordProofCarryingChangePrediction({
+      workspacePath,
+      changeId: begun.changeId,
+      prediction: validatePredictedArchitectureChangeInput({
+        operations: [
+          {
+            operation: 'change',
+            targetKind: 'artifact',
+            targetId: 'api/src/retry-backoff.ts',
+            rationale: 'The requested retry behavior change is limited to this source artifact.',
+            confidence: 'high',
+          },
+        ],
+        assumptions: ['Project API contracts remain unchanged.'],
+        predictedRisk: 'low',
+      }),
+    });
+    await authorizeProofCarryingChange({
+      workspacePath,
+      changeId: begun.changeId,
+      effectClasses: ['filesystem'],
+      grantedBy: 'maintainer',
+    });
+
+    const sourcePath = path.join(projectPath, 'src', 'retry-backoff.ts');
+    const source = 'export const retryBackoff = (attempt: number) => 2 ** attempt + 1;\n';
+    await fsExtra.outputFile(sourcePath, source);
+    await recordProofCarryingChangeEffect({
+      workspacePath,
+      changeId: begun.changeId,
+      receipt: {
+        id: 'update-retry-backoff',
+        effectClass: 'filesystem',
+        status: 'succeeded',
+        summary: 'Adjusted the retry backoff calculation.',
+        artifacts: [
+          {
+            role: 'changed-source',
+            artifact: 'api/src/retry-backoff.ts',
+            schemaVersion: 'raw-bytes-v1',
+            digest: {
+              algorithm: 'sha256',
+              semantics: 'raw-bytes-v1',
+              value: createHash('sha256').update(source).digest('hex'),
+            },
+          },
+        ],
+        observedAt: '2026-08-29T00:01:00.000Z',
+        idempotencyKey: 'update-retry-backoff-v1',
+      },
+    });
+
+    const currentModel = await buildWorkspaceModel({
+      workspacePath,
+      includeAbsolutePaths: true,
+      now: new Date('2026-08-29T00:02:00.000Z'),
+    });
+    await writeWorkspaceModel(currentModel, workspacePath);
+    await writeWorkspaceModelSnapshot(
+      await buildWorkspaceModelSnapshot({
+        workspacePath,
+        model: currentModel,
+        includeAbsolutePaths: true,
+        now: new Date('2026-08-29T00:02:00.000Z'),
+      }),
+      workspacePath
+    );
+
+    const runReport: WorkspaceRunReport = {
+      schemaVersion: '1.0',
+      workspacePath,
+      stage: 'test',
+      generatedAt: '2026-08-29T00:03:00.000Z',
+      durationMs: 1,
+      options: {
+        affected: false,
+        blastRadius: false,
+        since: null,
+        parallel: false,
+        maxWorkers: 1,
+        continueOnError: false,
+        strict: false,
+        enforceGates: false,
+        scope: 'project:api',
+      },
+      selection: {
+        mode: 'scope',
+        since: null,
+        scope: 'project:api',
+        graphStatus: 'not-applicable',
+        expansionDepth: 0,
+      },
+      gates: { enforced: false, results: [], blocked: false },
+      summary: {
+        projectCount: 1,
+        selectedCount: 1,
+        passed: 1,
+        failed: 0,
+        skipped: 0,
+        blocked: 0,
+        exitCode: 0,
+      },
+      projects: [
+        {
+          path: projectPath,
+          relativePath: 'api',
+          projectName: 'api',
+          selected: true,
+          affected: false,
+          status: 'passed',
+          exitCode: 0,
+          durationMs: 1,
+        },
+      ],
+    };
+    await publishWorkspaceRunStageReport(workspacePath, { ...runReport, stage: 'init' });
+    await publishWorkspaceRunStageReport(workspacePath, runReport);
+
+    const verified = await verifyProofCarryingChange({
+      workspacePath,
+      changeId: begun.changeId,
+      refresh: false,
+    });
+
+    expect(verified.state).toBe('committed');
+    expect(verified.capsule.status).toBe('sealed');
+    const transaction = await fsExtra.readJson(
+      path.join(workspacePath, '.workspai', 'decisions', begun.changeId, 'transaction.json')
+    );
+    expect(transaction.verifications).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ criterionId: 'project-verify', status: 'passed' }),
+      ])
+    );
+    const verifyArtifact = await fsExtra.readJson(
+      path.join(
+        workspacePath,
+        '.workspai',
+        'changes',
+        begun.changeId,
+        'verification',
+        'workspace-verify.json'
+      )
+    );
+    expect(verifyArtifact.steps.map((step: { id: string }) => step.id)).toContain(
+      'project.api.test'
+    );
+    expect(verifyArtifact.steps.map((step: { id: string }) => step.id)).not.toEqual(
+      expect.arrayContaining(['workspace.doctor', 'workspace.readiness'])
+    );
+    const wholeWorkspaceVerify = await buildWorkspaceVerify({ workspacePath });
+    expect(wholeWorkspaceVerify.summary.verdict).toBe('blocked');
+    expect(wholeWorkspaceVerify.steps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ id: 'workspace.doctor', status: 'missing' }),
+        expect.objectContaining({ id: 'workspace.readiness', status: 'missing' }),
+      ])
+    );
+  });
+
   it('uses baseline byte identity instead of provider churn as filesystem change evidence', async () => {
     const { workspacePath, projectPath } = await fixture();
     const graphPath = path.join(

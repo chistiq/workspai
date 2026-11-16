@@ -9,6 +9,54 @@ import { assertJsonSchemaContract } from '../utils/json-schema-contract.js';
 
 describe('polyglot lifecycle plan', () => {
   const tempDirs: string[] = [];
+
+  it.each(['static', 'dynamic'])(
+    'includes only a manifest-declared Python validation extra (%s)',
+    async (mode) => {
+      const root = await fs.mkdtemp(path.join(os.tmpdir(), 'python-validation-extra-'));
+      tempDirs.push(root);
+      await fs.outputFile(
+        path.join(root, 'pyproject.toml'),
+        [
+          '[project]',
+          'name = "console-tool"',
+          'version = "1.0.0"',
+          mode === 'static'
+            ? '[project.optional-dependencies]'
+            : '[tool.setuptools.dynamic.optional-dependencies]',
+          mode === 'static'
+            ? 'test = ["pytest>=8"]'
+            : 'dev = { file = "requirements/development.txt" }',
+        ].join('\n') + '\n'
+      );
+      await fs.outputFile(path.join(root, 'requirements/development.txt'), 'pytest>=8\n');
+      const init = buildPolyglotLifecyclePlan(root).units[0].stages.find(
+        (item) => item.stage === 'init'
+      )!;
+      expect(init.argvSequence?.find((item) => item.args.includes('install'))?.args).toContain(
+        mode === 'static' ? '.[test]' : '.[dev]'
+      );
+    }
+  );
+
+  it('does not invent validation extras from pytest configuration alone', async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), 'python-validation-extra-'));
+    tempDirs.push(root);
+    await fs.outputFile(
+      path.join(root, 'pyproject.toml'),
+      '[project]\nname = "tool"\n[tool.pytest.ini_options]\ntestpaths = ["tests"]\n'
+    );
+    const init = buildPolyglotLifecyclePlan(root).units[0].stages.find(
+      (item) => item.stage === 'init'
+    )!;
+    expect(init.argvSequence?.find((item) => item.args.includes('install'))?.args).toEqual([
+      '-m',
+      'pip',
+      'install',
+      '-e',
+      '.',
+    ]);
+  });
   const nestedAgentPython =
     process.platform === 'win32' ? '../../.venv/Scripts/python.exe' : '../../.venv/bin/python';
   const siblingPython =
@@ -179,7 +227,7 @@ describe('polyglot lifecycle plan', () => {
       expect(result.units[0]).toMatchObject({
         root: 'packages/member',
         workspaceOwner: { root: '.', manifest: 'package.json', packageManager: manager },
-        stages: [{ stage: 'test', command: `${manager} run test` }],
+        stages: [{ stage: 'test', command: `${manager} run test`, cwd: 'packages/member' }],
       });
       expect(result.units[0]?.stages).not.toContainEqual(
         expect.objectContaining({ stage: 'init' })

@@ -190,6 +190,7 @@
           "kind": {
             "enum": [
               "workspace-verify",
+              "project-verify",
               "release-readiness",
               "dependency-security",
               "test-coverage"

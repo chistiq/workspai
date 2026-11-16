@@ -734,7 +734,7 @@ const DOCTOR_PROJECT_SCAN_SCHEMA = 'doctor-project-scan-v2';
 // Bump whenever project diagnosis or executable-remediation semantics change.
 // This keeps unchanged source trees from reusing evidence produced by an older
 // Doctor policy after a CLI upgrade.
-const DOCTOR_PROJECT_SCAN_POLICY_VERSION = 'doctor-project-scan-policy-v5';
+const DOCTOR_PROJECT_SCAN_POLICY_VERSION = 'doctor-project-scan-policy-v6';
 const DOCTOR_WORKSPACE_CACHE_SCHEMA =
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.doctorWorkspaceCache.schemaVersion;
 const DOCTOR_CONTRACT_METADATA: DoctorContractMetadata = Object.freeze({
@@ -4604,7 +4604,41 @@ async function checkProjectUnnormalized(
 
     const agentRuntimeRoot = health.projectKind === 'agent' ? 'agents/primary' : undefined;
     const nodeModulesPath = path.join(projectPath, agentRuntimeRoot ?? '', 'node_modules');
-    if (await fsExtra.pathExists(nodeModulesPath)) {
+    // A standalone, dependency-free Node manifest needs no node_modules tree.
+    // Workspace roots and agent shells cannot prove their member requirements
+    // from the root manifest, so inspect the selected owner conservatively.
+    const dependencyRoot = path.join(projectPath, agentRuntimeRoot ?? '');
+    const dependencyManifest = agentRuntimeRoot
+      ? await fsExtra.readJson(path.join(dependencyRoot, 'package.json')).catch(() => null)
+      : packageJsonData;
+    const noDependencyGroups =
+      dependencyManifest &&
+      ['dependencies', 'devDependencies', 'peerDependencies', 'optionalDependencies'].every(
+        (key) => {
+          const group = dependencyManifest[key];
+          return (
+            group === undefined ||
+            (group !== null &&
+              typeof group === 'object' &&
+              !Array.isArray(group) &&
+              Object.keys(group).length === 0)
+          );
+        }
+      );
+    const noBundles =
+      dependencyManifest &&
+      ['bundledDependencies', 'bundleDependencies'].every(
+        (key) =>
+          dependencyManifest[key] === undefined ||
+          (Array.isArray(dependencyManifest[key]) && dependencyManifest[key].length === 0)
+      );
+    health.depsInstalled = Boolean(
+      noDependencyGroups &&
+      noBundles &&
+      dependencyManifest.workspaces === undefined &&
+      !(await fsExtra.pathExists(path.join(dependencyRoot, 'pnpm-workspace.yaml')))
+    );
+    if (!health.depsInstalled && (await fsExtra.pathExists(nodeModulesPath))) {
       try {
         const modules = await fsExtra.readdir(nodeModulesPath);
         // Check if there are actual packages (more than just .bin, .cache, etc.)
@@ -9456,6 +9490,11 @@ export async function runDoctor(
     profile?: string;
   } = {}
 ): Promise<number> {
+  if (options.workspace && options.project) {
+    throw new Error(
+      'Doctor project and workspace scopes are mutually exclusive. Select one explicit scope.'
+    );
+  }
   const doctorBlock = (
     blockId: 'doctor.observe' | 'doctor.diagnose' | 'doctor.plan' | 'doctor.verify',
     status: 'running' | 'succeeded' | 'warned' | 'failed',

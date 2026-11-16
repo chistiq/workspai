@@ -10,8 +10,8 @@ import { fileURLToPath } from 'node:url';
  * This script:
  * - regenerates generated canonical contracts from Workspai CLI source code
  * - mirrors every canonical JSON contract to workspai/contracts/
- * - mirrors every canonical JSON contract to rapidkit-vscode/contracts/
- * - mirrors runtime-consumed extension JSON contracts to rapidkit-vscode/src/contracts/
+ * - mirrors every canonical JSON contract to workspai-vscode/contracts/
+ * - mirrors runtime-consumed extension JSON contracts to workspai-vscode/src/contracts/
  */
 
 const args = new Set(process.argv.slice(2));
@@ -27,9 +27,11 @@ const cliRoot = path.resolve(scriptDir, '..');
 const monorepoRoot = path.resolve(cliRoot, '..', '..');
 const contractsDir = path.resolve(cliRoot, 'contracts');
 const rootContractsDir = path.resolve(monorepoRoot, 'contracts');
-const vscodeRoot = process.env.RAPIDKIT_VSCODE_REPO_PATH
-  ? path.resolve(process.env.RAPIDKIT_VSCODE_REPO_PATH)
-  : path.resolve(monorepoRoot, '..', 'rapidkit-vscode');
+const vscodeOverride =
+  process.env.WORKSPAI_VSCODE_REPO_PATH ?? process.env.RAPIDKIT_VSCODE_REPO_PATH;
+const vscodeRoot = vscodeOverride
+  ? path.resolve(vscodeOverride)
+  : path.resolve(monorepoRoot, '..', 'workspai-vscode');
 const vscodeConsumerPresent = !npmOnly && fs.existsSync(vscodeRoot);
 
 const GENERATED_FILES = [
@@ -421,7 +423,7 @@ function assertConsumerContractsCommitted(canonicalRelativePaths) {
 
 if (requireConsumer && !vscodeConsumerPresent) {
   console.error(`Required Workspai VS Code contract consumer not found at: ${vscodeRoot}`);
-  console.error('Set RAPIDKIT_VSCODE_REPO_PATH to the checked-out rapidkit-vscode repository.');
+  console.error('Set RAPIDKIT_VSCODE_REPO_PATH to the checked-out workspai-vscode repository.');
   process.exit(1);
 }
 
@@ -451,7 +453,7 @@ for (const relativePath of canonicalFiles) {
     syncContract(
       relativePath,
       path.resolve(vscodeRoot, 'contracts'),
-      'rapidkit-vscode/contracts',
+      'workspai-vscode/contracts',
       content
     );
 
@@ -459,7 +461,7 @@ for (const relativePath of canonicalFiles) {
       syncContract(
         relativePath,
         path.resolve(vscodeRoot, 'src', 'contracts'),
-        'rapidkit-vscode/src/contracts',
+        'workspai-vscode/src/contracts',
         content
       );
     }

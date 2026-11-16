@@ -71,8 +71,8 @@ describe('shared contracts workflow (Wave A + B)', () => {
     expect(npmPackage.scripts['generate:contracts']).toContain('generate-shared-contracts');
     expect(syncScript).toContain('Canonical contracts live in packages/cli/contracts/');
     expect(syncScript).toContain('runGenerator()');
-    expect(syncScript).toContain('rapidkit-vscode/contracts');
-    expect(syncScript).toContain('rapidkit-vscode/src/contracts');
+    expect(syncScript).toContain('workspai-vscode/contracts');
+    expect(syncScript).toContain('workspai-vscode/src/contracts');
     expect(syncScript).toContain('listJsonContracts');
     expect(syncScript).toContain('module-layout.v1.json');
     expect(syncScript).toContain('infra-stack.v1.json');

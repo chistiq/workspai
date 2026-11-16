@@ -95,7 +95,11 @@ function remainingReads(receipt: AgentBootstrapReceipt): string[] {
 /** Terminal projection only. It never changes source receipt claims or persists evidence. */
 export function buildAgentBootstrapView(
   receipt: AgentBootstrapReceipt,
-  options: { maxBytes?: number; completedReads?: readonly string[] } = {}
+  options: {
+    maxBytes?: number;
+    completedReads?: readonly string[];
+    projectTask?: boolean;
+  } = {}
 ): AgentBootstrapView | AgentBootstrapBudgetFailure {
   assertJsonSchemaContract(
     receipt,
@@ -113,7 +117,22 @@ export function buildAgentBootstrapView(
     integrity: receipt.integrity,
   });
   const findings = receipt.checks.filter((check) => check.status !== 'passed');
+  const foreignGoal =
+    options.projectTask && receipt.activeGoal.present && !receipt.activeGoal.appliesToProject;
   const passed = receipt.checks.length - findings.length;
+  const nextActions = receipt.nextActions.filter(
+    (entry) =>
+      !options.completedReads?.includes(entry) &&
+      !options.completedReads?.includes(`command:${entry}`) &&
+      !(foreignGoal && findings.every((finding) => finding.id === 'active-goal'))
+  );
+  if (nextActions.length === 0) {
+    nextActions.push(
+      foreignGoal
+        ? 'Continue authorized project work using the scoped findings; the unrelated Goal does not own this task.'
+        : 'Use the remaining scoped reads and findings to continue the authorized task.'
+    );
+  }
   const payload = structuredClone({
     schemaVersion: AGENT_BOOTSTRAP_VIEW_SCHEMA_VERSION,
     sourceReceipt,
@@ -127,17 +146,19 @@ export function buildAgentBootstrapView(
     workspace: receipt.workspace,
     entry: receipt.entry,
     canonicalEvidence: receipt.canonicalEvidence,
-    activeGoal: receipt.activeGoal,
+    activeGoal: foreignGoal
+      ? { present: true, appliesToProject: false, status: receipt.activeGoal.status }
+      : receipt.activeGoal,
     claims: receipt.claims,
     requiredReadOrder: remainingReads(receipt).filter(
-      (entry) => !options.completedReads?.includes(entry)
-    ),
-    checks: { total: receipt.checks.length, passed, findings, omittedPassedDetails: passed },
-    nextActions: receipt.nextActions.filter(
       (entry) =>
         !options.completedReads?.includes(entry) &&
-        !options.completedReads?.includes(`command:${entry}`)
+        // The task view supplies scoped guidance instead of requiring the
+        // workspace-wide skill catalog. No catalog read is claimed.
+        !(options.projectTask && entry === receipt.canonicalEvidence.workspaceSkillsIndex)
     ),
+    checks: { total: receipt.checks.length, passed, findings, omittedPassedDetails: passed },
+    nextActions,
     budget: { maxBytes, usedBytes: 0, accounting: 'utf8-json-with-newline' as const },
   });
   const view: AgentBootstrapView = {

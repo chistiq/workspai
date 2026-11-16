@@ -293,7 +293,10 @@ describe('canonical-first project agent entry', () => {
     expect(receipt.requiredReadOrder).not.toContain(
       'workspace:.workspai/reports/workspace-knowledge-graph.json'
     );
-    expect(receipt.requiredReadOrder).toContain(
+    expect(receipt.requiredReadOrder).not.toContain(
+      'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json'
+    );
+    expect(receipt.canonicalEvidence.boundedGraphSearch).toBe(
       'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json'
     );
     expect(receipt.requiredReadOrder).toContain(
@@ -308,6 +311,49 @@ describe('canonical-first project agent entry', () => {
     expect(view.canonicalEvidence).toEqual(receipt.canonicalEvidence);
     expect(view.sourceReceipt.integrity).toEqual(receipt.integrity);
     expect(view.requiredReadOrder).not.toContain(receipt.requiredReadOrder[1]);
+
+    // Expired verification reports must not invalidate a freshly sealed source
+    // graph. Structural expiry must still fail closed with the same live inputs.
+    const modelPath = path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.model);
+    for (const category of ['verification', 'structure'] as const) {
+      const changedModel = structuredClone(persistedModel);
+      const fact = changedModel.facts!.find((item) => item.freshness.category === category)!;
+      expect(fact).toBeDefined();
+      fact.freshness.status = 'stale';
+      changedModel.factFreshness!.status = 'stale';
+      await fsExtra.writeJson(modelPath, changedModel);
+      await syncProjectIntelligenceLens({
+        workspacePath,
+        projectPath,
+        projectName: 'api',
+        relationship: 'adopted',
+        mode: 'managed',
+      });
+      const ttlReceipt = await buildAgentBootstrapReceipt({
+        startPath: projectPath,
+        forAgent: 'codex',
+      });
+      expect(ttlReceipt.checks.find((check) => check.id === 'live-inputs')?.status).toBe('passed');
+      expect(ttlReceipt.checks.find((check) => check.id === 'persisted-freshness')?.status).toBe(
+        category === 'verification' ? 'passed' : 'failed'
+      );
+      expect(ttlReceipt.status).toBe(category === 'verification' ? 'degraded' : 'blocked');
+      if (category === 'verification') {
+        expect(ttlReceipt.readiness.architectureEvidence).toBe('ready');
+        expect(ttlReceipt.checks).toContainEqual(
+          expect.objectContaining({ id: 'verification-freshness', status: 'warning' })
+        );
+        expect((await fsExtra.readJson(modelPath)).factFreshness.status).toBe('stale');
+      }
+    }
+    await fsExtra.writeJson(modelPath, persistedModel);
+    await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath,
+      projectName: 'api',
+      relationship: 'adopted',
+      mode: 'managed',
+    });
 
     const cliArgs = [
       path.resolve('dist/index.js'),

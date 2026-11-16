@@ -57,15 +57,13 @@ if (repositoryReadmeLineCount > 250) {
 
 const requiredCliReadmeHeadings = [
   '## Give your AI agent the system, not just the repository',
-  '## Workspace Intelligence for software systems',
-  '## Start in two minutes',
-  '## Give your agent a goal, not an open-ended prompt',
-  '## Make every agent change carry proof',
-  '## What happens after the first run',
-  '## How Workspace Intelligence works',
+  '## Choose your start',
+  '## Give your agent a focused task',
+  '## Refresh context and inspect health',
   '## Everyday workflows',
+  '## Plan work and verify governed changes',
+  '## How Workspace Intelligence works',
   '## Outputs and integrations',
-  '## Requirements',
   '## Documentation',
   '## Troubleshooting',
   '## Contributing',
@@ -92,13 +90,13 @@ for (const semantic of [
   'not "these projects are independent."',
   'npx workspai create',
   'npx workspai adopt .',
-  'npx workspai goal "Raise test coverage to 85%" --for-agent generic',
-  'The agent gets a focused objective, not permission to scan or change everything.',
-  'does not edit source or claim that the outcome is complete.',
-  'npx workspai change effect record --change <change-id> --file effect-receipt.json --json',
+  'npx workspai agent context --project . --for-agent generic',
+  'npx workspai goal "Add retry with exponential backoff" --for-agent generic',
+  'does not edit source or claim completion.',
   'Prediction can guide work but can never prove its own result.',
   'Live activity projections and reports for IDEs and dashboards',
-  'A blocked result is useful evidence, not a crashed command.',
+  'Preparing context does not edit source or run tests.',
+  'host must load those instructions',
   'do not require an AI API key',
 ]) {
   if (!normalizedCliReadme.includes(semantic)) {
@@ -230,8 +228,9 @@ for (const selector of [
 
 const requiredRepositoryReadmeHeadings = [
   '## Give your AI agent the system, not just the repository',
-  '## Workspace Intelligence for software systems',
   '## Start with your software',
+  '## Give your agent a focused task',
+  '## Refresh context and inspect health',
   '## From intent to a verified change',
   '## How it works',
   '## One foundation, many consumers',
@@ -259,7 +258,7 @@ for (const semantic of [
   'One workspace. One truth. Humans and AI aligned.',
   'The Workspace Model is the canonical source of truth.',
   'derived, revision-bound representation',
-  'not “these projects are independent.”',
+  'not "these projects are independent."',
   'README_CONTENT_CONTRACT.md',
   'npx workspai goal "Add retry with exponential backoff" --for-agent generic',
   'It prepares governed work; it does not edit source or claim completion.',
@@ -269,6 +268,35 @@ for (const semantic of [
   if (!normalizedRepositoryReadme.includes(semantic)) {
     errors.push(`Repository README is missing required product truth: ${semantic}`);
   }
+}
+
+// Keep onboarding small without dropping the architecture or claim boundaries.
+const preservedSlogans = [
+  'Give your AI agent the system, not just the repository',
+  'Less rediscovery. More time building.',
+  'One workspace. One truth. Humans and AI aligned.',
+];
+for (const [name, source] of [
+  ['README.md', readme],
+  ['../../README.md', repositoryReadme],
+]) {
+  for (const slogan of preservedSlogans) {
+    if (!source.includes(slogan)) errors.push(`${name} is missing the preserved slogan: ${slogan}`);
+  }
+  if (!source.includes('npx workspai agent context --project . --for-agent generic')) {
+    errors.push(`${name} must show explicitly project-scoped task context`);
+  }
+  const intro = source.slice(0, source.indexOf('## Give your agent a focused task'));
+  if (intro.includes('npx workspai workspace intelligence run')) {
+    errors.push(`${name} must not repeat the full intelligence chain immediately after adoption`);
+  }
+  if (/!\[[^\]]*\]\([^)]*\.gif(?:[?#][^)]*)?\)/iu.test(source)) {
+    errors.push(`${name} must link to heavy demos instead of embedding GIF downloads`);
+  }
+}
+const overviewPath = path.join(root, 'docs', 'workspai-overview.svg');
+if (!fs.existsSync(overviewPath) || fs.statSync(overviewPath).size > 64 * 1024) {
+  errors.push('README workflow overview must exist and remain below 64 KiB');
 }
 
 const readmeContentContractPath = path.join(root, 'docs', 'README_CONTENT_CONTRACT.md');
@@ -434,6 +462,76 @@ const workspaceRunGuide = fs.readFileSync(path.join(root, 'docs', 'workspace-run
 const agentEntryGuide = fs.readFileSync(path.join(root, 'docs', 'agent-entry.md'), 'utf8');
 const glossary = fs.readFileSync(path.join(root, 'docs', 'GLOSSARY.md'), 'utf8');
 const aiQuickstart = fs.readFileSync(path.join(root, 'docs', 'AI_QUICKSTART.md'), 'utf8');
+
+// Guard the public task-entry and scoped-run guides together. A correct README
+// cannot compensate for an operations guide that still prescribes older gates.
+const currentWorkflowGuides = [
+  ['docs/README.md', docsIndex, ['agent context --project .', 'skill', 'prepared']],
+  [
+    'docs/commands-reference.md',
+    fs.readFileSync(path.join(root, 'docs', 'commands-reference.md'), 'utf8'),
+    ['project-selection-required', 'insufficient-budget', 'skill', 'canonical project'],
+  ],
+  [
+    'docs/contracts/ARTIFACT_CATALOG.md',
+    artifactCatalog,
+    ['agent context --project .', 'project-selection-required', 'scopedProjects', 'skill'],
+  ],
+  [
+    'docs/workspace-operations.md',
+    fs.readFileSync(path.join(root, 'docs', 'workspace-operations.md'), 'utf8'),
+    ['agent context --project .', 'scopedProjects', 'skill', 'already seals'],
+  ],
+  [
+    'docs/workspace-run.md',
+    workspaceRunGuide,
+    ['doctor-project', '--affected', 'canonical project', 'even without --strict'],
+  ],
+  [
+    'docs/doctor-command.md',
+    fs.readFileSync(path.join(root, 'docs', 'doctor-command.md'), 'utf8'),
+    ['mutually exclusive', 'canonical project.path', 'no dependency requirements'],
+  ],
+  [
+    'docs/goal-packs.md',
+    fs.readFileSync(path.join(root, 'docs', 'goal-packs.md'), 'utf8'),
+    ['project-verify', 'workspace-verify', 'transitive dependents', 'strict'],
+  ],
+  [
+    'docs/workspace-knowledge-graph.md',
+    graphGuide,
+    ['workspace-graph-search-view.v1', 'no-matches', 'retrieval', 'aggregateScope'],
+  ],
+  [
+    'docs/agent-entry.md',
+    agentEntryGuide,
+    ['inline project skill', 'project-selection-required', 'foreign Goal'],
+  ],
+];
+for (const [name, content, semantics] of currentWorkflowGuides) {
+  const normalized = content.replace(/[*`]/g, '').replace(/\s+/g, ' ').toLowerCase();
+  for (const semantic of semantics) {
+    if (!normalized.includes(semantic.toLowerCase())) {
+      errors.push(`${name} is missing current task/scoped execution semantics: ${semantic}`);
+    }
+  }
+}
+for (const [name, content] of currentWorkflowGuides.slice(0, 2)) {
+  const taskEntry = content.indexOf('agent context --project .');
+  const fullRunner = content.indexOf('workspace intelligence run --for-agent generic');
+  if (taskEntry < 0 || (fullRunner >= 0 && fullRunner < taskEntry)) {
+    errors.push(`${name} must present task context before the optional full workspace refresh`);
+  }
+}
+const aliasReadmePath = path.resolve(root, '..', 'wspai', 'README.md');
+if (fs.existsSync(aliasReadmePath)) {
+  const aliasReadme = fs.readFileSync(aliasReadmePath, 'utf8');
+  const taskEntry = aliasReadme.indexOf('npx wspai agent context --project .');
+  const fullRunner = aliasReadme.indexOf('npx wspai workspace intelligence run');
+  if (taskEntry < 0 || (fullRunner >= 0 && fullRunner < taskEntry)) {
+    errors.push('wspai README must follow the same task-first onboarding as workspai');
+  }
+}
 
 const requiredDocumentationLinks = [
   'README_CONTENT_CONTRACT.md',

@@ -12,7 +12,7 @@ type LifecycleUnit = Pick<
   'id' | 'runtime' | 'ecosystem' | 'role' | 'root' | 'manifest'
 > & {
   provenance: 'manifest-derived';
-  stages: PolyglotRuntimeUnit['stages'];
+  stages: Array<PolyglotRuntimeUnit['stages'][number] & { cwd: string }>;
   workspaceOwner?: PolyglotRuntimeUnit['workspaceOwner'];
 };
 
@@ -125,7 +125,7 @@ export function buildProjectLifecycleContext(
     root: unit.root,
     manifest: unit.manifest,
     provenance: 'manifest-derived',
-    stages: unit.stages,
+    stages: unit.stages.map((stage) => ({ ...stage, cwd: unit.root })),
     ...(unit.workspaceOwner ? { workspaceOwner: unit.workspaceOwner } : {}),
   }));
   const context: ProjectLifecycleContext = {

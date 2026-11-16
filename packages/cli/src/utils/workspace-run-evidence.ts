@@ -26,6 +26,10 @@ export const LEGACY_AUTOPILOT_WORKSPACE_RUN_BUILD_FILENAME = 'autopilot-workspac
 
 export type WorkspaceRunProjectStageRecord = {
   generatedAt: string;
+  /** Timing and execution mode of the actual run, retained for governed freshness checks. */
+  durationMs?: number;
+  reusePassed?: boolean;
+  planOnly?: boolean;
   status: string;
   projectName: string;
   relativePath: string;
@@ -242,6 +246,9 @@ export async function publishWorkspaceRunStageReport(
           ...projectStages[key],
           [stageReport.stage]: {
             generatedAt: stageReport.generatedAt,
+            durationMs: stageReport.durationMs,
+            reusePassed: stageReport.options.reusePassed === true,
+            planOnly: stageReport.options.planOnly === true,
             status: project.status,
             projectName: project.projectName,
             relativePath: project.relativePath,

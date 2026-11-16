@@ -387,7 +387,8 @@
             "command": {
               "enum": [
                 "workspai agent bootstrap --for-agent generic --strict --json",
-                "workspai agent context --task \"<user request>\" --for-agent generic"
+                "workspai agent context --task \"<user request>\" --for-agent generic",
+                "workspai agent context --task \"<user request>\" --for-agent generic --project ."
               ]
             },
             "successCondition": { "enum": ["ready", "ready-or-disclosed-partial"] }

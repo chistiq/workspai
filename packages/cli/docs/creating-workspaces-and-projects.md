@@ -741,10 +741,11 @@ enclosing workspace.
 
 # Unsupported create requests
 
-Workspai does not guess a native scaffold for every ecosystem. Projects such as
-WordPress, Laravel, Symfony, Rails, generic PHP, Ruby, Rust, and other
-unregistered stacks should be created with their ecosystem tooling and then
-adopted:
+Workspai does not guess a scaffold for every ecosystem. For requests outside
+the registered kits, such as WordPress, Symfony, Rails or other generic PHP,
+Ruby and Rust applications, use ecosystem tooling and then adopt the result.
+Laravel and Axum have the explicit `php.laravel` and `rust.axum` routes listed
+above; they are not unsupported merely because their runtime is PHP or Rust.
 
 ```bash
 npx workspai adopt /path/to/project

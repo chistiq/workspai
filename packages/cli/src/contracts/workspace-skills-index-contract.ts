@@ -12,6 +12,7 @@ export type WorkspaceSkillsIndexEntry = {
   path: string;
   schemaVersion: string;
   title: string;
+  scopedProjects?: string[];
 };
 
 export type WorkspaceOperationalSkillDecision = {
@@ -50,6 +51,7 @@ export function buildWorkspaceSkillsIndex(input: {
     computeInputsHash({
       skillIds: sorted.map((skill) => skill.skillId),
       paths: sorted.map((skill) => skill.canonicalPath),
+      projectScopes: sorted.map((skill) => skill.scopedProjects),
       decisions: input.decisions ?? [],
     });
   const decisions = input.decisions
@@ -64,6 +66,7 @@ export function buildWorkspaceSkillsIndex(input: {
       path: skill.canonicalPath,
       schemaVersion: skill.schemaVersion,
       title: skill.title,
+      scopedProjects: [...skill.scopedProjects],
     })),
     ...(decisions
       ? {
@@ -83,6 +86,20 @@ export function isWorkspaceSkillsIndex(value: unknown): value is WorkspaceSkills
     return false;
   }
   const record = value as Record<string, unknown>;
+  const validScopes = (value: unknown) =>
+    Array.isArray(value) && value.every((item) => typeof item === 'string');
+  const skillsAreValid =
+    Array.isArray(record.skills) &&
+    record.skills.every((value) => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+      const skill = value as Record<string, unknown>;
+      return (
+        ['skillId', 'path', 'schemaVersion', 'title'].every(
+          (key) => typeof skill[key] === 'string'
+        ) &&
+        (skill.scopedProjects === undefined || validScopes(skill.scopedProjects))
+      );
+    });
   const selection = record.selection;
   const selectionIsValid =
     selection === undefined ||
@@ -91,11 +108,16 @@ export function isWorkspaceSkillsIndex(value: unknown): value is WorkspaceSkills
       !Array.isArray(selection) &&
       typeof (selection as Record<string, unknown>).generatedCount === 'number' &&
       typeof (selection as Record<string, unknown>).suppressedCount === 'number' &&
-      Array.isArray((selection as Record<string, unknown>).decisions));
+      Array.isArray((selection as Record<string, unknown>).decisions) &&
+      ((selection as Record<string, unknown>).decisions as unknown[]).every((value) => {
+        if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+        const decision = value as Record<string, unknown>;
+        return typeof decision.skillId === 'string' && validScopes(decision.scopedProjects);
+      }));
   return (
     record.schemaVersion === WORKSPACE_SKILLS_INDEX_SCHEMA_VERSION &&
     typeof record.generatedAt === 'string' &&
-    Array.isArray(record.skills) &&
+    skillsAreValid &&
     selectionIsValid
   );
 }

@@ -11,6 +11,7 @@ import {
 import { buildWorkspaceKnowledgeGraph } from '../workspace-knowledge-graph.js';
 import {
   queryKnowledgeEvidence,
+  knowledgeProofMatchesProjectScope,
   searchKnowledgeGraph,
 } from '../workspace-knowledge-graph-query.js';
 import { hashWorkspaceModel } from '../workspace-model-hash.js';
@@ -97,6 +98,89 @@ describe('revision-bound graph search consumer view', () => {
       throw new Error(`Expected results, required ${result.budget.requiredBytes} bytes`);
     return result;
   }
+
+  it.each(['python', 'typescript', 'go', 'rust'])(
+    'ranks a named history parser above generic test vocabulary in %s',
+    (language) => {
+      const source = structuredClone(graph);
+      const prototype = source.entities.find((entity) => entity.kind === 'symbol')!;
+      const symbol = {
+        ...prototype,
+        id: 'subject-parser',
+        label: 'parseSavedChatHistory',
+        projectId: 'api',
+        identity: { ...prototype.identity, key: 'parseSavedChatHistory', aliases: [] },
+        attributes: {
+          language,
+          artifact: 'api/src/history',
+          summary: 'terminal tool output multiline messages',
+        },
+        proofIds: [],
+      };
+      const noise = Array.from({ length: 15 }, (_, i) => ({
+        ...prototype,
+        id: `broad-test-${i}`,
+        kind: 'file' as const,
+        label: `api/tests/test_main_${i}`,
+        identity: { ...prototype.identity, key: `test_main_${i}`, aliases: [] },
+        projectId: 'api',
+        attributes: {
+          language,
+          summary:
+            'add check default enabled exclude fix include maintain please preserve regression run tests verified',
+        },
+        proofIds: [],
+      }));
+      source.entities = [
+        ...source.entities.filter((entity) => entity.kind === 'project'),
+        symbol,
+        ...noise,
+      ];
+      source.relations = [];
+      const result = searchKnowledgeGraph(source, {
+        query:
+          'Fix saved chat history parsing so terminal tool output is preserved, maintaining message order and multiline output, default excludes tool messages; add regression tests and run checks.',
+        projectId: 'api',
+        limit: 3,
+      });
+      expect(result.entities[0]?.id).toBe('subject-parser');
+    }
+  );
+
+  it('returns explicit recovery for no matches instead of claiming absence', () => {
+    const view = complete(graph, { query: 'nonexistentSpecificIdentifier' });
+    expect(view.retrieval).toMatchObject({ method: 'lexical', status: 'no-matches' });
+    expect(view.retrieval.nextAction).toContain('not proof of absence');
+  });
+
+  it.each([
+    '\u062e\u0648\u0627\u0646\u062f\u0646_\u067e\u06cc\u0627\u0645',
+    '\u7b97',
+    'cafe\u0301',
+  ])('retains Unicode identifiers in lexical search: %s', (identifier) => {
+    const source = structuredClone(graph);
+    const symbol = source.entities.find((entity) => entity.kind === 'symbol')!;
+    symbol.label = identifier.normalize('NFC');
+    symbol.identity.aliases.push(symbol.label);
+    expect(
+      searchKnowledgeGraph(source, { query: identifier, projectId: 'api' }).entities[0]?.id
+    ).toBe(symbol.id);
+  });
+
+  it('normalizes proof traversal before checking project ownership', () => {
+    const proof = { ...graph.proofs[0], artifact: 'api/../other/src/private.ts' };
+    expect(knowledgeProofMatchesProjectScope(graph, proof, 'api')).toBe(false);
+    expect(
+      knowledgeProofMatchesProjectScope(graph, { ...proof, artifact: '../private.ts' }, 'api')
+    ).toBe(false);
+    expect(
+      knowledgeProofMatchesProjectScope(
+        graph,
+        { ...proof, artifact: 'api\\..\\other\\private.ts' },
+        'api'
+      )
+    ).toBe(false);
+  });
 
   it('preserves ranked matches, evidence, scope and package boundaries while deferring full details', () => {
     const baseline = searchKnowledgeGraph(graph, {

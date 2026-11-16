@@ -5,6 +5,125 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
+## v0.81.1 (November 16, 2026)
+
+Released November 16, 2026. Package metadata is aligned to `0.81.1`.
+**Publication status: Published November 16, 2026.** Cross-platform
+qualification has not been claimed.
+
+### Clearer execution context for coding agents
+
+Workspai 0.81.1 makes the selected project and working directory explicit in
+task context, reducing retries caused by shell commands running from a
+different directory than source reads.
+
+**What's New:**
+
+- Recover re-adoption from intact links with missing membership after validating
+  workspace identity and absence of name/path collisions; preserve transactional
+  rollback and authored instructions. Ordinary tools still require membership.
+- Separate structural grounding freshness from expired verification reports.
+  Report TTLs and strict-bootstrap warnings remain enforced without making
+  expired Doctor/Analyze/Readiness evidence block a structurally current adoption.
+- Isolate project-scoped run gates from workspace release readiness; validate
+  canonical Doctor ownership and reject empty, ambiguous or conflicting scopes.
+  Preserve advisory warnings and strict exits; reject blocked health verdicts.
+  Exempt only standalone Node manifests proving no dependency requirements from
+  the `node_modules` check, retaining conservative workspace/agent ownership.
+- Provide compact task-scoped Skills, filter foreign host Skill entries and
+  include manifest-declared Python validation extras during setup.
+  Retain unrelated Goal warnings without following foreign Goal repair routes.
+- Improve long-task Graph ranking and Unicode retrieval, normalize proof paths
+  and expose explicit recovery when lexical evidence cannot answer a query.
+
+- Refuse an unverified umbrella cwd before descendant discovery. Missing source
+  paths and nested project boundaries return `project-selection-required`;
+  explicit native projects and ordinary monorepo packages remain supported.
+- Bind generated gates to an explicit project and require scope comparison.
+  Return structured argv recovery preserving task, host and project; distinguish
+  Graph match counts from byte budgets and never invent missing project inputs.
+  Consumers handle selection and budget refusals before task components.
+- Report the resolved workspace route in task context (`parent`, `local-link`,
+  registry or managed default) without exposing machine-local paths. Keep stale
+  and ambiguous bindings blocked instead of presenting them as unmanaged projects.
+- State project-versus-workspace command scope directly. Reuse the task packet's
+  bounded Graph query, distinguish host-picker and permission failures from stale
+  Graph data, and reserve workspace-wide refresh for tasks that require and
+  authorize it. The existing binding field also reports `resolution-blocked`
+  so stale ownership cannot look unmanaged to older context consumers.
+- Use a compact shared agent entry and a native Copilot gate in
+  `.github/copilot-instructions.md`. Refresh and removal preserve authored
+  instructions; unsafe paths and tracked deletions remain protected.
+- Bind generated entry blocks and imported dependencies to their current content.
+  Bootstrap detects missing or changed gates and distinguishes artifact readiness
+  from unobserved host loading and model compliance. Task context reports its
+  delivery as prepared, without claiming session consumption.
+- Include a project-relative `cwd` for every manifest-derived lifecycle stage
+  and state that reading a source file does not change terminal working
+  directory. Generated entry guidance explains when to run from the selected
+  project root or pass `--project`.
+- Describe `workspace:` evidence as belonging to the canonical workspace and
+  provide the supported `workspai project workspace status --json` resolver,
+  including its `workspacePath` field. Reuse the result while project and
+  workspace identity remain unchanged.
+- Clarify that package scripts may ignore appended output arguments, and give
+  scoped guidance for temporary Git editor/signing requirements and
+  repository-required generated artifacts.
+- Keep typed `insufficient-budget` responses usable by agent hosts with a
+  successful exit by default, and add `agent context --strict` for automation
+  that requires a nonzero refusal. Generated guidance checks the response
+  status before accessing grounding or Graph fields, and the command inventory
+  includes the option.
+- Validate the latest artifact state before both Proof-Carrying Change gates.
+  Invalid digests or deletion tombstones block directly; sequential edits and
+  deletion/recreation retain their ledger history without requiring historical
+  file bytes to match the current filesystem.
+- Preserve canonical project containment for local and adopted sources, path
+  aliases, and overlapping artifact identities. Traversal and escaping symlinks
+  use the full workspace gate.
+- Keep the latest effect's freshness boundary in both gates, require actual
+  runtime execution after that effect, and reject cached or plan-only results.
+  Pinned projects and their transitive dependents remain mandatory even without
+  a structural Model diff; skipped checks cannot seal a change.
+- Publish current capsule references and independently validate them against the
+  ledger, including verification retries and legacy v1 full-history capsules.
+- Advance the Goal Pack compiler revision so project-verification criteria
+  cannot reuse immutable IDs from the prior goal contract.
+- Clarify that Proof-Carrying Change prediction is part of a governed change
+  and that strict verification retains workspace-wide readiness and freshness
+  requirements.
+
+**Compatibility:** The new task execution metadata is additive. Existing full
+Graph and bootstrap views remain available; entry/delivery metadata is additive.
+This release does not alter agent
+host permissions or guarantee that an external model follows generated
+guidance.
+
+**Documentation:** The READMEs preserve the product slogans and lead with
+create/adopt paths and bounded task context. Current guides distinguish scoped
+gates from fleet readiness and cover inline Skills, Graph recovery and explicit
+project selection without adding repeated full-workspace prerequisites.
+
+**Validation (November 16, 2026):** The full CLI suite on Linux/Node 24.20.0 completed with
+**3,271 passed, 12 skipped, and 0 failed**. Permanent regressions cover scoped
+gates, retrieval, Skill applicability, host entry, compiler identity and verification hardening. Build, typecheck,
+changed-file lint/formatting, contract parity/synchronization, agent customization
+drift, and documentation/release checks passed. Cross-platform qualification
+remains unclaimed.
+
+**Publication status:** Published November 16, 2026.
+
+**Install or upgrade:**
+
+```bash
+npm install -g workspai@0.81.1
+workspai --version
+```
+
+The optional `wspai` alias uses the matching `0.81.1` version.
+
+[Full v0.81.1 release notes](https://github.com/chistiq/workspai/blob/v0.81.1/packages/cli/releases/RELEASE_NOTES_v0.81.1.md).
+
 ## v0.81.0 (November 13, 2026)
 
 Released November 13, 2026. Package metadata is aligned to `0.81.0`.

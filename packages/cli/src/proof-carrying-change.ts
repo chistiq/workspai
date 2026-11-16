@@ -49,10 +49,10 @@ import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 import {
   resolveContainedWorkspaceArtifactPath,
   resolvePortableWorkspaceEvidenceCandidatePath,
-  resolvePortableWorkspaceEvidencePath,
   writeWorkspaceArtifactJson,
   writeWorkspaceArtifactJsonSet,
 } from './utils/artifact-path-compat.js';
+import { resolveWorkspaceProjectFilesystemPath } from './utils/workspace-project-paths.js';
 import { runWorkspaceIntelligenceChain } from './workspace-intelligence-runner.js';
 import { buildWorkspaceKnowledgeGraphChangeOverlay } from './workspace-knowledge-graph-change-overlay.js';
 import { readWorkspaceKnowledgeGraphSnapshot } from './workspace-knowledge-graph-snapshot.js';
@@ -63,6 +63,7 @@ import {
   writeWorkspaceVerify,
   type WorkspaceVerify,
 } from './workspace-verify.js';
+import { WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH } from './workspace-intelligence.js';
 
 type ChangePaths = {
   directory: string;
@@ -206,8 +207,14 @@ async function artifactDigestMatches(
   workspacePath: string,
   artifact: DecisionArtifactReference
 ): Promise<boolean> {
-  const absolute = await resolvePortableWorkspaceEvidencePath(workspacePath, artifact.artifact);
-  if (!absolute) return false;
+  const candidate = await resolvePortableWorkspaceEvidenceCandidatePath(
+    workspacePath,
+    artifact.artifact
+  );
+  if (!candidate) return false;
+  const stat = await fsExtra.stat(candidate).catch(() => null);
+  if (!stat?.isFile()) return false;
+  const absolute = await canonicalArtifactCandidate(candidate);
   if (artifact.digest.semantics === 'raw-bytes-v1') {
     const content = await fsExtra.readFile(absolute);
     return createHash('sha256').update(content).digest('hex') === artifact.digest.value;
@@ -265,7 +272,13 @@ async function deletedArtifactReferenceMatches(
     workspacePath,
     deletedArtifact.artifact
   );
-  return candidate !== null && !(await fsExtra.pathExists(candidate));
+  if (!candidate) return false;
+  try {
+    await canonicalArtifactCandidate(candidate);
+    return !(await fsExtra.pathExists(candidate));
+  } catch {
+    return false;
+  }
 }
 
 async function requireLease(
@@ -369,6 +382,275 @@ function agentFrameworkRuntimeVerificationPending(input: {
   });
   if (scopedStages.some((step) => step.status === 'fail')) return false;
   return scopedStages.length === 0 || scopedStages.some((step) => step.status === 'missing');
+}
+
+function changeVerificationCriterion(
+  transaction: DecisionTransaction
+): 'project-verify' | 'workspace-verify' {
+  return transaction.requiredCriteria.includes('project-verify')
+    ? 'project-verify'
+    : 'workspace-verify';
+}
+
+function artifactWithinProjectPrefix(artifact: string, prefix: string): boolean {
+  const normalizeRelative = (value: string): string | null => {
+    const portable = value.trim().replace(/\\/g, '/');
+    if (
+      !portable ||
+      path.posix.isAbsolute(portable) ||
+      /^[a-zA-Z]:\//u.test(portable) ||
+      portable.startsWith('//')
+    ) {
+      return null;
+    }
+    if (portable.split('/').includes('..')) return null;
+    const normalized = path.posix.normalize(portable).replace(/^\.\//u, '').replace(/\/$/u, '');
+    return !normalized || normalized === '.' || normalized === '..' || normalized.startsWith('../')
+      ? null
+      : normalized;
+  };
+  const normalizedArtifact = normalizeRelative(artifact);
+  const normalizedPrefix = prefix.trim() === '.' ? '.' : normalizeRelative(prefix);
+  return Boolean(
+    normalizedArtifact &&
+    normalizedPrefix &&
+    (normalizedPrefix === '.' ||
+      normalizedArtifact === normalizedPrefix ||
+      normalizedArtifact.startsWith(`${normalizedPrefix}/`))
+  );
+}
+
+function pathIsWithinRoot(root: string, candidate: string): boolean {
+  const relative = path.relative(root, candidate);
+  return (
+    relative === '' ||
+    (relative !== '..' && !relative.startsWith(`..${path.sep}`) && !path.isAbsolute(relative))
+  );
+}
+
+async function canonicalArtifactCandidate(candidate: string): Promise<string> {
+  let existingAncestor = path.resolve(candidate);
+  while (true) {
+    try {
+      await fsExtra.lstat(existingAncestor);
+      break;
+    } catch (error) {
+      const code = error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+      if (code !== 'ENOENT' && code !== 'ENOTDIR') throw error;
+    }
+    const parent = path.dirname(existingAncestor);
+    if (parent === existingAncestor) throw new Error(`Cannot resolve artifact: ${candidate}`);
+    existingAncestor = parent;
+  }
+  // lstat retains dangling symlinks; realpath rejects them instead of walking
+  // past a broken link and mistaking it for a deleted regular file.
+  const realAncestor = await fsExtra.realpath(existingAncestor);
+  return path.resolve(realAncestor, path.relative(existingAncestor, path.resolve(candidate)));
+}
+
+/**
+ * Receipts are immutable history. Only the latest observation of each logical
+ * or canonical filesystem artifact describes its current state. Preserve all
+ * aliases when replacing an observation so update/delete/recreate sequences
+ * cannot resurrect an older receipt through a different project label.
+ */
+async function projectCurrentArtifactReferences(
+  workspacePath: string,
+  receipts: Array<{
+    artifacts: DecisionArtifactReference[];
+    deletedArtifacts?: DecisionDeletedArtifactReference[];
+  }>
+): Promise<{
+  artifacts: DecisionArtifactReference[];
+  deletedArtifacts: DecisionDeletedArtifactReference[];
+}> {
+  type Observation = {
+    keys: Set<string>;
+    order: number;
+    artifact?: DecisionArtifactReference;
+    deletedArtifact?: DecisionDeletedArtifactReference;
+  };
+  const observations = new Map<string, Observation>();
+  const filesystemKeys = new Map<string, Promise<string | null>>();
+  let order = 0;
+  for (const receipt of receipts) {
+    const entries = [
+      ...receipt.artifacts.map((artifact) => ({ identity: artifact.artifact, artifact })),
+      ...(receipt.deletedArtifacts ?? []).map((deletedArtifact) => ({
+        identity: deletedArtifact.artifact,
+        deletedArtifact,
+      })),
+    ];
+    for (const entry of entries) {
+      const identity = path.posix.normalize(normalizedArtifactIdentity(entry.identity));
+      if (!filesystemKeys.has(identity)) {
+        filesystemKeys.set(
+          identity,
+          (async () => {
+            try {
+              const candidate = await resolvePortableWorkspaceEvidenceCandidatePath(
+                workspacePath,
+                identity
+              );
+              return candidate
+                ? filesystemArtifactIdentity(await canonicalArtifactCandidate(candidate))
+                : null;
+            } catch {
+              // Keep the logical observation. A surviving invalid target is
+              // rejected by the mandatory current-effect validation below.
+              return null;
+            }
+          })()
+        );
+      }
+      const filesystemKey = await filesystemKeys.get(identity);
+      const keys = new Set([`logical:${identity}`]);
+      if (filesystemKey) keys.add(`filesystem:${filesystemKey}`);
+      for (const key of [...keys]) {
+        for (const priorKey of observations.get(key)?.keys ?? []) keys.add(priorKey);
+      }
+      const observation: Observation = { ...entry, keys, order: order++ };
+      for (const key of keys) observations.set(key, observation);
+    }
+  }
+  const current = [...new Set(observations.values())].sort((a, b) => a.order - b.order);
+  return {
+    artifacts: current.flatMap((entry) => (entry.artifact ? [entry.artifact] : [])),
+    deletedArtifacts: current.flatMap((entry) =>
+      entry.deletedArtifact ? [entry.deletedArtifact] : []
+    ),
+  };
+}
+
+async function currentEffectErrors(
+  workspacePath: string,
+  effects: DecisionEffectReceipt[],
+  current: Awaited<ReturnType<typeof projectCurrentArtifactReferences>>
+): Promise<string[]> {
+  const errors: string[] = [];
+  for (const effect of effects) {
+    if (effect.status !== 'succeeded') errors.push(`Effect '${effect.id}' is ${effect.status}.`);
+    if (!Number.isFinite(Date.parse(effect.observedAt))) {
+      errors.push(`Effect '${effect.id}' has an invalid observedAt timestamp.`);
+    }
+  }
+  for (const artifact of current.artifacts) {
+    try {
+      if (await artifactDigestMatches(workspacePath, artifact)) continue;
+    } catch {
+      // A retargeted symlink or inaccessible artifact is an invalid effect,
+      // never a reason to fall back to a weaker verification path.
+    }
+    errors.push(`Current effect artifact is missing, corrupt, or unsafe: ${artifact.artifact}`);
+  }
+  for (const artifact of current.deletedArtifacts) {
+    try {
+      const candidate = await resolvePortableWorkspaceEvidenceCandidatePath(
+        workspacePath,
+        artifact.artifact
+      );
+      if (candidate) await canonicalArtifactCandidate(candidate);
+      if (candidate && (await deletedArtifactReferenceMatches(workspacePath, artifact))) continue;
+    } catch {
+      // Broken or escaping symlinks must not satisfy deletion tombstones.
+    }
+    errors.push(`Current deletion tombstone is invalid: ${artifact.artifact}`);
+  }
+  return errors;
+}
+
+async function artifactResolvesWithinProject(input: {
+  workspacePath: string;
+  projectPrefix: string;
+  projectRoot: string;
+  artifact: string;
+}): Promise<boolean> {
+  if (!artifactWithinProjectPrefix(input.artifact, input.projectPrefix)) return false;
+  const normalizedArtifact = path.posix
+    .normalize(input.artifact.trim().replace(/\\/g, '/'))
+    .replace(/^\.\//u, '');
+  try {
+    const [projectRoot, candidate] = await Promise.all([
+      fsExtra.realpath(input.projectRoot),
+      resolvePortableWorkspaceEvidenceCandidatePath(input.workspacePath, normalizedArtifact),
+    ]);
+    if (!candidate) return false;
+    return pathIsWithinRoot(projectRoot, await canonicalArtifactCandidate(candidate));
+  } catch {
+    // An artifact that cannot be resolved against the registered project root
+    // cannot safely use the project-only verification path.
+    return false;
+  }
+}
+
+async function canUseProjectVerification(input: {
+  workspacePath: string;
+  record: DecisionTransactionRecord;
+  lease: ArchitectureChangeLease;
+  projectPrefixes: string[];
+  projectRoots: string[];
+  changedArtifacts: string[];
+  hasStableBaseline: boolean;
+  strict: boolean;
+}): Promise<boolean> {
+  if (
+    input.strict ||
+    !input.hasStableBaseline ||
+    input.record.transaction.requiredCriteria.includes('workspace-verify') ||
+    !input.record.transaction.requiredCriteria.includes('project-verify') ||
+    input.lease.scope.kind !== 'project' ||
+    input.lease.scope.projects.length !== 1 ||
+    input.projectPrefixes.length !== 1 ||
+    input.projectRoots.length !== 1 ||
+    input.record.transaction.effects.length === 0
+  ) {
+    return false;
+  }
+  const [prefix] = input.projectPrefixes;
+  const [projectRoot] = input.projectRoots;
+  if (!prefix || prefix === '.' || !projectRoot) return false;
+  let boundedArtifactCount = 0;
+  for (const effect of input.record.transaction.effects) {
+    if (
+      (effect.effectClass !== 'filesystem' && effect.effectClass !== 'command') ||
+      effect.status !== 'succeeded' ||
+      !Number.isFinite(Date.parse(effect.observedAt))
+    ) {
+      return false;
+    }
+    const artifacts = [
+      ...effect.artifacts.map((artifact) => artifact.artifact),
+      ...(effect.deletedArtifacts ?? []).map((artifact) => artifact.artifact),
+    ];
+    if (artifacts.length === 0) return false;
+    boundedArtifactCount += artifacts.length;
+    for (const artifact of artifacts) {
+      if (
+        !(await artifactResolvesWithinProject({
+          workspacePath: input.workspacePath,
+          projectPrefix: prefix,
+          projectRoot,
+          artifact,
+        }))
+      ) {
+        return false;
+      }
+    }
+  }
+  if (boundedArtifactCount === 0) return false;
+  for (const artifact of input.changedArtifacts) {
+    if (
+      !(await artifactResolvesWithinProject({
+        workspacePath: input.workspacePath,
+        projectPrefix: prefix,
+        projectRoot,
+        artifact,
+      }))
+    ) {
+      return false;
+    }
+  }
+  return true;
 }
 
 function actualOperations(overlay: WorkspaceKnowledgeGraphChangeOverlay) {
@@ -548,6 +830,20 @@ function capsuleWithoutIntegrity(
   return content;
 }
 
+function currentVerificationReferences(
+  receipts: DecisionVerificationReceipt[]
+): DecisionArtifactReference[] {
+  const latest = new Map<string, DecisionVerificationReceipt>();
+  for (const receipt of receipts) latest.set(receipt.criterionId, receipt);
+  // A retry replaces its own criterion. Different criteria remain independent:
+  // one verifier cannot hide another verifier's conflicting artifact digest.
+  const references = new Map<string, DecisionArtifactReference>();
+  for (const receipt of latest.values()) {
+    for (const artifact of receipt.artifacts) references.set(hashCanonicalJson(artifact), artifact);
+  }
+  return [...references.values()];
+}
+
 async function buildCapsule(input: {
   workspacePath: string;
   lease: ArchitectureChangeLease;
@@ -580,13 +876,11 @@ async function buildCapsule(input: {
     schemaVersion: input.record.transaction.schemaVersion,
     value: hashCanonicalJson(input.record.transaction),
   });
-  const effects = input.record.transaction.effects.flatMap((effect) => effect.artifacts);
-  const deletedArtifacts = input.record.transaction.effects.flatMap(
-    (effect) => effect.deletedArtifacts ?? []
+  const { artifacts: effects, deletedArtifacts } = await projectCurrentArtifactReferences(
+    input.workspacePath,
+    input.record.transaction.effects
   );
-  const verification = input.record.transaction.verifications.flatMap(
-    (receipt) => receipt.artifacts
-  );
+  const verification = currentVerificationReferences(input.record.transaction.verifications);
   const observedOverlay = await readJson<WorkspaceKnowledgeGraphChangeOverlay>(
     input.workspacePath,
     paths.actualOverlay
@@ -1264,12 +1558,13 @@ export async function recordProofCarryingChangeVerification(input: {
     readJson<WorkspaceKnowledgeGraphChangeOverlay>(workspacePath, changePaths.actualOverlay),
     readJson<ArchitectureSurpriseReport>(workspacePath, changePaths.surprises),
   ]);
-  const hasWorkspaceVerification = initial.transaction.verifications.some(
-    (receipt) => receipt.criterionId === 'workspace-verify' && receipt.status === 'passed'
-  );
-  if (!actualOverlay || !surpriseReport || !hasWorkspaceVerification) {
+  const verificationCriterion = changeVerificationCriterion(initial.transaction);
+  const scopeVerification = initial.transaction.verifications
+    .filter((receipt) => receipt.criterionId === verificationCriterion)
+    .at(-1);
+  if (!actualOverlay || !surpriseReport || scopeVerification?.status !== 'passed') {
     throw new Error(
-      'Domain verification can be admitted only after change verify re-observes the Graph and records a passing Workspace Verify receipt.'
+      `Domain verification can be admitted only after change verify re-observes the Graph and records a passing ${verificationCriterion} receipt.`
     );
   }
   const current = snapshotGeneration(snapshot);
@@ -1277,11 +1572,31 @@ export async function recordProofCarryingChangeVerification(input: {
   if (
     input.receipt.target.modelHash !== current.modelHash ||
     input.receipt.target.graphHash !== current.graphHash ||
-    input.receipt.target.effectHeadDigest !== effectHeadDigest
+    input.receipt.target.effectHeadDigest !== effectHeadDigest ||
+    scopeVerification.target.modelHash !== current.modelHash ||
+    scopeVerification.target.graphHash !== current.graphHash ||
+    scopeVerification.target.effectHeadDigest !== effectHeadDigest
   ) {
     throw new Error(
       'Verification receipt does not target the current Model, Graph, and effect head.'
     );
+  }
+  const effects = await projectCurrentArtifactReferences(
+    workspacePath,
+    initial.transaction.effects
+  );
+  const effectErrors = await currentEffectErrors(
+    workspacePath,
+    initial.transaction.effects,
+    effects
+  );
+  if (effectErrors.length > 0) {
+    throw new Error(`Cannot admit verification for invalid effects: ${effectErrors.join('; ')}`);
+  }
+  for (const artifact of scopeVerification.artifacts) {
+    if (!(await artifactDigestMatches(workspacePath, artifact).catch(() => false))) {
+      throw new Error(`Scope verification artifact is missing or corrupt: ${artifact.artifact}`);
+    }
   }
   for (const artifact of input.receipt.artifacts) {
     if (!(await artifactDigestMatches(workspacePath, artifact))) {
@@ -1431,11 +1746,7 @@ function scopeArchitectureOverlay(input: {
     ]),
   ]);
   const artifactInScope = (artifact: string): boolean => {
-    const normalized = normalizedArtifactIdentity(artifact);
-    if (input.projectPrefixes.includes('.')) return true;
-    return input.projectPrefixes.some(
-      (prefix) => normalized === prefix || normalized.startsWith(`${prefix}/`)
-    );
+    return input.projectPrefixes.some((prefix) => artifactWithinProjectPrefix(artifact, prefix));
   };
   const proofInScope = (proof: { id: string; artifact: string }): boolean =>
     proofIds.has(proof.id) || artifactInScope(proof.artifact);
@@ -1543,10 +1854,7 @@ function artifactIsInsideChangeScope(input: {
   const artifact = normalizedArtifactIdentity(input.artifact);
   if (input.receiptedArtifacts.has(artifact)) return true;
   if (input.scope.kind === 'workspace') return true;
-  if (input.projectPrefixes.includes('.')) return true;
-  return input.projectPrefixes.some(
-    (prefix) => artifact === prefix || artifact.startsWith(`${prefix}/`)
-  );
+  return input.projectPrefixes.some((prefix) => artifactWithinProjectPrefix(artifact, prefix));
 }
 
 async function artifactContentChanged(input: {
@@ -1615,8 +1923,10 @@ export async function verifyProofCarryingChange(input: {
     );
   }
   const generatedAt = new Date().toISOString();
-  const scopedProjectPrefixes = snapshot.model.projects
-    .filter((project) => lease.scope.projects.includes(project.name))
+  const scopedProjects = snapshot.model.projects.filter((project) =>
+    lease.scope.projects.includes(project.name)
+  );
+  const scopedProjectPrefixes = scopedProjects
     .map((project) => normalizedArtifactIdentity(project.path).replace(/\/$/u, ''))
     .filter(Boolean);
   const overlay = scopeArchitectureOverlay({
@@ -1668,6 +1978,48 @@ export async function verifyProofCarryingChange(input: {
   let record = initial;
   const actorKind = input.actorKind ?? 'cli';
   const actorId = input.actorId ?? 'workspai-change-verify';
+  const currentEffects = await projectCurrentArtifactReferences(
+    workspacePath,
+    record.transaction.effects
+  );
+  const effectErrors = await currentEffectErrors(
+    workspacePath,
+    record.transaction.effects,
+    currentEffects
+  );
+  if (effectErrors.length > 0) {
+    record = await append(
+      workspacePath,
+      record,
+      input.changeId,
+      event(
+        'blocked',
+        {
+          summary: 'Current source state does not match the effect ledger.',
+          blocker: {
+            code: 'change.effect_receipt.invalid',
+            actionable: true,
+            details: effectErrors.slice(0, 20).join('; '),
+          },
+        },
+        actorKind,
+        actorId
+      )
+    );
+    const capsule = await publishCapsule(workspacePath, lease, record);
+    return result({
+      operation: 'verify',
+      lease,
+      record,
+      capsule,
+      nextActions: [
+        'Review the current files, then record a new effect receipt for each corrected artifact.',
+        `workspai change resume --change ${input.changeId} --to authorized --reason "Reconcile current effects" --json`,
+        `workspai change effect record --change ${input.changeId} --file <effect-receipt.json> --json`,
+        `workspai change verify --change ${input.changeId} --json`,
+      ],
+    });
+  }
   if (actualChanged(overlay) && record.transaction.effects.length === 0) {
     record = await append(
       workspacePath,
@@ -1767,7 +2119,41 @@ export async function verifyProofCarryingChange(input: {
       ],
     });
   }
-  const verify = await buildWorkspaceVerify({ workspacePath });
+  const hasStableModelBaseline = await fsExtra.pathExists(
+    path.join(workspacePath, WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH)
+  );
+  const projectScopeName = lease.scope.projects[0];
+  const scopedProjectRoots = scopedProjects.map((project) =>
+    resolveWorkspaceProjectFilesystemPath(workspacePath, project.path)
+  );
+  const projectVerification = await canUseProjectVerification({
+    workspacePath,
+    record,
+    lease,
+    projectPrefixes: scopedProjectPrefixes,
+    projectRoots: scopedProjectRoots,
+    changedArtifacts: scopedChangedArtifacts,
+    hasStableBaseline: hasStableModelBaseline,
+    strict: input.strict === true,
+  });
+  const minimumEvidenceGeneratedAt = record.transaction.effects.reduce<string | undefined>(
+    (latest, effect) =>
+      !latest || Date.parse(effect.observedAt) > Date.parse(latest) ? effect.observedAt : latest,
+    undefined
+  );
+  const verify = await buildWorkspaceVerify({
+    workspacePath,
+    ...(minimumEvidenceGeneratedAt ? { minimumEvidenceGeneratedAt } : {}),
+    requiredProjects: projectVerification
+      ? lease.scope.projects
+      : snapshot.model.projects.map((project) => project.name),
+    ...(projectVerification && projectScopeName
+      ? {
+          scope: projectScopeName,
+          verificationMode: 'project' as const,
+        }
+      : {}),
+  });
   if (
     !evaluateWorkspaceVerifyGate(verify, { strict: input.strict === true }).passed &&
     agentFrameworkRuntimeVerificationPending({ record, lease, verify })
@@ -1803,7 +2189,9 @@ export async function verifyProofCarryingChange(input: {
       actorId
     )
   );
-  const verifyPath = await writeWorkspaceVerify(verify, workspacePath);
+  const verifyPath = projectVerification
+    ? await writeWorkspaceArtifactJson(workspacePath, paths.workspaceVerification, verify)
+    : await writeWorkspaceVerify(verify, workspacePath);
   const relativeVerifyPath = path.relative(workspacePath, verifyPath).split(path.sep).join('/');
   const persistedVerify = await readJson<typeof verify>(workspacePath, relativeVerifyPath);
   if (!persistedVerify) {
@@ -1820,14 +2208,15 @@ export async function verifyProofCarryingChange(input: {
   // Bind the receipt to those exact bytes, not the pre-write in-memory value,
   // otherwise a freshly sealed CLI capsule fails its own integrity replay.
   const gate = evaluateWorkspaceVerifyGate(persistedVerify, { strict: input.strict === true });
+  const verificationCriterion = changeVerificationCriterion(record.transaction);
   const current = snapshotGeneration(snapshot);
   const workspaceReceipt: DecisionVerificationReceipt = {
     id: `verify-workspace-${hashCanonicalJson({ generatedAt, verify: immutableVerify, gate }).slice(0, 16)}`,
-    criterionId: 'workspace-verify',
+    criterionId: verificationCriterion,
     status: gate.passed ? 'passed' : 'failed',
     summary: gate.passed
-      ? `Workspace Verify passed in ${gate.mode} mode.`
-      : `Workspace Verify blocked in ${gate.mode} mode: ${gate.reasons.join('; ')}`,
+      ? `${projectVerification ? 'Project' : 'Workspace'} verification passed in ${gate.mode} mode.`
+      : `${projectVerification ? 'Project' : 'Workspace'} verification blocked in ${gate.mode} mode: ${gate.reasons.join('; ')}`,
     target: {
       modelHash: current.modelHash,
       graphHash: current.graphHash,
@@ -1926,6 +2315,7 @@ export async function inspectProofCarryingChange(input: {
   if (transaction.state === 'blocked' || transaction.state === 'awaiting-human') {
     if (
       blockers.has('change.effect_receipt.missing') ||
+      blockers.has('change.effect_receipt.invalid') ||
       blockers.has('change.effect_receipt.coverage_missing')
     ) {
       recoveryActions = [
@@ -1933,8 +2323,9 @@ export async function inspectProofCarryingChange(input: {
         `workspai change effect record --change ${input.changeId} --file <effect-receipt.json> --json`,
       ];
     } else if (blockers.has('decision.verification.failed')) {
-      const workspaceVerificationPassed = latestReceipt('workspace-verify')?.status === 'passed';
-      recoveryActions = workspaceVerificationPassed
+      const scopeVerificationPassed =
+        latestReceipt(changeVerificationCriterion(transaction))?.status === 'passed';
+      recoveryActions = scopeVerificationPassed
         ? [
             `Resolve the failed criterion, then record a fresh passing receipt.`,
             `workspai change resume --change ${input.changeId} --to verifying --reason "Retry verification after remediation" --json`,
@@ -1946,8 +2337,9 @@ export async function inspectProofCarryingChange(input: {
             `workspai change verify --change ${input.changeId} --json`,
           ];
     } else if (blockers.has('change.verification.criteria_missing')) {
-      const workspaceVerificationPassed = latestReceipt('workspace-verify')?.status === 'passed';
-      recoveryActions = workspaceVerificationPassed
+      const scopeVerificationPassed =
+        latestReceipt(changeVerificationCriterion(transaction))?.status === 'passed';
+      recoveryActions = scopeVerificationPassed
         ? [
             `Record passing verification receipt(s) for: ${missingCriteria.join(', ') || 'the remaining Goal criteria'}.`,
             `workspai change verification record --change ${input.changeId} --file <verification-receipt.json> --json`,
@@ -2143,6 +2535,43 @@ export async function validateProofCarryingChangeCapsule(input: {
   if (hashCanonicalJson(record.transaction) !== capsule.decision.transaction.digest.value) {
     errors.push('Decision transaction projection digest does not match the capsule.');
   }
+  if (
+    capsule.decision.effectHeadDigest !==
+      currentDecisionEffectHeadDigest(record.transaction, kernelPorts) ||
+    capsule.decision.state !== record.transaction.state ||
+    capsule.decision.generation !== record.transaction.generation
+  ) {
+    errors.push('Capsule decision state or effect head does not match the ledger.');
+  }
+  const currentEffects = await projectCurrentArtifactReferences(
+    input.workspacePath,
+    record.transaction.effects
+  );
+  const currentVerification = currentVerificationReferences(record.transaction.verifications);
+  // Older v1 capsules published every historical reference. Keep them readable,
+  // while validating the latest state derived independently from the ledger.
+  const projectionMatches = (actual: unknown, current: unknown, legacy: unknown): boolean =>
+    hashCanonicalJson(actual) === hashCanonicalJson(current) ||
+    hashCanonicalJson(actual) === hashCanonicalJson(legacy);
+  if (
+    !projectionMatches(
+      capsule.effects,
+      currentEffects.artifacts,
+      record.transaction.effects.flatMap((effect) => effect.artifacts)
+    ) ||
+    !projectionMatches(
+      capsule.deletedArtifacts ?? [],
+      currentEffects.deletedArtifacts,
+      record.transaction.effects.flatMap((effect) => effect.deletedArtifacts ?? [])
+    ) ||
+    !projectionMatches(
+      capsule.verification,
+      currentVerification,
+      record.transaction.verifications.flatMap((receipt) => receipt.artifacts)
+    )
+  ) {
+    errors.push('Capsule artifact projection does not match its decision-ledger receipts.');
+  }
   const baseline = await readJson<WorkspaceKnowledgeGraph>(
     input.workspacePath,
     lease.privateMaterialization.artifact
@@ -2156,15 +2585,19 @@ export async function validateProofCarryingChangeCapsule(input: {
     capsule.prediction,
     capsule.actualOverlay,
     capsule.surpriseReport,
-    ...capsule.effects,
-    ...capsule.verification,
+    ...currentEffects.artifacts,
+    ...currentVerification,
   ].filter((value): value is DecisionArtifactReference => Boolean(value))) {
-    if (!(await artifactDigestMatches(input.workspacePath, artifact))) {
+    if (!(await artifactDigestMatches(input.workspacePath, artifact).catch(() => false))) {
       errors.push(`Referenced artifact is missing or corrupt: ${artifact.artifact}`);
     }
   }
-  for (const deletedArtifact of capsule.deletedArtifacts ?? []) {
-    if (!(await deletedArtifactReferenceMatches(input.workspacePath, deletedArtifact))) {
+  for (const deletedArtifact of currentEffects.deletedArtifacts) {
+    if (
+      !(await deletedArtifactReferenceMatches(input.workspacePath, deletedArtifact).catch(
+        () => false
+      ))
+    ) {
       errors.push(
         `Deleted artifact tombstone is invalid or the artifact exists again: ${deletedArtifact.artifact}`
       );
@@ -2389,14 +2822,19 @@ export async function assertAppliedProofCarryingChangeCurrent(input: {
       `Proof-carrying change ${input.changeId} has incomplete or unsuccessful filesystem effects.`
     );
   }
-  for (const effect of filesystemEffects) {
-    for (const artifact of effect.artifacts) {
-      if (!(await artifactDigestMatches(input.workspacePath, artifact))) {
-        throw new Error(
-          `Proof-carrying change ${input.changeId} no longer matches effect artifact ${artifact.artifact}.`
-        );
-      }
-    }
+  const currentEffects = await projectCurrentArtifactReferences(
+    input.workspacePath,
+    record.transaction.effects
+  );
+  const effectErrors = await currentEffectErrors(
+    input.workspacePath,
+    record.transaction.effects,
+    currentEffects
+  );
+  if (effectErrors.length > 0) {
+    throw new Error(
+      `Proof-carrying change ${input.changeId} no longer matches effect artifacts: ${effectErrors.join('; ')}`
+    );
   }
 
   const agentPlanReference = record.transaction.plans.find(

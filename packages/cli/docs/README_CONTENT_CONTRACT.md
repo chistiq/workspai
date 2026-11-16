@@ -18,27 +18,30 @@ versioned contracts and focused guides.
 
 The root README keeps this order:
 
-1. a problem-first product promise, slogan, and copyable first run;
-2. product category and three durable outcomes;
-3. one copyable path for existing software and one guided path for new software;
-4. one plain-language Goal path and the Goal-bound path to independently
-   verified source change;
-5. the canonical Model → derived Graph boundary and intelligence chain;
-6. consumer surfaces, including observational Live activity, and goal-based
-   documentation links;
-7. package, contributor, community, and license routes.
+1. the existing product promise and slogans, with a plain-language introduction;
+2. one copyable adoption path and one guided creation path, with prerequisites;
+3. the first useful task: project-scoped context, what it contains, and how the
+   agent receives it through host-loaded entry files;
+4. refresh and diagnostics, with project and workspace scope distinguished;
+5. Goal planning and the complete governed-change guide for work needing them;
+6. the canonical Model → derived Graph boundary, intelligence chain and CI path;
+7. consumer, documentation, package, contributor, community, and license routes.
 
 The CLI README keeps this order:
 
-1. a problem-first product promise, slogan, and copyable first run;
-2. product category and durable value;
-3. a two-minute existing-project path and the guided create path;
-4. one plain-language Goal path with explicit scope and verification ownership;
-5. the Goal-bound Proof-Carrying Change path for source mutation;
-6. the small set of durable outputs a user should recognize;
-7. the canonical Model → derived Graph boundary and intelligence chain;
-8. everyday workflows grouped by goal;
-9. outputs, requirements, documentation, troubleshooting, and contribution.
+1. the same product promise and slogans as the root README;
+2. adoption and creation, their requirements and their filesystem effects;
+3. project-scoped task context and a small explanation of the returned evidence;
+4. refresh, scoped diagnostics and everyday workflows;
+5. Goal planning and Proof-Carrying Change, with policy and verification ownership;
+6. the canonical Model → derived Graph boundary and complete intelligence chain;
+7. outputs, documentation, short troubleshooting, and contribution.
+
+Keep these slogans verbatim in both READMEs:
+
+- Give your AI agent the system, not just the repository
+- Less rediscovery. More time building.
+- One workspace. One truth. Humans and AI aligned.
 
 ## What does not belong in a main README
 
@@ -79,14 +82,14 @@ Notes, or a focused guide—not the README.
 
 Normative machine sources:
 
-| Statement | Source of truth |
-| --- | --- |
-| Ordered intelligence chain | `contracts/workspace-intelligence-chain.v1.json` |
-| Runtime commands and flags | `contracts/runtime-command-surface.v1.json` |
-| Published schemas and paths | `contracts/published-contract-catalog.v1.json` |
-| Architecture boundaries | `contracts/workspace-intelligence-architecture.v1.json` |
-| Model → Graph binding | `contracts/workspace-intelligence/workspace-knowledge-graph.v1.json` |
-| Artifact writers and consumers | `docs/contracts/ARTIFACT_CATALOG.md` |
+| Statement                      | Source of truth                                                      |
+| ------------------------------ | -------------------------------------------------------------------- |
+| Ordered intelligence chain     | `contracts/workspace-intelligence-chain.v1.json`                     |
+| Runtime commands and flags     | `contracts/runtime-command-surface.v1.json`                          |
+| Published schemas and paths    | `contracts/published-contract-catalog.v1.json`                       |
+| Architecture boundaries        | `contracts/workspace-intelligence-architecture.v1.json`              |
+| Model → Graph binding          | `contracts/workspace-intelligence/workspace-knowledge-graph.v1.json` |
+| Artifact writers and consumers | `docs/contracts/ARTIFACT_CATALOG.md`                                 |
 
 Markdown explains these contracts; it does not redefine them.
 
@@ -103,7 +106,14 @@ task-success claim.
 
 - Quickstarts must be copyable and use the canonical `workspai` package.
 - `wspai` is only an optional short alias.
-- The main path uses the complete contract-backed intelligence runner.
+- Adoption seals initial workspace evidence; do not require an immediate repeat
+  of the full intelligence chain as a routine onboarding step.
+- The first task-context example binds `--project .`, uses a generally applicable
+  request, and explains the JSON result without fabricated source paths or counts.
+- The complete contract-backed intelligence runner remains the refresh and CI
+  path, separately from task preparation and project-local diagnostics.
+- Explain that agent entry files must be loaded by the host; context preparation
+  alone does not edit source, run tests or prove model compliance.
 - The Goal path states that it prepares bounded work and does not itself edit
   source or claim completion.
 - The source-changing path distinguishes prediction, authorization, observed
@@ -118,6 +128,9 @@ task-success claim.
 - Explain user outcomes before internal terms.
 - Introduce only the architecture needed to trust the product.
 - Prefer one representative command over a wall of variants.
+- Put focused task context before Goal/PCC; those workflows remain available
+  where project policy or change scope requires them.
+- Do not promise a fixed setup time or universal token, quality or conversion gains.
 - Link to deeper guidance instead of duplicating it.
 - Do not add a README section for every feature or release.
 
@@ -125,9 +138,11 @@ task-success claim.
 
 - Keep videos outside the npm package tarball; use a stable website, CDN, or
   GitHub Release asset.
-- npm READMEs may use a lightweight poster or a bounded, silent GIF instead of
-  relying on an embedded video player. Link to the hosted MP4 when full
-  resolution or audio matters.
+- Main READMEs use a lightweight static overview linked to an existing demo.
+  GIFs remain click-through links rather than automatic README image downloads.
+  Link to hosted MP4 when full resolution or audio matters.
+- An overview diagram illustrates the workflow; it is not a captured terminal
+  result or a benchmark. Give it meaningful alternative text.
 - Keep the poster or first GIF frame meaningful without playback and give it
   useful alternative text.
 - Do not commit generated social-video masters under `packages/cli/docs/`.

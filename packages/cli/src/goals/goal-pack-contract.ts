@@ -67,7 +67,12 @@ export type CompiledGoalIntent = {
 
 export type GoalSuccessCriterion = {
   id: string;
-  kind: 'workspace-verify' | 'release-readiness' | 'dependency-security' | 'test-coverage';
+  kind:
+    | 'workspace-verify'
+    | 'project-verify'
+    | 'release-readiness'
+    | 'dependency-security'
+    | 'test-coverage';
   expected: string;
   producerCommand: string;
   machineVerifiable: boolean;

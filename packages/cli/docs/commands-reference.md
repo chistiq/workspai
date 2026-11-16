@@ -26,14 +26,18 @@ inventory used to prevent the human map from drifting.
 
 ```bash
 npx workspai adopt .
-npx workspai workspace intelligence run --for-agent generic --strict --json
-npx workspai goal "Describe the required outcome" --for-agent generic
-npx workspai agent bootstrap --for-agent generic --strict --json
+npx workspai agent context --project . --for-agent generic \
+  --task "Find the main entry points and available project checks"
 ```
 
-For source-changing work, continue through `change begin`, bounded
-authorization, effect receipts, independent verification, and capsule
-validation. For exact syntax, see the lifecycle section below.
+Adoption already seals initial intelligence. Inspect packet status and scope,
+then use its evidence for targeted source work. A separate bootstrap or Goal is
+not a prerequisite for packaging task context. After source changes, use
+`npx workspai workspace intelligence run --for-agent generic --strict --json`
+when you need the complete workspace verification chain. For a governed change,
+continue through `change begin`, bounded authorization, effect receipts,
+independent verification and capsule validation. For exact syntax, see the
+lifecycle section below; applicable mutation policy remains authoritative.
 
 ## Live cross-terminal activity
 
@@ -85,7 +89,7 @@ npx workspai create project agent.microsoft.dotnet <name> [--agent-name <name>] 
 npx workspai create project gateway.openrouter.typescript <name> [--skip-git] [--json]
 npx workspai create project gateway.openrouter.python <name> [--skip-git] [--json]
 npx workspai agent bootstrap [--project <path>] [--for-agent <host>] [--no-live-inputs] [--strict] [--json]
-npx workspai agent context --task <request> [--project <path>] [--path <relative-path>] [--for-agent <host>] [--limit <1–12>] [--max-bytes <8192–131072>]
+npx workspai agent context --task <request> [--project <path>] [--path <relative-path>] [--for-agent <host>] [--limit <1–12>] [--max-bytes <8192–131072>] [--strict]
 npx workspai agent framework list [--json]
 npx workspai agent framework plan --project <name> --runtime <python|dotnet|node> [--framework <id>] --name <agent> [--goal <goal-id>] [--workspace <path>] [--json]
 npx workspai agent framework attach --project <name> --runtime <python|dotnet|node> [--framework <id>] --name <agent> [-y] [--granted-by <identity>] [--workspace <path>] [--json]
@@ -288,6 +292,30 @@ This is the primary generated task-entry route; separate bootstrap and
 membership commands are not additional prerequisites. Budget recovery reports
 the aggregate retry size, and targeted `--path` selection can discover Node
 and Cargo workspace members without changing default workspace execution.
+
+Generated task gates always pass an explicit `--project`. Check that the
+returned project/workspace scope matches the user target. Unverified umbrella
+directories, missing `--path` targets and nested project boundaries return
+`project-selection-required`; the command does not guess a descendant project.
+For a new file, select an existing project root and omit the missing `--path`.
+
+Branch on `status` before reading packet components. `ready` and `partial`
+include a compact manifest-derived `skill`, Graph `retrieval` status and
+execution metadata. Stage `cwd` values are relative to the canonical project
+root; opening a source file does not change terminal cwd. Discovery proves
+neither an installed environment nor executed tests. `project-selection-required`
+and `insufficient-budget` include structured recovery instead of grounding,
+Graph or lifecycle components. Pass recovery executable/argv directly, preserving
+its cwd base. Both refusals exit zero by default, or two with `--strict`;
+invalid input exits two. See [agent-entry.md](./agent-entry.md) for consumption
+and bounded retry examples.
+
+For `workspace run`, explicit project scopes and `--affected` validate the
+selected canonical projects' Doctor evidence and skip workspace release
+readiness. Unscoped fleet runs retain workspace gates. Empty/ambiguous scopes
+and combined Doctor project/workspace selectors are errors. Blocking or failed
+runs exit nonzero; advisory scoped Doctor warnings allow execution but produce
+a nonzero exit with `--strict`. See [workspace-run.md](./workspace-run.md).
 
 `agent framework` is the governed bridge between Workspai evidence and an
 agent runtime. `list` exposes every built-in adapter and its release-admission

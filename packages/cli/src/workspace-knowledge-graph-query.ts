@@ -15,7 +15,7 @@ export type WorkspaceKnowledgeResolvedTarget =
   | { found: false; query: string; candidates: string[] };
 
 function normalized(value: string): string {
-  return value.trim().toLowerCase();
+  return value.normalize('NFC').trim().toLowerCase();
 }
 
 type WorkspaceKnowledgeQueryIndex = {
@@ -146,11 +146,16 @@ export function knowledgeProofMatchesProjectScope(
   projectId?: string
 ): boolean {
   if (!projectId) return true;
+  const artifact = path.posix.normalize(proof.artifact.replace(/\\/gu, '/'));
+  if (
+    artifact === '..' ||
+    artifact.startsWith('../') ||
+    path.posix.isAbsolute(artifact) ||
+    /^[A-Za-z]:/u.test(artifact)
+  )
+    return false;
   const owner = queryIndex(graph).projectRoots.find(
-    (root) =>
-      root.path === '.' ||
-      proof.artifact === root.path ||
-      proof.artifact.startsWith(`${root.path}/`)
+    (root) => root.path === '.' || artifact === root.path || artifact.startsWith(`${root.path}/`)
   );
   return owner === undefined || owner.id === projectId;
 }
@@ -543,6 +548,11 @@ const SEARCH_TOKEN_CANONICAL_FORMS = new Map<string, string>([
   ['definition', 'define'],
   ['definitions', 'define'],
   ['events', 'event'],
+  ['messages', 'message'],
+  ['parsed', 'parse'],
+  ['parser', 'parse'],
+  ['parsing', 'parse'],
+  ['saved', 'save'],
   ['handled', 'handle'],
   ['handling', 'handle'],
   ['implemented', 'implement'],
@@ -565,11 +575,20 @@ function searchTokens(value: string): string[] {
     normalized(candidate)
       .replace(/\bc\+\+/gu, ' cplusplus ')
       .replace(/\bc#/gu, ' csharp ')
-      .split(/[^a-z0-9]+/u)
-      .filter((term) => term.length > 1 || term === 'c' || term === 'r')
+      .split(/[^\p{L}\p{M}\p{N}]+/u)
+      .filter(
+        (term) =>
+          term.length > 1 ||
+          term === 'c' ||
+          term === 'r' ||
+          (/^\p{L}$/u.test(term) && !/^[a-z]$/u.test(term))
+      )
       .map((term) => SEARCH_TOKEN_CANONICAL_FORMS.get(term) ?? term);
   return [
-    ...new Set([...tokenize(value), ...tokenize(value.replace(/([a-z0-9])([A-Z])/g, '$1 $2'))]),
+    ...new Set([
+      ...tokenize(value),
+      ...tokenize(value.replace(/([\p{Ll}\p{Nd}])([\p{Lu}])/gu, '$1 $2')),
+    ]),
   ];
 }
 
@@ -642,6 +661,36 @@ export function knowledgeSearchMatchTerms(
   return [...new Set(searchTokens(query))].filter(
     (term) => !NATURAL_LANGUAGE_STOPWORDS.has(term) && documentMatchesTerm(document, term)
   );
+}
+
+// Workflow words in a long end-user task should not outweigh its subject.
+// Short queries still retain these words (for example "test runner").
+const TASK_WORKFLOW_TERMS = new Set([
+  'add',
+  'check',
+  'checks',
+  'default',
+  'enable',
+  'enabled',
+  'exclude',
+  'excluding',
+  'fix',
+  'include',
+  'maintain',
+  'maintaining',
+  'please',
+  'preserve',
+  'preserving',
+  'regression',
+  'run',
+  'test',
+  'verify',
+]);
+
+export function knowledgeSearchSubjectTerms(query: string): string[] {
+  const terms = searchTokens(query).filter((term) => !NATURAL_LANGUAGE_STOPWORDS.has(term));
+  const subject = terms.filter((term) => !TASK_WORKFLOW_TERMS.has(term));
+  return terms.length >= 10 && subject.length >= 2 ? subject : terms;
 }
 
 function searchScore(
@@ -1062,7 +1111,7 @@ export function searchKnowledgeGraph(
   options: WorkspaceKnowledgeSearchOptions
 ): WorkspaceKnowledgeSearchResult {
   const query = normalized(options.query);
-  const rawTerms = [...new Set(searchTokens(options.query))];
+  const rawTerms = knowledgeSearchSubjectTerms(options.query);
   const scopeTerms = new Set(searchTokens(options.projectId ?? ''));
   const contentTerms = options.projectId
     ? rawTerms.filter((term) => !scopeTerms.has(term))
@@ -1166,7 +1215,9 @@ export function searchKnowledgeGraph(
         score: scopeOnlyQuery
           ? projectOverviewScore(document.entity)
           : searchScore(document, query, terms, inverseDocumentFrequency) +
-            matchedQualifiers * 300 +
+            // Attribute-heavy files must not win simply by collecting more
+            // incidental task vocabulary than a directly named source symbol.
+            Math.min(matchedQualifiers, 4) * 150 +
             matchedIdentityQualifiers * 400 +
             languageBoost +
             languageAffinity +

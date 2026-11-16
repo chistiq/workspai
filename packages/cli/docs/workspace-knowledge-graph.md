@@ -25,7 +25,7 @@ verification, context, MCP, IDE, CI, and agent workflows.
 | -------------------- | ------------------------------------------------------------------------------------------ |
 | A developer          | find the implementation, nearby dependencies, tests, and evidence without repo-wide search |
 | A tech lead          | inspect cross-project boundaries, owners, contracts, and change paths                      |
-| An AI coding agent   | retrieve question-sized context and verify every returned claim                            |
+| An AI coding agent   | retrieve question-sized context and inspect supporting evidence and its limits             |
 | A CI/release system  | consume versioned JSON, source hashes, quality diagnostics, and deterministic exits        |
 | An IDE or MCP client | offer the same system understanding without rebuilding a private index                     |
 
@@ -41,7 +41,7 @@ Workspace Model remains the source of truth; the Knowledge Graph is its rich,
 queryable, evidence-backed representation. AI is a consumer, never a requirement
 for building the graph.
 
-## Try it in two minutes
+## Try it on your workspace
 
 Run from a Workspai workspace:
 
@@ -69,15 +69,25 @@ npx workspai workspace graph path frontend-api "GET /users" --json
 npx workspai workspace graph overlay --from previous-graph.json --json
 ```
 
-For agents and MCP clients, prefer bounded search over loading the complete
-graph:
+For a project task, start with one scoped packet before source discovery:
+
+```bash
+npx workspai agent context --project . --for-agent generic \
+  --task "Find the implementation and available checks for the billing database"
+```
+
+Check packet status and project identity first; selection or budget refusals
+contain recovery instead of Graph components. Reuse supplied evidence while it
+remains current. For additional questions, agents and MCP clients should prefer
+bounded search over loading the complete graph:
 
 ```bash
 npx workspai workspace graph search "billing database" --limit 12 --json
 npx workspai workspace graph search "billing database" --scope project:billing --limit 12 --json
 ```
 
-A simplified response looks like this:
+A simplified legacy search response looks like this (illustrative values, not
+a complete schema or captured benchmark):
 
 ```json
 {
@@ -90,7 +100,7 @@ A simplified response looks like this:
   "entities": [{ "kind": "database", "label": "billing-db", "proofIds": ["proof:..."] }],
   "relations": [{ "kind": "reads-from", "from": "service:billing", "to": "database:billing-db" }],
   "proofs": [{ "provider": "compose", "artifact": "infra/compose.yml", "trust": "authoritative" }],
-  "budget": { "mode": "agent", "limits": { "proofs": 16 }, "omitted": { "proofs": 4 } }
+  "budget": { "mode": "agent", "limits": { "proofs": 8 }, "omitted": { "proofs": 4 } }
 }
 ```
 
@@ -100,9 +110,11 @@ be traced through `proofIds`. Use `--scope project:<name>` to keep a query withi
 one registered project while retaining workspace-level shared entities that are
 proven to be connected to it.
 
-Search remains deterministic, local, and offline. Natural-language filler words
-are removed before ranking, and the remaining terms are weighted by how rare
-they are in the current graph. Exact labels and identities still win. This keeps
+Search remains deterministic, local, and offline. Unicode identifiers are
+normalized to NFC while preserving letters, combining marks and numbers.
+Natural-language filler is removed before ranking, and long task queries
+downweight workflow words when enough subject terms remain. Terms are weighted
+by how rare they are in the current graph. Exact labels and identities still win. This keeps
 a common word such as `check` from outranking a rarer term such as `user` merely
 because it appears in more files. No embedding service or model call is involved.
 
@@ -139,6 +151,39 @@ projects repeat the expensive semantic scan. Workspace-level CI, governance,
 infrastructure, and topology providers still run against the complete current
 workspace. The `incremental-project-cache` provider receipt records reused and
 rescanned scope counts. A provider-version change forces a full rebuild.
+
+### Compact discovery and recovery
+
+Use the opt-in byte-budgeted view when an agent needs file/proof locators rather
+than complete entity attributes:
+
+```bash
+npx workspai workspace graph search "billing database" \
+  --scope project:billing --view agent --max-bytes 12288 --json
+```
+
+`workspace-graph-search-view.v1` preserves selected matches, scope, revision and
+relevant diagnostics. Its `retrieval` reports `method: lexical`, a status of
+`candidates` or `no-matches`, and `nextAction`. These are discovery results,
+not semantic implementation bindings or executed-test evidence. No matches
+does not prove source absence; follow recovery or use scoped native search when
+index coverage is insufficient or the syntax is unsupported.
+
+The default compact-view budget is 12,288 UTF-8 bytes. Selected matches and
+retained diagnostics are not silently dropped to fit. A compact Graph refusal
+returns `insufficient-budget` and exit 2, unlike task context's default exit-zero
+refusal. Handle the status before reading matches. Use returned `expand.argv`
+with a selected ID to request revision-bound details through `graph evidence`;
+refresh discovery if that revision has changed. Optional `--context-receipt`
+can omit unchanged match details only when the same conversation retains them
+and scope/revision remain valid. Full views remain available.
+
+New bounded source/test diagnostics carry owning-project references. Scoped
+views omit only findings proven foreign; legacy unscoped or unresolved findings
+remain visible. `diagnosticSelection.aggregateScope: workspace` identifies
+provider and coverage totals as workspace aggregates, not guarantees for the
+selected project. See [agent-entry.md](./agent-entry.md#budgeted-graph-discovery-and-evidence-expansion)
+for exact budgets, receipt reuse and expansion rules.
 
 ### Fast reads without stale answers
 
@@ -223,6 +268,7 @@ repository and workspace source changes remain part of the live fingerprint.
 | How do I render the project topology?                | `workspace graph dot\|mermaid [--output <file>]`                              |
 | How do I export to semantic or graph-analysis tools? | `workspace graph jsonld\|graphml\|gexf --output <file>`                       |
 | How much retrieval payload did one query avoid?      | `workspace graph benchmark <query> --limit <n> --json`                        |
+| How should an MCP-compatible agent retrieve context? | `workspace mcp serve` → `searchWorkspaceGraph` |
 
 `graph emit --json` writes the complete dependency and Knowledge Graph to
 stdout and can be very large. Automation, IDEs, and agents should pass
@@ -230,7 +276,6 @@ stdout and can be very large. Automation, IDEs, and agents should pass
 `workspai-cli-operation-result-v1` receipt. Use `search`, `entities`,
 `evidence`, or `path` for bounded retrieval rather than loading the full
 export.
-| How should an MCP-compatible agent retrieve context? | `workspace mcp serve` → `searchWorkspaceGraph` |
 
 ## What it models
 

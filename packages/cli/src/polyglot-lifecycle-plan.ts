@@ -191,6 +191,11 @@ function listManifests(root: string, maxDepth: number): string[] {
   return manifests;
 }
 
+/** Check the selected directory only; never discover sibling projects to infer intent. */
+export function hasRootLifecycleManifest(root: string): boolean {
+  return listManifests(root, 0).length > 0;
+}
+
 /**
  * Early agent kits emitted a second, empty runtime manifest at the project
  * root in addition to the real manifest under agents/primary. That shell has
@@ -525,6 +530,47 @@ function stage(
   };
 }
 
+/** Only install a declared validation extra; never invent a pytest dependency. */
+function pythonValidationExtra(root: string, contents: string): string | null {
+  const sections = contents.matchAll(
+    /^\[(project\.optional-dependencies|tool\.setuptools\.dynamic\.optional-dependencies)\]\s*\n([\s\S]*?)(?=^\[|$(?![\s\S]))/gm
+  );
+  for (const [, section, body] of sections) {
+    for (const name of ['test', 'tests', 'testing', 'dev', 'development']) {
+      const value = body.match(
+        new RegExp(`^${name}\\s*=\\s*(\\[[\\s\\S]*?\\]|\\{[^}]*\\})`, 'm')
+      )?.[1];
+      if (!value) continue;
+      if (
+        section === 'project.optional-dependencies' &&
+        /["']pytest(?:\[|[<>=~!]|["'])/i.test(value)
+      )
+        return name;
+      if (section.startsWith('tool.setuptools')) {
+        const files = [...value.matchAll(/["']([^"']+)["']/g)].map((match) => match[1]);
+        for (const file of files) {
+          const candidate = path.resolve(root, file);
+          if (!fs.existsSync(candidate)) continue;
+          const relative = path.relative(fs.realpathSync(root), fs.realpathSync(candidate));
+          if (
+            relative === '..' ||
+            relative.startsWith(`..${path.sep}`) ||
+            path.isAbsolute(relative)
+          )
+            continue;
+          if (
+            fs.statSync(candidate).isFile() &&
+            fs.statSync(candidate).size < 1024 * 1024 &&
+            /^\s*pytest(?:\[|\s|[<>=~!]|$)/im.test(fs.readFileSync(candidate, 'utf8'))
+          )
+            return name;
+        }
+      }
+    }
+  }
+  return null;
+}
+
 function pythonLifecycleStages(input: {
   projectRoot: string;
   unitRoot: string;
@@ -583,9 +629,10 @@ function pythonLifecycleStages(input: {
       args: ['-m', 'ensurepip', '--upgrade'],
     });
   }
+  const validationExtra = pythonValidationExtra(unitRoot, contents);
   initSteps.push({
     executable: argvVenvPython,
-    args: ['-m', 'pip', 'install', '-e', '.'],
+    args: ['-m', 'pip', 'install', '-e', validationExtra ? `.[${validationExtra}]` : '.'],
   });
   if (requiresUvLock) {
     initSteps.push({

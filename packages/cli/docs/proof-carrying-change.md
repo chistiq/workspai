@@ -1,7 +1,8 @@
 # Proof-Carrying Change
 
 Status: released in Workspai CLI v0.69.0; deletion-tombstone and overlapping
-artifact-identity hardening released in v0.70.0.
+artifact-identity hardening released in v0.70.0. Scoped verification and current
+effect-projection hardening are included in v0.81.1.
 
 > Every change carries its intent, pinned architecture baseline, predicted
 > impact, authorized effects, actual architecture delta, independent
@@ -41,7 +42,7 @@ workspai change effect record --change <change-id> \
   --file effect-receipt.json --json
 
 # 6. Rebuild/re-observe architecture and run independent verification.
-workspai change verify --change <change-id> --strict --json
+workspai change verify --change <change-id> --json
 
 # 7. Validate or export the sealed manifest.
 workspai change capsule validate --change <change-id> --json
@@ -83,6 +84,9 @@ The runtime enforces these rules:
 - receipt idempotency keys cannot be reused;
 - verification binds the exact current Model, Graph, and effect-head digest;
 - observed changed artifacts must be covered by successful effect receipts;
+- the latest recorded state of every logical/canonical artifact must match the
+  filesystem before either verification gate can proceed; a digest failure is
+  a blocker and cannot be bypassed by workspace readiness;
 - removed artifacts must be covered by validated deletion tombstones rather
   than references to files that no longer exist;
 - a changed Graph with no effect receipt blocks verification;
@@ -92,12 +96,41 @@ The runtime enforces these rules:
 - optimistic compare-and-append prevents concurrent history forks;
 - capsule validation replays the event chain and checks local reference digests.
 
-The CLI accepts transactions without a prediction for compatibility and for
-callers whose effect does not change project artifacts. The generated agent
-mutation policy is stricter: every source, test, or configuration write must
-have a prediction first, with each expected file represented as an `artifact`
-operation using a project-relative `targetId`. This makes expected derived
-Graph evidence attributable without treating the prediction as proof.
+The generated agent policy uses native project tools for routine project-local
+work. Proof-Carrying Change applies when repository policy requires it, the
+change crosses project or architecture boundaries, or a governed Workspai effect
+needs authorization. Within that transaction, every expected source, test, or
+configuration write must be predicted before mutation as an `artifact`
+operation with a project-relative `targetId`. The prediction makes derived
+Graph evidence attributable; it is intent, never proof.
+
+`change verify` selects its gate from the immutable Goal criterion. A
+single-project Goal can use a project-scoped gate that verifies the selected
+project and its affected transitive dependents while retaining workspace graph
+integrity and policy checks. Workspace-scoped Goals and changes with effects
+outside the selected project use the full Workspace Verify gate. `--strict`
+always requires full workspace readiness and freshness. The default workspace
+gate blocks on a blocked verdict; strict mode also blocks `needs-attention` and
+stale workspace freshness.
+
+Both gates retain the latest successful effect's freshness boundary. Required
+project checks must actually execute after that boundary; completion timestamps
+alone cannot make a check started before a mutation current. Cached
+`--reuse-passed` and `--plan` runs do not prove execution for a governed change.
+Keyed project/stage history retains its own timing and execution mode. Legacy
+history without enough timing information requires a new check. Pinned projects
+and their transitive dependents remain in the plan even when the structural
+Model diff is empty, and skipped or indeterminate checks cannot seal the change.
+
+Repeated edits use the last receipt in ledger order for each artifact, matching
+both normalized labels and canonical filesystem targets. Updates, deletion, and
+recreation replace the current state while the complete receipt history remains
+in the tamper-evident ledger. Capsules expose current effects and verification
+references so superseded digests do not invalidate a later successful retry.
+Validation independently derives that projection from the ledger, checks the
+effect head, and accepts the original full-history representation of older v1
+capsules. Removing current effect entries from a capsule does not bypass the
+filesystem checks.
 
 ## Architecture lease
 

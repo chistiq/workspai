@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 const NPM_CONTRACTS_DIR = path.resolve(process.cwd(), 'contracts');
 const VSCODE_CONTRACTS_DIR = process.env.WORKSPAI_VSCODE_CONTRACTS_DIR
   ? path.resolve(process.env.WORKSPAI_VSCODE_CONTRACTS_DIR)
-  : path.resolve(process.cwd(), '..', '..', '..', 'rapidkit-vscode', 'contracts');
+  : path.resolve(process.cwd(), '..', '..', '..', 'workspai-vscode', 'contracts');
 
 const CLI_EXTENSION_CONTRACT_FILES = [
   'extension-cli-compatibility.v1.json',
@@ -59,7 +59,7 @@ describe('CLI ↔ extension contract parity', () => {
   });
 
   it.skipIf(!fs.existsSync(VSCODE_CONTRACTS_DIR))(
-    'keeps Workspai CLI contracts aligned with rapidkit-vscode/contracts',
+    'keeps Workspai CLI contracts aligned with workspai-vscode/contracts',
     () => {
       for (const fileName of CLI_EXTENSION_CONTRACT_FILES) {
         const cliPath = path.join(NPM_CONTRACTS_DIR, fileName);
@@ -67,7 +67,7 @@ describe('CLI ↔ extension contract parity', () => {
 
         expect(
           fs.existsSync(extensionPath),
-          `${fileName} missing in rapidkit-vscode/contracts`
+          `${fileName} missing in workspai-vscode/contracts`
         ).toBe(true);
         expect(readJson(cliPath)).toEqual(readJson(extensionPath));
       }

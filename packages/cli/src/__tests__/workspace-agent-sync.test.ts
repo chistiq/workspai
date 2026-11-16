@@ -350,7 +350,7 @@ describe('workspace agent sync', () => {
       );
     }
     expect(agents).not.toContain('For source-changing work, use the active Goal Pack');
-    expect(agents).toContain('Routine project-local changes follow repository instructions');
+    expect(agents).toContain('Routine local edits use native tools');
     // Provider syntax may vary; response shape must not replace evidence obligations.
     for (const text of [
       agents,
@@ -773,7 +773,7 @@ describe('workspace agent sync', () => {
             expect.objectContaining({
               id: 'claude',
               status: 'ready',
-              entryFiles: ['CLAUDE.md'],
+              entryFiles: ['CLAUDE.md', 'AGENTS.md'],
             }),
           ]),
         }),

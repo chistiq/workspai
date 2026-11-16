@@ -9,132 +9,179 @@
 
 **Less rediscovery. More time building.**
 
-Give your coding agent a system map, source references, and saved project context.
-Use the same evidence yourself to understand the code and decide what to do next.
+Create a structured project or connect your existing code. Prepare focused
+context, source references, and relevant checks for your coding agent.
 
 > One workspace. One truth. Humans and AI aligned.
 
-## Workspace Intelligence for software systems
+Workspai is an open-source CLI that provides **Workspace Intelligence for software
+systems**. Prepare context for Codex, Claude Code, Cursor, or GitHub Copilot, and
+inspect the same evidence yourself. The system map and checks do not require an AI API key.
 
-Workspai is an open-source CLI that helps you understand software and prepare
-focused context for Codex, Claude Code, Cursor, and GitHub Copilot.
-The system map and checks do not require an AI API key.
+[Get started](#choose-your-start) · [Agent setup](docs/agent-entry.md) ·
+[Documentation](docs/README.md) · [Watch the CLI demo](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-grpc-readme-cli.gif)
 
-[Quickstart](#start-in-two-minutes) ·
-[Agent setup](docs/agent-entry.md) ·
-[Documentation](docs/README.md)
+## Choose your start
 
-## Start in two minutes
+Requires **Node.js 20.19+ and npm**. Run times depend on the project and checks.
+Other runtimes are needed only for projects and workflows that use them;
+Python is not required for Python-free workflows.
 
-From the directory of your existing project:
+### Connect an existing project
+
+From your project's directory:
 
 ```bash
 npx workspai adopt .
-npx workspai workspace intelligence run --for-agent generic
 ```
 
-Requires **Node.js 20.19+ and npm**. Your source stays in place. Workspai adds
-project metadata and agent entry files, creates or reuses a linked workspace,
-and saves shared reports there. `generic` prepares context for supported agent
-hosts without requiring you to choose one yet. Run time depends on your project.
+Your source stays in place. Workspai adds `.workspai/` metadata and agent entry
+files, registers the project in a linked workspace, and prepares its initial map
+and context. Review the generated files and terminal summary before committing.
+Adoption prepares agent grounding; project health and release readiness are
+separate checks.
 
-**Read the terminal summary:** which projects were detected, where context was
-saved, and which checks need attention. Rerun the intelligence command after
-changes to refresh the saved view.
-
-![Workspai adopting and analyzing the gRPC repository](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-grpc-readme-cli.gif)
+Shared reports live under `.workspai/reports/` in the linked workspace. You can
+keep using the source project's terminal. If no workspace was selected, the
+adoption summary identifies the default workspace used.
 
 ### Create a workspace or a new project
-
-Build from a starter instead of setting up every project by hand:
 
 ```bash
 npx workspai create
 ```
 
-- **Create a workspace:** organize your projects with shared context and checks.
-- **Create a project:** pick a category, kit, and name; scaffold and register it.
-- **Add existing software:** connect a local project, Git repository, or workspace.
+Create a **workspace** to organize projects, or create a **project** to choose a
+category, starter, and name. After creating an empty workspace, run the command
+again to add its first project. Workspai handles scaffolding and registration;
+the picker shows each kit's current support status and setup requirements.
 
-| Build… | Choose from starters such as… |
-| --- | --- |
-| A backend | FastAPI, NestJS, Go, ASP.NET Core, Rust Axum, Spring Boot |
-| A frontend | Next.js, React + Vite, Vue, Angular, Astro, SvelteKit |
-| An AI agent | Google ADK, OpenAI Agents SDK, Microsoft Agent Framework |
-| A model gateway | OpenRouter with Python or TypeScript |
-| A desktop app or extension | Browse the matching category in the picker |
+| Build                       | Example starters                                          |
+| --------------------------- | --------------------------------------------------------- |
+| APIs and services           | FastAPI, NestJS, Go, ASP.NET Core, Rust Axum, Spring Boot |
+| Web apps                    | Next.js, React + Vite, Vue, Angular, SvelteKit, Astro     |
+| AI agents                   | Google ADK, OpenAI Agents SDK, Microsoft Agent Framework  |
+| Model gateways              | OpenRouter with Python or TypeScript                      |
+| Desktop apps and extensions | Browse the matching category in the picker                |
 
-The picker shows each kit's support status.
+[All workspace, project, and import options](docs/creating-workspaces-and-projects.md)
 
-Install once with `npm install -g workspai` to use `workspai create`.
-The optional `wspai` package provides the shorter `wspai create` command.
+Prefer a global installation? Run `npm install -g workspai`, then use
+`workspai create`. The optional `wspai` package provides the shorter alias.
 
-[All workspace and project setup options](docs/creating-workspaces-and-projects.md)
+## Give your agent a focused task
 
-## Give your agent a goal, not an open-ended prompt
+Open the created or adopted project in your coding agent and ask for your change
+as usual. Generated entry files guide supported hosts to project context; the
+host must load those instructions. Existing sessions may need to reload them.
+[Check your host's setup](docs/agent-entry.md).
 
-From your linked project:
+To inspect what Workspai prepares, run from the linked project:
 
 ```bash
-npx workspai goal "Raise test coverage to 85%" --for-agent generic
+npx workspai agent context --project . --for-agent generic \
+  --task "Find the main entry points and available project checks"
 ```
 
-Workspai prepares scope, acceptance criteria, and an agent handoff.
-The agent gets a focused objective, not permission to scan or change everything.
-The command does not edit source or claim that the outcome is complete.
-Your agent performs the implementation; verification checks the result.
+| The JSON packet contains                 | Why it matters                                       |
+| ---------------------------------------- | ---------------------------------------------------- |
+| Selected project and workspace identity  | Check that the context belongs to your target        |
+| Graph matches with source references     | Follow evidence to live code                         |
+| Runtime boundaries and project checks    | Choose checks from the affected package's manifests  |
+| Scoped guidance and evidence limitations | See what is usable and what needs further inspection |
 
-[Goal guide, including multi-project and runtime choices](docs/goal-packs.md)
+Preparing context does not edit source or run tests. Your agent implements the
+change and reports the checks it actually ran. Missing or partial evidence is
+reported explicitly; it does not prove that source is absent.
 
-## Make every agent change carry proof
+[![Workspai workflow: create or adopt a project, prepare scoped context, then use it in your coding agent](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-overview.svg)](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-grpc-readme-cli.gif)
 
-Need an audit trail? **Proof-Carrying Change** connects the goal to authorized
-changes, observed effects, and independent verification.
-Prediction can guide work but can never prove its own result.
+## Refresh context and inspect health
+
+After changing code or configuration, refresh the workspace view:
+
+```bash
+npx workspai workspace intelligence run --for-agent generic
+```
+
+This runs the complete intelligence chain across the linked workspace. A blocked
+result names a check that needs attention; inspect the summary and its report.
+A successful adoption or context request does not certify release readiness.
+
+For a project-local problem, run from that project:
+
+```bash
+npx workspai doctor project
+```
+
+Use `npx workspai doctor workspace` for workspace-wide diagnostics.
+[Runner behavior and results](docs/workspace-intelligence-runner.md) ·
+[Doctor guide](docs/doctor-command.md)
+
+## Everyday workflows
+
+| You want to                   | Start with                                                             |
+| ----------------------------- | ---------------------------------------------------------------------- |
+| Prepare task context          | `npx workspai agent context --project . --task "Explain this project"` |
+| Run a new-project wizard      | `npx workspai create`                                                  |
+| Inspect project membership    | `npx workspai project workspace status --json`                         |
+| Refresh generated entry files | `npx workspai workspace agent-sync --write --refresh-context --json`   |
+| Connect an MCP client         | `npx workspai workspace mcp serve`                                     |
 
 <details>
-<summary>Example change lifecycle — after creating a Goal</summary>
+<summary>Search graph evidence for one project</summary>
 
-Begin before the first source change; replace placeholders with your change ID
-and actual effect receipt. See the guide for receipt creation and the full loop.
+Replace `<project-name>` with the project name reported in your task context.
+Keep the explicit scope when several projects share a workspace:
 
 ```bash
-npx workspai change begin --json
-npx workspai change authorize --change <change-id> --effects filesystem,command --json
-npx workspai change effect record --change <change-id> --file effect-receipt.json --json
-npx workspai change verify --change <change-id> --strict --json
-npx workspai change capsule validate --change <change-id> --json
+npx workspai workspace graph search "authentication" \
+  --scope "project:<project-name>" --limit 5 --view agent --json
 ```
 
-![Workspai records and verifies a Goal-bound change](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-pcc-readme-cli.gif)
+Matches are discovery evidence. Follow their source references before changing
+code. No lexical match is not proof that an implementation is absent.
+
+[Graph search and evidence](docs/workspace-knowledge-graph.md)
 
 </details>
 
-[Record and verify a change](docs/proof-carrying-change.md)
+[All commands and flags](docs/commands-reference.md)
 
-## What happens after the first run
+## Plan work and verify governed changes
 
-Your project keeps its agent entry and scoped context. The linked workspace
-keeps shared reports under `.workspai/reports/`. You can stay in the project terminal.
-
-To check the entry before handing work to an agent:
+For work needing explicit acceptance criteria or an audit trail, prepare a Goal:
 
 ```bash
-npx workspai agent bootstrap --for-agent generic --strict --json
+npx workspai goal "Add retry with exponential backoff" --for-agent generic
 ```
 
-A blocked result is useful evidence, not a crashed command.
-Inspect the named check and its report before claiming readiness.
-[Agent setup and entry checks](docs/agent-entry.md)
+Workspai prepares scope, acceptance criteria, and an agent handoff.
+The command does not edit source or claim completion. Your agent implements the
+change under the project's applicable policy.
+
+**Proof-Carrying Change** connects governed work to recorded effects and independent
+verification:
+
+```text
+Intent → baseline → authorization → effects → verification → sealed capsule
+```
+
+Prediction can guide work but can never prove its own result. A prepared Goal
+or an applied edit is not a verified outcome. Follow the complete workflow when
+project policy or change scope requires it.
+
+[Plan a Goal](docs/goal-packs.md) · [Record and verify a change](docs/proof-carrying-change.md) ·
+[Watch the governed-change demo](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-pcc-readme-cli.gif)
 
 ## How Workspace Intelligence works
 
-Workspai reads the workspace, builds a map, checks evidence, and prepares context.
-The **Workspace Model is the canonical source of truth**. The graph is a
-**derived, revision-bound representation**; providers enrich it without rewriting
-the model during the same run.
+The **Workspace Model is the canonical source of truth**. The Knowledge Graph
+is a **derived, revision-bound representation**. Providers add facts and evidence
+without rewriting the authorizing model during the same run.
 
 A missing relationship means **not proven**, not "these projects are independent."
+Graph matches do not prove implementation behavior or executed tests.
 
 <details>
 <summary>The full intelligence chain and CI command</summary>
@@ -148,71 +195,43 @@ Model → Diff → Impact → Doctor + Contract Verify + Analyze → Readiness
 npx workspai workspace intelligence run --for-agent generic --strict --json
 ```
 
-`pipeline --json --strict` is the broader release/governance workflow and
-complements this runner.
-
-</details>
-
+`pipeline --json --strict` is the broader release/governance workflow.
 [Runner behavior and exit codes](docs/workspace-intelligence-runner.md)
 
-<details>
-<summary>See a workspace graph</summary>
-
-![Interactive view of a Workspai workspace graph](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspace-graph.gif)
-
-[Explore the graph](docs/workspace-knowledge-graph.md)
-
 </details>
-
-## Everyday workflows
-
-| You want to… | Run |
-| --- | --- |
-| Refresh context and checks | `npx workspai workspace intelligence run --for-agent generic` |
-| Explore a topic from your code | `npx workspai workspace graph search "authentication" --limit 5 --json` |
-| Diagnose your project or workspace | `npx workspai doctor project` / `npx workspai doctor workspace` |
-| Start a new project | `npx workspai create` |
-| Serve workspace queries to an MCP client | `npx workspai workspace mcp serve` |
-
-Search results include evidence references. Follow them before changing code.
-[All commands and flags](docs/commands-reference.md)
 
 ## Outputs and integrations
 
-Use terminal summaries for a first look, JSON for automation, and saved context
-for coding agents. Graph exports include JSON, Mermaid, DOT, GraphML, and GEXF.
-Live activity projections and reports for IDEs and dashboards show current activity;
-activity alone does not prove a change is correct.
+Use terminal summaries yourself, JSON in automation, and saved project context
+with coding agents. Graph exports include JSON, Mermaid, DOT, GraphML, and GEXF.
+Live activity projections and reports for IDEs and dashboards show current
+activity; activity alone does not prove correctness.
 
 The [VS Code extension](https://marketplace.visualstudio.com/items?itemName=rapidkit.rapidkit-vscode)
 uses the same CLI and workspace artifacts.
-
-## Requirements
-
-Node.js **20.19+** and npm. Other runtimes are needed only for projects and
-workflows that use them. Python is not required for Python-free workflows;
-RapidKit Core supports the Python/Core-dependent kits and modules.
+[See the interactive graph](https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspace-graph.gif).
 
 ## Documentation
 
-| Next step | Guide |
-| --- | --- |
-| Create, adopt, or import a project | [Getting started](docs/creating-workspaces-and-projects.md) |
-| Connect your coding agent | [Agent entry](docs/agent-entry.md) |
-| Understand relationships | [Knowledge Graph](docs/workspace-knowledge-graph.md) |
-| Add checks to CI | [CI workflows](docs/ci-workflows.md) |
-| Find a command or understand a term | [Command reference](docs/commands-reference.md) · [Glossary](docs/GLOSSARY.md) |
+| Your next step                           | Guide                                                                          |
+| ---------------------------------------- | ------------------------------------------------------------------------------ |
+| Create, adopt, or import software        | [Getting started](docs/creating-workspaces-and-projects.md)                    |
+| Connect your coding agent                | [Agent entry](docs/agent-entry.md)                                             |
+| Search relationships and source evidence | [Knowledge Graph](docs/workspace-knowledge-graph.md)                           |
+| Automate checks                          | [CI workflows](docs/ci-workflows.md)                                           |
+| Find a command or term                   | [Command reference](docs/commands-reference.md) · [Glossary](docs/GLOSSARY.md) |
 
 [Browse all guides](docs/README.md)
 
 ## Troubleshooting
 
-- **Workspace not detected?** Run from your linked project, or inspect
+- **Workspace not detected?** Run from the linked project and inspect
   `npx workspai project workspace status --json`.
-- **Context is stale?** Rerun the intelligence command.
-- **A check is blocked?** Read the named report; adoption does not certify project health.
-- **Agent files need refreshing?** Run
-  `npx workspai workspace agent-sync --write --refresh-context --json`.
+- **Your agent does not use the entry files?** Open the project as its workspace
+  and follow the [host setup guide](docs/agent-entry.md).
+- **Context is stale?** Rerun the intelligence command above.
+- **A project check cannot start?** Inspect that project's runner and dependencies
+  with `npx workspai doctor project`; setup limitations are separate from failed tests.
 
 ## Contributing
 
@@ -220,6 +239,7 @@ RapidKit Core supports the Python/Core-dependent kits and modules.
 [Security](docs/SECURITY.md)
 
 Built by [Chistiq](https://chistiq.com/), the team behind RapidKit and Workspai.
+RapidKit Core supports Python/Core-dependent kits and modules.
 
 ## License
 

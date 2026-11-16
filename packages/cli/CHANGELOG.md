@@ -7,6 +7,106 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.81.1] - 2026-11-16
+
+### Fixed
+
+- Separate structural grounding freshness from expired workspace verification
+  reports so adoption can seal current source evidence without renewing Doctor,
+  Analyze or Readiness TTLs. Keep stale reports visible and strict bootstrap
+  degraded, while structural staleness remains blocking.
+- Recover re-adoption from an intact local workspace link with missing project
+  membership only after identity, contract and collision checks. Preserve normal
+  membership enforcement, transactional rollback and authored instructions.
+- Gate scoped lifecycle runs with canonical project Doctor evidence rather than
+  unrelated workspace release findings. Reject ambiguous/empty selectors,
+  conflicting external registrations and contradictory Doctor scopes.
+- Preserve scoped Doctor warnings for strict runs. Do not require `node_modules`
+  for a standalone Node manifest proving no dependency requirements; keep
+  dependency and workspace ownership checks conservative for other manifests.
+- Rank long task queries by their subject, retain Unicode identifiers and return
+  explicit no-match recovery. Normalize proof paths before project ownership
+  checks and attach test-discovery bounds to their owning project.
+- Supply one compact, manifest-derived task Skill instead of requiring the
+  workspace Skill catalog; omit proven foreign Skills from project host entries.
+  Include declared Python validation extras in setup without inventing dependencies.
+  Keep unrelated Goal warnings without exposing foreign Goal continuation routes.
+
+- Refuse an unverified umbrella cwd before descendant lifecycle discovery;
+  require project selection for missing source paths and nested project boundaries
+  instead of substituting parent context. Keep explicit native projects and
+  ordinary monorepo packages supported without automatic adoption.
+- Return structured argv recovery preserving project, task, host, valid Graph
+  match counts and byte budgets. Rebase canonical/nested roots and distinguish
+  requests for missing selection input from executable retries.
+- Require explicit project binding in compact agent gates and scope comparison
+  before packet use; clarify prerequisite inspection and disclosure of unavailable
+  grounding so a successful command is not mistaken for successful architecture use.
+- Include the actual project-workspace resolution route in task context, distinguish
+  the central managed default from parent and other linked workspaces without
+  emitting local paths, and preserve stale/ambiguous bindings as blocked instead
+  of misclassifying them as unmanaged.
+- Make project-versus-workspace command scope explicit in task packets. Treat the
+  packet's bounded Graph query as complete, keep separate Graph search optional,
+  and distinguish unavailable host tools or permission failures from stale graph
+  evidence. Do not recommend a workspace-wide refresh for a project-only task.
+- Generate a compact shared entry and a native Copilot gate in
+  `.github/copilot-instructions.md`, preserving authored bytes, tracked
+  deletions and safe instruction symlinks across refresh and grounding modes.
+- Verify current entry blocks and imported dependencies against manifest
+  bindings instead of accepting file existence as proof of an intact gate.
+  Legacy unbound entries report degraded host coverage.
+- Distinguish generated artifact readiness and prepared task context from
+  unobserved host loading and model compliance; keep detailed operating rules
+  in the bounded task packet instead of duplicating them in always-loaded files.
+- Block invalid current effects before either project or workspace verification.
+  Evaluate the latest observation of each logical/canonical file while retaining
+  every receipt in the immutable ledger, including update/delete/recreate
+  sequences and overlapping project aliases.
+- Resolve effect artifacts inside the registered project's canonical root before
+  selecting the project gate; traversal and escaping symlinks use the full gate,
+  and adopted projects and workspace path aliases keep their canonical ownership.
+- Preserve the governed freshness boundary through workspace fallback and strict
+  verification. Require actual post-effect runtime execution, reject reused or
+  plan-only results, and retain execution timing and mode in keyed stage history.
+- Keep project and transitive-dependent checks mandatory even when the Model has
+  no structural diff; skipped or indeterminate checks cannot seal a Change.
+- Publish and independently validate current capsule artifact projections while
+  keeping legacy v1 histories readable, without trusting omitted receipt entries.
+- Advance the Goal Pack kernel revision so the new project-verification
+  criterion cannot reuse immutable Goal IDs produced by the prior compiler.
+
+### Changed
+
+- Follow the renamed `workspai-vscode` checkout for consumer contract sync; keep
+  the legacy environment override compatible.
+
+- Align current guides, scenario examples and release qualification with scoped
+  execution, inline task Skills, explicit project selection and bounded Graph
+  recovery. Simplify README create/adopt paths while preserving product slogans
+  and distinguishing prepared context from observed model use.
+- Keep a valid agent-context budget refusal available to host tools as structured
+  JSON by default; automation can opt into a nonzero refusal with `--strict`.
+- Add a project-scoped Proof-Carrying Change verifier for single-project Goals;
+  it checks the selected project and affected transitive dependents while
+  preserving workspace graph-integrity and policy gates. Workspace mutations,
+  workspace-scoped Goals, and strict verification retain the full workspace gate.
+- Teach generated agent guidance and the saved-output example to branch on
+  `insufficient-budget` before reading grounding or Graph fields.
+- Keep the published CLI command inventory snapshot aligned with the new
+  `agent context --strict` option.
+- Clarify that Proof-Carrying Change prediction applies within governed changes,
+  and document that strict verification requires workspace-wide readiness and
+  freshness.
+- Make task execution roots explicit: lifecycle stages carry a project-relative
+  working directory, and task context explains that source reads do not change
+  the terminal's current directory.
+- Resolve `workspace:` evidence against the canonical workspace using the
+  documented `workspacePath` field, without treating it as project-local data
+  or repeating grounding checks.
+- Clarify package-script argument behavior, temporary Git fixture overrides,
+  and when repository-generated artifacts should be refreshed.
+
 ## [0.81.0] - 2026-11-13
 
 ### Added

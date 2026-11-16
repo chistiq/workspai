@@ -71,6 +71,11 @@ export type WorkspaceGraphSearchView = {
   claims: 'discovery-only; lexical matches do not establish implementation bindings, executed tests or verified completion';
   limit: number;
   totalMatches: number;
+  retrieval: {
+    method: 'lexical';
+    status: 'candidates' | 'no-matches';
+    nextAction: string;
+  };
   omitted: {
     matches: number;
     additionalProofs: number;
@@ -272,6 +277,14 @@ export function buildWorkspaceGraphSearchView(
       'discovery-only; lexical matches do not establish implementation bindings, executed tests or verified completion',
     limit: result.limit,
     totalMatches: result.totalMatches,
+    retrieval: {
+      method: 'lexical',
+      status: result.totalMatches > 0 ? 'candidates' : 'no-matches',
+      nextAction:
+        result.totalMatches === 0
+          ? 'No match is not proof of absence. Use scoped native search or an exact identifier/path.'
+          : 'Inspect cited source; expand evidence or narrow the query.',
+    },
     omitted: {
       matches: result.totalMatches - matches.length,
       additionalProofs,

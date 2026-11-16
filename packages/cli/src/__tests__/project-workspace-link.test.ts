@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 
 import { execa } from 'execa';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, type TestContext } from 'vitest';
 
 import { buildCleanGitEnv } from '../utils/git-worktree.js';
 
@@ -25,6 +25,7 @@ import {
 import type { WorkspaceKnowledgeEntity } from '../contracts/workspace-knowledge-graph-contract.js';
 import {
   buildAgentBootstrapReceipt,
+  buildProjectAgentEntryManifest,
   PROJECT_AGENT_ENTRY_RELATIVE_PATH,
   WORKSPAI_AGENT_ENTRY_END,
   WORKSPAI_AGENT_ENTRY_START,
@@ -35,6 +36,27 @@ import { normalizeRegistryPath } from '../utils/registry-path.js';
 import { resolveRepositoryLocalSymlinkFile } from '../utils/repository-local-symlink.js';
 
 const cleanup: string[] = [];
+
+async function symlinkForEntryTest(
+  target: string,
+  link: string,
+  context: TestContext,
+  type?: 'dir'
+) {
+  try {
+    await fsp.symlink(target, link, type);
+  } catch (error) {
+    if (
+      process.platform === 'win32' &&
+      ['EPERM', 'EACCES', 'ENOSYS'].includes((error as NodeJS.ErrnoException).code ?? '')
+    ) {
+      context.skip();
+      return false;
+    }
+    throw error;
+  }
+  return true;
+}
 
 function lensEntity(
   kind: WorkspaceKnowledgeEntity['kind'],
@@ -113,6 +135,246 @@ afterEach(async () => {
 });
 
 describe('project workspace binding', () => {
+  it.each([
+    '# Copilot rules\n\n\nKeep blank lines.\n\n',
+    '\r\n# Copilot rules\r\n\r\nKeep trailing space.  \r\n',
+    '# Copilot rules without a final newline',
+  ])('preserves native Copilot instructions across refresh and removal: %j', async (authored) => {
+    const { workspacePath, projectPath } = await fixture();
+    const nativePath = path.join(projectPath, '.github/copilot-instructions.md');
+    await fsp.mkdir(path.dirname(nativePath), { recursive: true });
+    await fsp.writeFile(nativePath, authored);
+    const options = { workspacePath, projectPath, projectName: 'web' };
+    const result = await syncProjectIntelligenceLens(options);
+    const first = await fsp.readFile(nativePath, 'utf8');
+    expect(first.startsWith(WORKSPAI_AGENT_ENTRY_START)).toBe(true);
+    expect(first.endsWith(authored)).toBe(true);
+    expect(first).toContain('--for-agent copilot');
+    expect(result.hostCoverage?.find((host) => host.id === 'copilot')).toMatchObject({
+      discovery: 'native',
+      status: 'ready',
+      statusScope: 'entry-artifacts',
+      entryFiles: ['.github/copilot-instructions.md'],
+      artifacts: [
+        {
+          path: '.github/copilot-instructions.md',
+          scope: 'managed-blocks',
+          sha256: expect.any(String),
+        },
+      ],
+    });
+    expect(first.split(/\s+/u).length - authored.split(/\s+/u).length).toBeLessThan(180);
+    const agents = await fsp.readFile(path.join(projectPath, 'AGENTS.md'), 'utf8');
+    expect(agents.split(/\s+/u).length).toBeLessThan(380);
+    expect(agents.match(/workspai agent context --task/gu)).toHaveLength(1);
+    await syncProjectIntelligenceLens(options);
+    expect(await fsp.readFile(nativePath, 'utf8')).toBe(first);
+    await syncProjectIntelligenceLens({ ...options, mode: 'local' });
+    expect(await fsp.readFile(nativePath, 'utf8')).toBe(authored);
+    await syncProjectIntelligenceLens(options);
+    expect(await fsp.readFile(nativePath, 'utf8')).toBe(first);
+    await syncProjectIntelligenceLens({ ...options, mode: 'off' });
+    expect(await fsp.readFile(nativePath, 'utf8')).toBe(authored);
+  });
+
+  it('binds managed host instructions without freezing repository-authored text', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    await syncProjectIntelligenceLens({ workspacePath, projectPath });
+    const nativePath = path.join(projectPath, '.github/copilot-instructions.md');
+    await fsp.appendFile(nativePath, '\n# Additional authored instructions\n');
+    const receipt = await buildAgentBootstrapReceipt({
+      startPath: projectPath,
+      forAgent: 'copilot',
+    });
+    expect(receipt.entry).toMatchObject({
+      hostStatus: 'ready',
+      statusScope: 'entry-artifacts',
+      hostLoading: 'not-observed',
+      modelCompliance: 'not-observed',
+    });
+    expect(receipt.checks.find((check) => check.id === 'host-discovery')?.status).toBe('passed');
+  });
+
+  it.each(['claude', 'gemini', 'qwen'])(
+    'validates the imported entry dependency for %s',
+    async (host) => {
+      const { workspacePath, projectPath } = await fixture();
+      await syncProjectIntelligenceLens({ workspacePath, projectPath });
+      await fsp.writeFile(
+        path.join(projectPath, 'AGENTS.md'),
+        '# Authored rules without the gate\n'
+      );
+      const receipt = await buildAgentBootstrapReceipt({ startPath: projectPath, forAgent: host });
+      expect(receipt.entry.hostStatus).toBe('blocked');
+    }
+  );
+
+  it('preserves an authored native instruction symlink and its target across mode changes', async (context) => {
+    const { workspacePath, projectPath } = await fixture();
+    const nativePath = path.join(projectPath, '.github/copilot-instructions.md');
+    const targetPath = path.join(projectPath, 'copilot-team.md');
+    const authored = '# Team rules\r\n\r\nKeep trailing spaces.  \r\n';
+    await fsp.mkdir(path.dirname(nativePath), { recursive: true });
+    await fsp.writeFile(targetPath, authored);
+    if (!(await symlinkForEntryTest('../copilot-team.md', nativePath, context))) return;
+    const options = { workspacePath, projectPath };
+    await syncProjectIntelligenceLens(options);
+    const first = await fsp.readFile(targetPath, 'utf8');
+    expect(first.endsWith(authored)).toBe(true);
+    await syncProjectIntelligenceLens(options);
+    expect(await fsp.readFile(targetPath, 'utf8')).toBe(first);
+    await syncProjectIntelligenceLens({ ...options, mode: 'off' });
+    expect((await fsp.lstat(nativePath)).isSymbolicLink()).toBe(true);
+    expect(await fsp.readFile(targetPath, 'utf8')).toBe(authored);
+  });
+
+  it('does not resurrect deliberately deleted native Copilot instructions', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const nativePath = path.join(projectPath, '.github/copilot-instructions.md');
+    await fsp.mkdir(path.dirname(nativePath), { recursive: true });
+    await fsp.writeFile(nativePath, '# Copilot team rules\n');
+    await execa('git', ['init', '--quiet'], { cwd: projectPath, env: buildCleanGitEnv() });
+    await execa('git', ['add', '.github/copilot-instructions.md'], {
+      cwd: projectPath,
+      env: buildCleanGitEnv(),
+    });
+    await execa(
+      'git',
+      [
+        '-c',
+        'user.email=test@workspai.local',
+        '-c',
+        'user.name=Workspai Test',
+        '-c',
+        'commit.gpgsign=false',
+        'commit',
+        '--quiet',
+        '-m',
+        'fixture',
+      ],
+      { cwd: projectPath, env: buildCleanGitEnv() }
+    );
+    await fsp.rm(nativePath);
+    const result = await syncProjectIntelligenceLens({ workspacePath, projectPath });
+    expect(fs.existsSync(nativePath)).toBe(false);
+    expect(result.hostCoverage?.find((host) => host.id === 'copilot')).toMatchObject({
+      status: 'blocked',
+      reason: expect.stringContaining('authored tracked deletion'),
+    });
+  });
+
+  it('does not overwrite another provider through a shared native instruction symlink', async (context) => {
+    const { workspacePath, projectPath } = await fixture();
+    const options = { workspacePath, projectPath };
+    await syncProjectIntelligenceLens(options);
+    const claudePath = path.join(projectPath, 'CLAUDE.md');
+    const nativePath = path.join(projectPath, '.github/copilot-instructions.md');
+    const claudeBefore = await fsp.readFile(claudePath, 'utf8');
+    await fsp.rm(nativePath);
+    if (!(await symlinkForEntryTest('../CLAUDE.md', nativePath, context))) return;
+    const result = await syncProjectIntelligenceLens(options);
+    expect(await fsp.readFile(claudePath, 'utf8')).toBe(claudeBefore);
+    expect(result.hostCoverage?.find((host) => host.id === 'copilot')).toMatchObject({
+      status: 'blocked',
+      reason: expect.stringContaining('another provider'),
+    });
+    expect(result.hostCoverage?.find((host) => host.id === 'claude')?.status).toBe('ready');
+  });
+
+  it.each(['directory', 'incomplete-markers'])(
+    'preserves ambiguous shared entry state: %s',
+    async (collision) => {
+      const { workspacePath, projectPath } = await fixture();
+      const agentsPath = path.join(projectPath, 'AGENTS.md');
+      const authored = '<!-- WORKSPAI:PROJECT-GROUNDING:START -->\nUnfinished';
+      if (collision === 'directory') await fsp.mkdir(agentsPath);
+      else await fsp.writeFile(agentsPath, authored);
+      const result = await syncProjectIntelligenceLens({ workspacePath, projectPath });
+      expect(result.hostCoverage?.find((host) => host.id === 'codex')?.status).toBe('blocked');
+      // The native Copilot gate is independent and can still deliver bounded context.
+      expect(result.hostCoverage?.find((host) => host.id === 'copilot')?.status).toBe('ready');
+      if (collision !== 'directory') expect(await fsp.readFile(agentsPath, 'utf8')).toBe(authored);
+    }
+  );
+
+  it.each(['remove-block', 'edit-command', 'unsafe-symlink'])(
+    'rejects native entry tampering after generation: %s',
+    async (mutation, context) => {
+      const { workspacePath, projectPath, root } = await fixture();
+      await syncProjectIntelligenceLens({ workspacePath, projectPath });
+      const nativePath = path.join(projectPath, '.github/copilot-instructions.md');
+      const initial = await fsp.readFile(nativePath, 'utf8');
+      if (mutation === 'unsafe-symlink') {
+        const outside = path.join(root, 'outside.md');
+        await fsp.writeFile(outside, initial);
+        await fsp.rm(nativePath);
+        if (!(await symlinkForEntryTest(outside, nativePath, context))) return;
+      } else {
+        await fsp.writeFile(
+          nativePath,
+          mutation === 'remove-block'
+            ? '# User rules\n'
+            : initial.replace('agent context', 'agent bypass')
+        );
+      }
+      const receipt = await buildAgentBootstrapReceipt({
+        startPath: projectPath,
+        forAgent: 'copilot',
+      });
+      expect(receipt.entry.hostStatus).toBe('blocked');
+      expect(receipt.checks.find((check) => check.id === 'host-discovery')?.status).toBe('failed');
+    }
+  );
+
+  it('reports legacy entry artifacts as unbound instead of claiming host activation', async () => {
+    const { workspacePath, projectPath } = await fixture();
+    const result = await syncProjectIntelligenceLens({ workspacePath, projectPath });
+    const context = JSON.parse(await fsp.readFile(result.contextPath!, 'utf8'));
+    const hosts = result.hostCoverage!.map(
+      ({ artifacts: _artifacts, statusScope: _scope, ...host }) => host
+    );
+    const legacy = buildProjectAgentEntryManifest({ context, hosts });
+    await fsp.writeFile(result.agentEntryPath!, JSON.stringify(legacy));
+    const receipt = await buildAgentBootstrapReceipt({
+      startPath: projectPath,
+      forAgent: 'copilot',
+    });
+    expect(receipt.entry.hostStatus).toBe('degraded');
+    expect(receipt.entry.hostLoading).toBe('not-observed');
+  });
+
+  it.each(['unsafe-parent', 'directory', 'ambiguous-markers'])(
+    'preserves unsafe or ambiguous authored native entries: %s',
+    async (collision, context) => {
+      const { workspacePath, projectPath, root } = await fixture();
+      const nativePath = path.join(projectPath, '.github/copilot-instructions.md');
+      if (collision === 'unsafe-parent') {
+        await fsp.mkdir(path.join(root, 'external-instructions'));
+        if (
+          !(await symlinkForEntryTest(
+            path.join(root, 'external-instructions'),
+            path.dirname(nativePath),
+            context,
+            'dir'
+          ))
+        )
+          return;
+      } else if (collision === 'directory') {
+        await fsp.mkdir(nativePath, { recursive: true });
+      } else {
+        await fsp.mkdir(path.dirname(nativePath), { recursive: true });
+        await fsp.writeFile(nativePath, `${WORKSPAI_AGENT_ENTRY_START}\nUnfinished authored state`);
+      }
+      const result = await syncProjectIntelligenceLens({ workspacePath, projectPath });
+      expect(result.hostCoverage?.find((host) => host.id === 'copilot')?.status).toBe('blocked');
+      if (collision === 'unsafe-parent')
+        expect(await fsp.readdir(path.join(root, 'external-instructions'))).toEqual([]);
+      if (collision === 'ambiguous-markers')
+        expect(await fsp.readFile(nativePath, 'utf8')).toBe(
+          `${WORKSPAI_AGENT_ENTRY_START}\nUnfinished authored state`
+        );
+    }
+  );
   it.each([
     '# Team rules\n\n\nKeep intentional blank lines.\n\n',
     '\r\n# Team rules\r\n\r\n\r\nKeep CRLF and trailing space.  \r\n',
@@ -379,6 +641,58 @@ describe('project workspace binding', () => {
       expect((error as ProjectWorkspaceResolutionError).code).toBe('project.workspace.link-stale');
     }
   });
+
+  it.each(['valid', 'tampered', 'renamed-workspace', 'occupied-identity', 'invalid-contract'])(
+    'recovers an unregistered adoption destination only with intact identity: %s',
+    async (scenario) => {
+      const f = await fixture();
+      const { linkPath } = await writeProjectWorkspaceLink({
+        workspacePath: f.workspacePath,
+        projectPath: f.projectPath,
+        projectName: 'web',
+        relationship: 'adopted',
+      });
+      const contractPath = path.join(f.workspacePath, '.workspai', 'workspace.contract.json');
+      const contract = JSON.parse(await fsp.readFile(contractPath, 'utf8'));
+      contract.projects =
+        scenario === 'occupied-identity'
+          ? [{ ...contract.projects[0], externalPath: path.join(f.root, 'different-project') }]
+          : [];
+      if (scenario === 'renamed-workspace') contract.workspace.name = 'other';
+      if (scenario === 'invalid-contract') delete contract.schemaVersion;
+      await fsp.writeFile(contractPath, JSON.stringify(contract));
+      if (scenario === 'tampered') {
+        const link = JSON.parse(await fsp.readFile(linkPath, 'utf8'));
+        link.integrity.binding = '0'.repeat(64);
+        await fsp.writeFile(linkPath, JSON.stringify(link));
+      }
+      const options = {
+        startPath: f.projectPath,
+        strict: true,
+        env: { HOME: f.home },
+        platform: 'linux' as const,
+      };
+      expect(() => resolveProjectWorkspaceSync(options)).toThrow(ProjectWorkspaceResolutionError);
+      expect(() =>
+        resolveProjectWorkspaceSync({
+          ...options,
+          recoverUnregisteredAdoption: true,
+          requireProjectMembership: true,
+        })
+      ).toThrow(ProjectWorkspaceResolutionError);
+      if (scenario === 'valid') {
+        expect(
+          resolveProjectWorkspaceSync({ ...options, recoverUnregisteredAdoption: true })
+        ).toMatchObject({ workspacePath: f.workspacePath, recovered: true });
+        // Resolution does not silently register a member or rewrite evidence.
+        expect(JSON.parse(await fsp.readFile(contractPath, 'utf8')).projects).toEqual([]);
+      } else {
+        expect(() =>
+          resolveProjectWorkspaceSync({ ...options, recoverUnregisteredAdoption: true })
+        ).toThrow(ProjectWorkspaceResolutionError);
+      }
+    }
+  );
 
   it('refuses to bind a project that is absent from the canonical contract', async () => {
     const { workspacePath, projectPath } = await fixture();
@@ -698,7 +1012,7 @@ describe('project workspace binding', () => {
     expect(context.agentRouting).toMatchObject({
       enforcement: 'required',
       mandatoryPreflight: {
-        command: 'workspai agent context --task "<user request>" --for-agent generic',
+        command: 'workspai agent context --task "<user request>" --for-agent generic --project .',
         successCondition: 'ready-or-disclosed-partial',
       },
       workspaceLocator: {
@@ -744,18 +1058,17 @@ describe('project workspace binding', () => {
     const agents = await fsp.readFile(path.join(projectPath, 'AGENTS.md'), 'utf8');
     expect(agents).toContain('Keep this text.');
     expect(agents).toContain('Workspai agent entry gate (mandatory)');
-    expect(agents).toContain(
-      'Routine project-local changes follow repository instructions and use native tools.'
-    );
-    expect(agents).toContain(
-      'Do not create a Goal/Change or run workspace-wide repair just to satisfy context retrieval.'
-    );
+    expect(agents).toContain('Routine local edits use native tools');
+    expect(agents).toContain('never merely for context retrieval');
     expect(agents).toContain('Workspace identity: `workspace` (logical name');
     expect(agents).toContain('workspai agent context --task');
-    expect(agents).toContain('before source search or implementation/test reads');
-    expect(agents).toContain("JSON.parse(fs.readFileSync(file, 'utf8'))");
-    expect(agents).toContain('never require or execute that file');
-    expect(agents).toContain('do not repeat bootstrap, membership lookup or Graph retrieval');
+    expect(agents).toContain('Before source search or implementation/test reads');
+    expect(agents).not.toContain("JSON.parse(fs.readFileSync(file, 'utf8'))");
+    expect(agents.toLowerCase()).toContain(
+      'do not repeat bootstrap, membership lookup or graph retrieval'
+    );
+    expect(agents).toContain('--project "<verified source root>"');
+    expect(agents).toContain('compare `scope` with the user target');
     expect(agents).not.toContain("Follow the receipt's `requiredReadOrder` exactly");
     expect(agents).toContain('`workspace:` paths belong to the canonical workspace');
     expect(agents.startsWith('<!-- WORKSPAI:PROJECT-GROUNDING:START -->')).toBe(true);
@@ -792,7 +1105,8 @@ describe('project workspace binding', () => {
     expect(entry).toMatchObject({
       schemaVersion: 'workspai.agent-entry.v1',
       protocol: {
-        taskContextCommand: 'workspai agent context --task "<user request>" --for-agent generic',
+        taskContextCommand:
+          'workspai agent context --task "<user request>" --for-agent generic --project .',
       },
       workspace: {
         identityIsFilesystemPath: false,
@@ -815,9 +1129,21 @@ describe('project workspace binding', () => {
           status: 'ready',
           entryFiles: ['AGENTS.md', '.agents/skills/workspai-grounding/SKILL.md'],
         }),
-        expect.objectContaining({ id: 'claude', status: 'ready', entryFiles: ['CLAUDE.md'] }),
-        expect.objectContaining({ id: 'gemini', status: 'ready', entryFiles: ['GEMINI.md'] }),
-        expect.objectContaining({ id: 'qwen', status: 'ready', entryFiles: ['QWEN.md'] }),
+        expect.objectContaining({
+          id: 'claude',
+          status: 'ready',
+          entryFiles: ['CLAUDE.md', 'AGENTS.md'],
+        }),
+        expect.objectContaining({
+          id: 'gemini',
+          status: 'ready',
+          entryFiles: ['GEMINI.md', 'AGENTS.md'],
+        }),
+        expect.objectContaining({
+          id: 'qwen',
+          status: 'ready',
+          entryFiles: ['QWEN.md', 'AGENTS.md'],
+        }),
       ])
     );
     expect(JSON.stringify(entry)).not.toContain(workspacePath);
@@ -865,7 +1191,7 @@ describe('project workspace binding', () => {
         release: 'not-verified',
       },
       resolvedHost: 'claude',
-      entry: { hostStatus: 'ready', entryFiles: ['CLAUDE.md'] },
+      entry: { hostStatus: 'ready', entryFiles: ['AGENTS.md', 'CLAUDE.md'] },
       claims: { architecture: 'prohibited' },
       integrity: { absolutePathsEmitted: false },
     });
@@ -1098,7 +1424,11 @@ describe('project workspace binding', () => {
           status: 'ready',
           entryFiles: ['AGENTS.md', '.agents/skills/workspai-grounding/SKILL.md'],
         }),
-        expect.objectContaining({ id: 'claude', status: 'ready', entryFiles: ['CLAUDE.md'] }),
+        expect.objectContaining({
+          id: 'claude',
+          status: 'ready',
+          entryFiles: ['CLAUDE.md', 'AGENTS.md'],
+        }),
       ])
     );
   });

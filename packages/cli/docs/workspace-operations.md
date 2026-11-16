@@ -60,8 +60,19 @@ npx workspai workspace import team.workspai-archive.zip --output ./team --json
   existing empty directory is bootstrapped first; a non-empty directory that
   is not already a valid workspace is rejected without modification.
 - The project directory itself is never converted into its own workspace.
+- Re-adoption can reuse an intact local link when its exact workspace still
+  exists but the project registration is absent. The workspace contract must
+  validate and match the linked identity, with no occupied project name or path.
+  Registry ambiguity, changed identities, tampered links and invalid contracts
+  still require an explicit `--workspace`. Ordinary project commands never gain
+  membership from this recovery hint. Adoption re-registers and refreshes current
+  grounding transactionally; failure restores the prior state.
 - Writes `.workspai/project.json`, `.workspai/adopt.json`, and `.workspai/adopt-readiness.json`.
 - Registry and contract sync include adopted projects for `workspace model`, `workspace context`, Dashboard, and agents.
+- A structural freshness seal does not renew Doctor, Analyze or Readiness
+  evidence. Expired verification facts remain visible as bootstrap warnings;
+  they do not block adoption of a structurally current project. Stale structural
+  facts, mismatched Graph bindings and changed live inputs still block grounding.
 - Managed grounding writes a portable project lens, project grounding, and a
   bounded managed section in `AGENTS.md`. It also publishes the portable agent
   entry manifest and host adapters. User-authored instruction content and
@@ -110,9 +121,12 @@ Operational Skill generation is evidence-driven. Release readiness remains
 available at workspace scope, while API, schema, dependency, contract, runtime,
 test, delivery, and polyglot playbooks are emitted only for matching projects.
 `.workspai/reports/workspace-skills-index.json` records both generated and
-suppressed candidates, including the signals behind each decision. This keeps
-agent discovery useful without claiming capabilities the repository does not
-have.
+suppressed candidates, including supporting signals and optional `scopedProjects`
+applicability. Routine task packets instead supply one compact project `skill`
+from lifecycle manifests or a native fallback; they do not require reading the
+workspace catalog. Specialized host Skill entries exclude proven foreign
+projects while keeping legacy indexes readable. Neither selection nor discovery
+claims that dependencies are installed or tests have executed.
 
 Doctor, Analyze, Readiness, and Verify remain explicit checks because they may
 run project tools or enforce release policy. Use `workspace intelligence run`
@@ -125,13 +139,25 @@ entry point into its canonical workspace:
 
 ```bash
 cd /absolute/path/to/project
-npx workspai project workspace status --json
-npx workspai agent bootstrap --for-agent codex --json
-npx workspai doctor workspace --json=summary
-npx workspai doctor project --json
-npx workspai workspace graph search "authentication endpoint" --limit 12 --json
-npx workspai workspace intelligence run --for-agent generic --strict --json
+npx workspai agent context --project . --for-agent generic \
+  --task "Find the main entry points and available project checks"
 ```
+
+Adoption already seals initial intelligence. Check task status and canonical
+scope before using the packet; follow selection or budget recovery before
+reading components. Your agent host must load the generated instructions, and
+prepared context does not prove model use. Do not repeat bootstrap, membership
+lookup or the same Graph search for evidence the current packet already supplies.
+
+Use `npx workspai project workspace status --json` when you need to resolve a
+`workspace:` locator, or `npx workspai agent bootstrap --for-agent codex --json`
+for a standalone entry audit. `npx workspai doctor project --json` diagnoses the
+selected project's setup. Additional Graph queries can use
+`npx workspai workspace graph search "authentication endpoint" --scope "project:<name>" --view agent --json`
+after replacing `<name>` with its registered identity. A scoped lifecycle run
+uses project Doctor gates; workspace release readiness remains separate. After
+changes, use `npx workspai workspace intelligence run --for-agent generic --strict --json`
+when you need the complete workspace check and refresh chain.
 
 Workspace resolution has one stable precedence:
 `--workspace` → parent workspace → validated local link → reverse registry.
@@ -139,18 +165,29 @@ Workspai returns a specific error for an invalid explicit workspace, malformed
 or stale link, ambiguous registration, or an unlinked project. It never picks
 one workspace silently when ownership is ambiguous.
 
+For agent task context, `scope.workspaceResolution.source` reports which route
+actually resolved the selected project's workspace, and `managedDefault`
+identifies the central managed default without exposing its local path. New
+adoption chooses a containing parent workspace first; only a project outside
+all workspaces uses the managed default unless another destination is selected.
+Task resolution checks a marked parent, then a validated local link, then the
+reverse registry. A stale or ambiguous higher-priority route blocks resolution
+instead of falling through; task context reports it as blocked, not as an
+unmanaged project that should be adopted again, and uses
+`scope.binding: "resolution-blocked"` for this case.
+
 The project receives seven complementary surfaces. They are different views of
 one canonical workspace binding, not seven copies of the model or graph:
 
-| File                                                       | Purpose                                                                        | Portable              |
-| ---------------------------------------------------------- | ------------------------------------------------------------------------------ | --------------------- |
-| `.workspai/workspace-link.local.json`                      | Machine-local canonical workspace binding                                      | No; always gitignored |
-| `.workspai/agent-entry.v1.json`                            | Versioned host coverage, read order, authority boundaries, and integrity proof | Yes                   |
-| `.workspai/reports/project-context-agent.json`             | Bounded project view of model, graph, proofs, diagnostics, and safe commands   | Yes                   |
-| `.workspai/reports/project-knowledge-graph-reference.json` | Integrity-bound locator for the canonical project graph projection             | Yes                   |
-| `.workspai/PROJECT-GROUNDING.md`                           | Human- and agent-readable project entry guide                                  | Yes                   |
-| `.agents/skills/workspai-*/SKILL.md`                       | Native project Skill wrappers for canonical workspace playbooks                | Yes                   |
-| `AGENTS.md` and host adapters                              | Route supported hosts to the same canonical-first bootstrap                    | Yes                   |
+| File                                                       | Purpose                                                                            | Portable              |
+| ---------------------------------------------------------- | ---------------------------------------------------------------------------------- | --------------------- |
+| `.workspai/workspace-link.local.json`                      | Machine-local canonical workspace binding                                          | No; always gitignored |
+| `.workspai/agent-entry.v1.json`                            | Versioned host coverage, read order, authority boundaries, and integrity proof     | Yes                   |
+| `.workspai/reports/project-context-agent.json`             | Bounded project view of model, graph, proofs, diagnostics, and safe commands       | Yes                   |
+| `.workspai/reports/project-knowledge-graph-reference.json` | Integrity-bound locator for the canonical project graph projection                 | Yes                   |
+| `.workspai/PROJECT-GROUNDING.md`                           | Human- and agent-readable project entry guide                                      | Yes                   |
+| `.agents/skills/workspai-*/SKILL.md`                       | Native project Skill wrappers for canonical workspace playbooks                    | Yes                   |
+| `AGENTS.md` and host adapters                              | Route supported hosts to explicit-project task context and standalone entry audits | Yes                   |
 
 The bounded context includes project identity and commands, dependencies and
 dependents, related API/deployment/test surfaces, current project findings,

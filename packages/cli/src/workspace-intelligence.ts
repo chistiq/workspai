@@ -248,6 +248,8 @@ export function parseGitDiffRef(fromPath: string): string {
 export type BuildWorkspaceImpactOptions = DiffWorkspaceModelOptions & {
   scope?: string;
   diff?: WorkspaceModelDiff;
+  /** Keep dependency-graph dependents in scope after filtering direct changes. */
+  includeTransitiveOutsideScope?: boolean;
 };
 
 function resolveWorkspaceRelativePath(workspacePath: string, filePath: string): string {
@@ -687,7 +689,7 @@ function buildImpactCommand(
   };
 }
 
-function projectVerificationPlan(project: WorkspaceModelProject): WorkspaceImpactCommand[] {
+export function projectVerificationPlan(project: WorkspaceModelProject): WorkspaceImpactCommand[] {
   const scope = `project:${project.name}`;
   const fleetStages = project.commands.fleetStages;
   const labels = {
@@ -1065,7 +1067,11 @@ export async function buildWorkspaceImpact(
         continue;
       }
       const project = currentProjectsByName.get(node.id);
-      if (project && !scopeMatchesProject(options.scope, project)) {
+      if (
+        project &&
+        !options.includeTransitiveOutsideScope &&
+        !scopeMatchesProject(options.scope, project)
+      ) {
         continue;
       }
       const originName = node.path[0];

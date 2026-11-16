@@ -19,6 +19,42 @@ Qwen Code, Kimi Code, GitHub Copilot, Cursor, Windsurf, Amazon Q, Grok, and
 other agent harnesses each own their discovery behavior. Workspai projects one
 canonical protocol through the entry surface each host supports.
 
+## Discoverable entry versus observed use
+
+Managed project entry uses one compact shared policy in `AGENTS.md`. Detailed
+execution, JSON-consumption and verification rules arrive in the task packet
+instead of being repeated in every always-loaded file. Copilot also receives
+a short, independently executable gate in `.github/copilot-instructions.md`,
+the repository instruction location documented in the
+[VS Code instruction reference](https://code.visualstudio.com/docs/agents/reference/custom-instructions-reference).
+If both files are loaded, their instructions reuse the same current task packet.
+The native gate does not depend on the host following an import directive.
+
+The generated block is prepended without rewriting repository-authored content,
+including CRLF, blank lines and trailing whitespace. Refresh is idempotent;
+`local` and `off` remove the owned block and preserve authored text. Tracked
+deletions, unsafe symlinks, non-file paths and ambiguous managed markers are
+preserved and reported as blocked coverage. Safe repository-local instruction
+symlinks retain their identity. Adoption/checkpoint plans include the native
+file so failure recovery covers the added surface.
+
+New manifest hosts expose `statusScope: "entry-artifacts"` and SHA-256 bindings
+for their entry files and imported entry dependencies. For files containing
+owned markers, only those blocks are bound: unrelated authored edits do not
+invalidate the binding. Bootstrap checks canonical containment and current
+content, so removing or changing a gate cannot remain ready merely because
+the file exists. Legacy manifests without bindings remain readable, with
+degraded host coverage until grounding is refreshed.
+
+Readiness is not evidence of host activation or model obedience. Bootstrap
+entry metadata explicitly reports `hostLoading` and `modelCompliance` as
+`not-observed`; task packets report `delivery.status: "prepared"` with the
+same limits. Their integrity hash identifies the prepared context, not proof
+that a particular conversation received or followed it. Host loading must be
+verified in that host's instruction references or session trace, and compliance
+requires observing the actual tool calls. Workspai does not silently enable
+editor settings, install hooks or intercept another host's native tools.
+
 ## Prepare context for a task
 
 For an existing Workspai project, ask for one bounded packet tied to the
@@ -26,16 +62,35 @@ current request:
 
 ```bash
 npx workspai agent context \
+  --project "<verified source root>" \
   --task "Find why the retry policy fails for empty input and fix it" \
   --path src/retry.py
 ```
 
-For a concrete project task, read the nearest repository instructions and entry
-contract first, then request task context **before source search or opening
+For a concrete project task, read the nearest repository instructions, then
+request task context **before source search or opening
 implementation and test files**. Minimal path and instruction discovery is
-allowed. If Workspai cannot run, disclose that limitation and continue authorized
+allowed. The packet validates the entry contract; a separate manifest read is
+not an additional prerequisite. If Workspai cannot run, disclose that limitation and continue authorized
 native work. Generated instructions are routing guidance; enforcement still
 depends on the host loading and following them.
+
+Generated gates always request an explicit `--project`, resolved from the user
+target or the instruction file's repository location. A source read does not
+select a terminal directory. Before using a `ready` or `partial` packet, compare
+`scope.project`, `scope.projectPath` and `scope.workspace` with that target. Neither
+exit zero nor `partial` proves that the right project was selected.
+
+Without `--project`, cwd is accepted only when canonical membership, a verified local Git
+root or a root lifecycle manifest establishes a project boundary. Otherwise
+`project-selection-required` is returned **before descendant lifecycle discovery**.
+An empty `.git` directory or invalid worktree pointer is not root evidence.
+The command does not scan or adopt child projects to guess intent. Explicitly
+selected directories remain supported for arbitrary languages and structures.
+A missing `--path` target or a nested Git/Workspai project boundary also returns
+selection recovery instead of substituting parent evidence. Ordinary monorepo
+package manifests remain eligible for closest-unit selection. For a new file,
+omit `--path` until an existing source or manifest can be selected.
 
 ### Consume saved tool output as data
 
@@ -46,7 +101,7 @@ context. If the host already presents decoded JSON, no extra parsing is needed.
 When a file must be read, select only the fields needed for the next step:
 
 ```bash
-node -e 'const fs = require("node:fs"); const p = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); console.log(JSON.stringify({status:p.status, scope:p.scope, findings:p.grounding.checks?.findings, proofs:p.graph.proofs, lifecycle:p.lifecycle}));' <saved-output-file>
+node -e 'const fs = require("node:fs"); const p = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); const selected = p.status === "ready" || p.status === "partial" ? {status:p.status, scope:p.scope, selection:p.selection, findings:p.grounding?.checks?.findings, proofs:p.graph?.proofs, lifecycle:p.lifecycle, skill:p.skill, execution:p.execution} : {status:p.status, selection:p.selection, budget:p.budget, message:p.message, nextActions:p.nextActions, recovery:p.recovery}; console.log(JSON.stringify(selected));' <saved-output-file>
 ```
 
 Use a bounded excerpt for a parse failure, rather than printing the raw packet
@@ -56,11 +111,75 @@ or repeatedly requesting the same context. Keep unresolved findings visible.
 
 The command returns one project-grounding receipt, scoped Graph matches and
 lifecycle checks for the nearest manifest. It is read-only.
+Always pass the verified source root using `--project` in generated agent flows.
+Opening or reading a source file does not select that directory
+for the terminal. Each lifecycle stage includes `cwd`, relative to the canonical
+project root; apply it explicitly for every command and retry.
 Grounding and Graph retrieval share one validated snapshot within this command;
 the packet does not reread and revalidate the entire workspace for each component.
 If the project is unmanaged or Workspai evidence is stale, the packet says so
 and still provides native lifecycle guidance; project work can continue. For
 an existing project, adoption or import remains an explicit user choice.
+
+The packet's `scope` is always the selected project for this task. Use its
+project-scoped Graph, Skill and lifecycle commands for local source work. Use
+workspace-wide Doctor, verify, Graph or intelligence commands only for an
+explicitly workspace-wide request or a finding that requires workspace scope.
+Do not widen scope to recover a project-level failure.
+
+`scope.workspace` is a logical identity, not a path. The portable
+`scope.workspaceResolution` reports `source` as `parent`, `local-link` or
+`registry`, plus `managedDefault` for the central managed default workspace.
+Resolution checks a marked parent, then a validated project link, then the
+reverse registry. A blocked higher-priority route does not fall through to a
+different workspace. New adoption uses a containing parent workspace; outside
+one, it uses the managed default unless the user selects another destination.
+Absolute workspace paths stay local and are never included in the packet.
+`scope.binding: "resolution-blocked"` means a stale, invalid or ambiguous
+binding needs resolution; it is not an unmanaged project and is not permission
+to adopt it again.
+
+When `graph.status` is `results` or `no-matches`, the packet's bounded Graph
+query is complete; do not repeat it through MCP or CLI. If an IDE Graph tool
+cannot select the project folder, use the packet's CLI result or command
+pointer. If the packet itself reports Graph unavailable, use its `nextAction`
+and native source/tests; missing Graph evidence does not prove source is absent.
+A workspace intelligence refresh is workspace-wide and should run only when
+Graph evidence is necessary and that wider refresh is authorized.
+
+Prepared entry artifacts do not prove that the host loaded them or exposed its
+native tools. `delivery.hostLoading` and `delivery.modelCompliance` remain
+`not-observed`; verify tool availability from the active host and actual session
+trace.
+
+An `insufficient-budget` result is a valid machine-readable refusal with an
+exact retry size or a narrower-scope action. The command exits successfully by
+default so agent hosts can deliver that JSON instead of converting it into a
+tool failure. Retry once with the reported size when it is within the supported
+maximum; otherwise narrow `--limit` or `--path`. Use `--strict` only in
+automation that intentionally treats a budget refusal as a nonzero result.
+Always branch on `status` before reading `grounding` or `graph`: a refusal
+contains only its budget, message and recovery actions.
+
+Selection refusals also exit zero by default and exit two with `--strict`;
+invalid input still exits two. They contain no grounding, Graph or lifecycle
+packet. `selection.source` distinguishes an explicit project from inferred cwd;
+`verifiedBy` describes boundary evidence, not proof of user intent or model use.
+
+Refusals expose structured `recovery`. A runnable action provides `command`
+with `executable`, `args`, `cwd` and `cwdBase`; pass argv directly to a process
+API rather than joining it into shell code. `request-project-directory` means
+the original `--project` directory, or the original invocation cwd when omitted.
+Retries preserve task, host, project and known source selection. Canonical
+parent and nested-project retries rebase paths relative to that directory.
+No machine-local absolute path is persisted in the packet.
+Actions needing an unknown project or source identify `requiredOption` instead
+of inventing an executable placeholder. Resolve that input from the existing
+request and file locations; ask the user only when it remains ambiguous.
+`--limit` is a Graph match count from 1 to 12; `--max-bytes` is the UTF-8 budget.
+A component already exceeding its maximum is not fixed by raising the aggregate
+budget. Recovery narrows the relevant component or explicitly falls back to
+native evidence; it never emits a truncated task packet as ready.
 
 For live-input failures, `grounding.checks.findings` and an unavailable `graph`
 can include `inputValidation`. Findings identify logical workspace/project
@@ -80,7 +199,20 @@ scoped native evidence without mandatory workspace INDEX/context/verify reads or
 workspace-wide command fallbacks. Release and cross-boundary Skills preserve
 their governed evidence requirements.
 
+`execution` describes the command path base and workspace-locator access.
+`workspace:` identifies the canonical workspace, never the project's own
+`.workspai` directory. Prefer a host URI resolver; otherwise run
+`execution.workspaceLocator.resolveCommand` once from the project root, use
+the `workspacePath` field as the local base, and append the locator suffix.
+This optional access lookup does not repeat grounding. Reuse the result only
+while project/workspace identity is unchanged; keep resolved absolute paths
+out of portable evidence. Unmanaged projects have no workspace resolver.
+
 Before verification, inspect the closest manifest and installed prerequisites.
+Check the declared runner and interpreter before the first test attempt; avoid
+cycling through unrelated managers when prerequisites are absent. Report setup
+failure separately from tests that actually ran, and disclose unavailable
+Workspai grounding or Graph evidence in the final result.
 For a declared Node workspace member, `workspaceOwner` identifies the owning
 root manifest and package manager. Member scripts use that manager, and the
 member does not receive an independent install stage. Resolve setup from the
@@ -92,6 +224,19 @@ before cancellation. Report setup failure, tests not started, and tests failed
 as distinct outcomes. The CLI guidance does not enforce a third-party host's
 waiting behavior or guarantee that a model follows it.
 
+Inspect package-script definitions before appending arguments: an appended
+output path does not replace a destination already hardcoded in a script.
+For temporary Git fixtures, inspect editor and signing prerequisites; any
+needed overrides belong to the test process, preserving inherited overrides,
+global configuration and signing for real commits. Regenerate checked-in
+artifacts only when repository rules or an affected check establishes their
+dependency on the source change.
+
+An external host must discover project instructions before source exploration.
+When evaluating entry behavior, open the adopted project as a workspace folder
+or verify the host's instruction discovery for that source directory. The CLI
+cannot intercept another host's native file tools before it is invoked.
+
 Task context is the primary task entry. Do not run a separate bootstrap,
 membership lookup or identical Graph search for information already supplied
 and still current. The nested grounding continuation omits the validated
@@ -99,6 +244,39 @@ manifest/project lens and completed Graph retrieval while preserving applicable
 Goal handoffs, Skills, findings and claim restrictions. When started from an
 adopted project's subdirectory, lifecycle selection still uses the canonical
 project root; `--path` remains relative to that root.
+Task packets include a compact `skill` derived from the selected lifecycle
+manifests, with project identity, runtime boundaries and validation procedure.
+It replaces the workspace skill-catalog read for routine task validation; it
+does not grant execution permission or claim that dependencies are installed.
+Host Skill entries use applicability metadata to exclude skills owned only by
+other projects. Legacy indexes without this metadata remain readable.
+
+Graph views report lexical candidates or `no-matches` with a recovery action.
+Neither status proves an implementation binding or source absence. Long task
+queries downweight workflow vocabulary, preserve Unicode identifiers, and retain
+the project filter before ranking. Expand cited evidence and use scoped native
+search when an index cannot answer the question. Provider bounds and workspace
+aggregate coverage remain explicit; no language-independent completeness or
+semantic accuracy is promised.
+
+`workspace run ... --scope project:<identity>` checks Doctor evidence from the
+selected canonical project directory and rejects missing or differently bound
+health evidence. Workspace release readiness remains a workspace/release gate,
+not a prerequisite for this local run. Unscoped fleet execution retains the
+workspace gates. Empty and ambiguous scope selectors are errors; they never
+fall back to the fleet. Doctor project/workspace selectors cannot be combined.
+Runtime prerequisites in the selected project still block its own execution.
+Scoped Doctor warnings remain visible and produce a nonzero run exit in strict
+mode. A standalone Node manifest with no declared dependency requirements does
+not need a `node_modules` directory; workspace roots, agent owners and malformed
+dependency groups cannot inherit that exemption from an empty shell manifest.
+
+For Python packaging projects, init includes a declared validation extra only
+when a supported static or setuptools-dynamic optional-dependency declaration
+proves pytest ownership. The CLI does not invent a test dependency. Inspect the
+manifest and runner prerequisites for other setup conventions; command discovery
+and extracted-function assertions do not prove that package tests ran.
+
 New project lenses use the task command in `agentRouting.mandatoryPreflight`
 and defer remaining reads to the packet. The entry manifest's optional
 `protocol.taskContextCommand` selects this route; its original bootstrap read
@@ -106,7 +284,8 @@ order remains available for standalone inspection and legacy consumers.
 
 The default whole-packet budget is 32,768 UTF-8 bytes; `--max-bytes` accepts
 8,192–131,072 bytes. Components share this budget rather than fixed percentage
-allocations. A packet that cannot fit returns `insufficient-budget` and exit 2,
+allocations. A packet that cannot fit returns `insufficient-budget` (exit 0 by
+default, exit 2 with `--strict`),
 with a valid whole-command retry size that includes JSON numeric-width changes.
 An exceeded component maximum instead recommends narrowing the selection or
 using native evidence; raising the packet budget alone is not a remedy. No
@@ -119,8 +298,9 @@ To attach Workspai to a project, adopt or import it once:
 npx workspai adopt .
 ```
 
-When the eventual agent host is not known, run the canonical chain with
-`--for-agent generic`:
+Adoption seals initial intelligence. For a later full workspace refresh or CI
+gate, use the canonical chain with `--for-agent generic` when the eventual host
+is not known. It is not an extra prerequisite for each project task:
 
 ```bash
 npx workspai workspace intelligence run --for-agent generic --strict --json
@@ -238,7 +418,15 @@ architecture boundaries, or a governed Workspai effect needs authorization:
    host approval may authorize the requested local work; the agent must not
    invent a grant, claim approval that did not occur, or widen the effect scope.
 5. Perform the work, record receipts for observed effects, and run
-   `workspai change verify --change <change-id> --strict --json`.
+   `workspai change verify --change <change-id> --json`. Add `--strict` when
+   this Goal also requires the entire workspace to be ready and fresh; strict
+   mode is a workspace-wide gate, not merely a stronger check of the edited
+   project.
+   Single-project Goals use a project gate when the actual receipts stay inside
+   that project: it checks the selected project and its affected transitive
+   dependents. Workspace policy and graph integrity still apply. A workspace
+   mutation outside that project, a Goal whose criterion is workspace-wide,
+   missing model baseline, or `--strict` keeps the full workspace gate.
 6. If verification blocks, inspect `change status` / `change explain`, follow
    the returned `nextActions`, and report remaining blockers. Do not treat an
    applied edit or passing project tests as a sealed Change.
@@ -387,15 +575,28 @@ recorded Doctor findings make the project environment `degraded` or `blocked`.
 When live input validation succeeds, the receipt reports Model and Graph
 freshness as `fresh`; fact-level TTL and verify-before-use semantics remain in
 their individual evidence records and do not weaken structural freshness.
+Model grounding freshness uses structural facts rather than the aggregate TTL
+of all workspace verification reports. Expired verification facts produce a
+separate `verification-freshness` warning and a degraded receipt, while current
+architecture evidence remains usable. Adoption accepts this route; strict
+bootstrap still exits nonzero for degraded evidence. This does not renew report
+TTLs or satisfy environment/release checks. Structural expiry, source changes,
+missing evidence and mismatched identities remain blocking.
 
 The Workspace Model and complete Knowledge Graph are validated by the receipt,
 but are deliberately **not** part of `requiredReadOrder`. They are on-demand
 deep-evidence artifacts: load them only for an explicit full export, offline
 audit, or a task that cannot be answered from the project lens, bounded context,
 and task-scoped Graph query. This keeps first contact bounded on large workspaces.
-The compact Workspace Skills index _is_ part of the route: use it to select one
-relevant playbook, rather than loading every Skill or asking the model to infer
-an operational procedure from raw source alone.
+Standalone bootstrap retains the compact Workspace Skills index in its
+continuation for specialized playbook discovery. Task context instead supplies
+one inline project `skill` and removes that catalog read from its routine route.
+Neither route asks the agent to load every Skill. Check project applicability
+before using a specialized playbook; legacy unscoped entries remain readable.
+
+An active Goal bound only to another project is not a task continuation for
+this target. Task context retains its status and warning while omitting foreign
+Goal details and repair routes; unrelated policy findings remain visible.
 
 The generated workspace name is a logical identity, never a filesystem path.
 Project-local artifacts use `.workspai/...`; canonical workspace artifacts use

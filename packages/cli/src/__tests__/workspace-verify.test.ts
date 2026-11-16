@@ -337,6 +337,120 @@ describe('workspace verify', () => {
     expect(verify.summary.verdict).toBe('blocked');
   });
 
+  it('supports a project gate that checks its transitive dependents without requiring workspace readiness', async () => {
+    const workspacePath = await makeTempDir('rk-verify-project-scope-');
+    await fsExtra.outputJson(path.join(workspacePath, '.rapidkit', 'workspace.json'), {
+      workspace_name: 'platform',
+      profile: 'polyglot',
+    });
+    await fsExtra.outputJson(path.join(workspacePath, '.workspai', 'workspace.contract.json'), {
+      schemaVersion: 1,
+      kind: 'rapidkit.workspace.contract',
+      generatedAt: '2026-06-15T00:00:00.000Z',
+      workspace: { name: 'platform', profile: 'polyglot' },
+      projects: [
+        {
+          slug: 'api',
+          relativePath: 'api',
+          runtime: 'node',
+          framework: 'node',
+          kit: 'node',
+          modules: [],
+          ports: [],
+          contracts: { owns: [], apis: [], publishes: [], consumes: [], dependsOn: [], env: [] },
+        },
+        {
+          slug: 'web',
+          relativePath: 'web',
+          runtime: 'node',
+          framework: 'node',
+          kit: 'node',
+          modules: [],
+          ports: [],
+          contracts: {
+            owns: [],
+            apis: [],
+            publishes: [],
+            consumes: [],
+            dependsOn: ['api'],
+            env: [],
+          },
+        },
+      ],
+    });
+    for (const project of ['api', 'web']) {
+      await fsExtra.outputJson(path.join(workspacePath, project, 'package.json'), {
+        name: project,
+        scripts: { test: 'node --test', build: 'node build.js' },
+      });
+      await fsExtra.outputFile(path.join(workspacePath, project, 'src/index.js'), `${project};\n`);
+    }
+    const baseline = await buildWorkspaceModelSnapshot({ workspacePath });
+    await writeWorkspaceModelSnapshot(baseline, workspacePath);
+    await fsExtra.outputFile(path.join(workspacePath, 'api', 'src/index.js'), 'api changed;\n');
+
+    const projectVerify = await buildWorkspaceVerify({
+      workspacePath,
+      scope: 'api',
+      verificationMode: 'project',
+    });
+    const workspaceVerify = await buildWorkspaceVerify({ workspacePath, scope: 'api' });
+
+    expect(projectVerify.verificationPlan.map((command) => command.id)).toEqual(
+      expect.arrayContaining([
+        'project.api.test',
+        'project.api.build',
+        'project.web.test',
+        'project.web.build',
+      ])
+    );
+    expect(projectVerify.verificationPlan.every((command) => command.scope === 'project')).toBe(
+      true
+    );
+    expect(projectVerify.steps.some((step) => step.scope === 'workspace')).toBe(false);
+    expect(projectVerify.steps.map((step) => step.id)).toEqual(
+      expect.arrayContaining(['project.api.test', 'project.web.test'])
+    );
+    expect(projectVerify.resolutionHints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          sourceCommand: 'npx workspai workspace run test --scope project:api --json',
+          verifyCommand: 'npx workspai change verify --change <change-id> --json',
+          verifyArtifact: '.workspai/changes/<change-id>/verification/workspace-verify.json',
+        }),
+      ])
+    );
+    expect(workspaceVerify.steps).toEqual(
+      expect.arrayContaining([expect.objectContaining({ id: 'workspace.doctor', required: true })])
+    );
+
+    await fsExtra.outputJson(path.join(workspacePath, 'web', 'package.json'), {
+      name: 'web',
+      scripts: { start: 'node server.js' },
+    });
+    const unverifiableDependent = await buildWorkspaceVerify({
+      workspacePath,
+      scope: 'api',
+      verificationMode: 'project',
+    });
+    expect(unverifiableDependent.summary.verdict).toBe('blocked');
+    expect(unverifiableDependent.blockingReasons).toEqual(
+      expect.arrayContaining([
+        expect.stringContaining("Project 'web' has no declared test or build stage"),
+      ])
+    );
+
+    const unresolvedProject = await buildWorkspaceVerify({
+      workspacePath,
+      scope: 'missing-project',
+      verificationMode: 'project',
+    });
+    expect(unresolvedProject.summary.verdict).toBe('blocked');
+    expect(unresolvedProject.blockingReasons).toContain(
+      "project.verify: Scope 'missing-project' does not resolve to a registered project."
+    );
+  });
+
   it('does not stale persisted impact when only live evidence changes after impact', async () => {
     const workspacePath = await makeTempDir('rk-verify-impact-live-evidence-');
     await fsExtra.outputJson(path.join(workspacePath, 'api', '.rapidkit', 'project.json'), {

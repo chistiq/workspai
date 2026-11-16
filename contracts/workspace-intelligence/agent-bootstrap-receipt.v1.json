@@ -117,6 +117,9 @@
         "artifact": { "const": ".workspai/agent-entry.v1.json" },
         "schemaVersion": { "const": "workspai.agent-entry.v1" },
         "hostStatus": { "$ref": "#/$defs/status" },
+        "statusScope": { "const": "entry-artifacts" },
+        "hostLoading": { "const": "not-observed" },
+        "modelCompliance": { "const": "not-observed" },
         "entryFiles": {
           "type": "array",
           "minItems": 1,

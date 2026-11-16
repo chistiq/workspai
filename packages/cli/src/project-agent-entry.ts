@@ -25,6 +25,7 @@ import {
   type ProjectKnowledgeGraphReference,
 } from './workspace-knowledge-graph-projection.js';
 import { hashCanonicalJson } from './workspace-model-hash.js';
+import { readAgentEntryArtifact, type AgentEntryArtifact } from './utils/agent-entry-artifact.js';
 
 export const PROJECT_AGENT_ENTRY_SCHEMA_VERSION =
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectAgentEntry.schemaVersion;
@@ -53,6 +54,7 @@ export const PROJECT_AGENT_ADAPTER_ENTRY_FILES = [
   'GEMINI.md',
   'QWEN.md',
   '.amazonq/rules/workspai-agent-entry.md',
+  '.github/copilot-instructions.md',
 ] as const;
 
 export type AgentEntryHostId = (typeof AGENT_ENTRY_HOST_IDS)[number];
@@ -66,6 +68,8 @@ export interface AgentEntryHostCoverage {
   status: AgentEntryHostStatus;
   managed: boolean;
   reason?: string;
+  statusScope?: 'entry-artifacts';
+  artifacts?: AgentEntryArtifact[];
 }
 
 export interface ProjectAgentEntryManifest {
@@ -161,6 +165,9 @@ export interface AgentBootstrapReceipt {
     schemaVersion: typeof PROJECT_AGENT_ENTRY_SCHEMA_VERSION;
     hostStatus: AgentEntryHostStatus;
     entryFiles: string[];
+    statusScope?: 'entry-artifacts';
+    hostLoading?: 'not-observed';
+    modelCompliance?: 'not-observed';
   };
   canonicalEvidence: {
     projectContext: typeof WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent;
@@ -240,6 +247,28 @@ function portableHash(value: unknown): string {
   return hashCanonicalJson(value);
 }
 
+/** Called after writing the entry surfaces, never as proof a host loaded them. */
+export async function bindAgentEntryArtifacts(
+  projectPath: string,
+  hosts: AgentEntryHostCoverage[]
+): Promise<AgentEntryHostCoverage[]> {
+  const artifacts = new Map<string, AgentEntryArtifact | null>();
+  for (const entry of new Set(hosts.flatMap((host) => host.entryFiles))) {
+    artifacts.set(entry, await readAgentEntryArtifact(projectPath, entry));
+  }
+  return hosts.map((host) => ({
+    ...host,
+    statusScope: 'entry-artifacts',
+    artifacts: host.entryFiles.flatMap((entry) => artifacts.get(entry) ?? []),
+    ...(host.entryFiles.some((entry) => !artifacts.get(entry))
+      ? {
+          status: 'blocked' as const,
+          reason: host.reason ?? 'Required entry artifacts are missing or unsafe.',
+        }
+      : {}),
+  }));
+}
+
 export function buildProjectAgentEntryManifest(input: {
   context: ProjectContextAgent;
   hosts: AgentEntryHostCoverage[];
@@ -279,7 +308,8 @@ export function buildProjectAgentEntryManifest(input: {
     protocol: {
       mode: 'canonical-first',
       bootstrapCommand: 'workspai agent bootstrap --for-agent generic --strict --json',
-      taskContextCommand: 'workspai agent context --task "<user request>" --for-agent generic',
+      taskContextCommand:
+        'workspai agent context --task "<user request>" --for-agent generic --project .',
       verifyCommand: 'workspai project agent-entry verify --for-agent all --strict --json',
       requiredReadOrder: [
         PROJECT_AGENT_ENTRY_RELATIVE_PATH,
@@ -288,7 +318,6 @@ export function buildProjectAgentEntryManifest(input: {
         WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent,
         `workspace:${WORKSPACE_SUPPLEMENTAL_ARTIFACTS.goalIndex}`,
         `workspace:${WORKSPACE_INTELLIGENCE_ARTIFACTS.skillsIndex}`,
-        'command:workspai workspace graph search <task-query> --scope project:<project> --limit 12 --json',
         'source:targeted-live-files',
       ],
       sourcePolicy: {
@@ -454,13 +483,33 @@ export async function buildAgentBootstrapReceipt(input: {
   );
 
   const entryFiles = [...new Set(selectedHosts.flatMap((host) => host.entryFiles))].sort();
-  const missingHostFiles = entryFiles.filter(
-    (relativePath) => !fs.existsSync(path.join(projectPath, relativePath))
+  const liveArtifacts = new Map<string, AgentEntryArtifact | null>();
+  for (const entry of entryFiles) {
+    liveArtifacts.set(entry, await readAgentEntryArtifact(projectPath, entry));
+  }
+  const missingHostFiles = entryFiles.filter((entry) => !liveArtifacts.get(entry));
+  const invalidHostArtifacts = selectedHosts.some(
+    (host) =>
+      host.artifacts?.some((artifact) => {
+        const live = liveArtifacts.get(artifact.path);
+        return (
+          !host.entryFiles.includes(artifact.path) ||
+          live?.scope !== artifact.scope ||
+          live?.sha256 !== artifact.sha256
+        );
+      }) ||
+      (host.artifacts !== undefined &&
+        host.entryFiles.some(
+          (entry) => !host.artifacts?.some((artifact) => artifact.path === entry)
+        ))
   );
+  const unboundHostArtifacts = selectedHosts.some((host) => !host.artifacts);
   const runtimeHostStatus: AgentEntryHostStatus =
-    selectedHosts.some((host) => host.status === 'blocked') || missingHostFiles.length > 0
+    selectedHosts.some((host) => host.status === 'blocked') ||
+    missingHostFiles.length > 0 ||
+    invalidHostArtifacts
       ? 'blocked'
-      : selectedHosts.some((host) => host.status === 'degraded')
+      : selectedHosts.some((host) => host.status === 'degraded') || unboundHostArtifacts
         ? 'degraded'
         : 'ready';
   check(
@@ -471,11 +520,13 @@ export async function buildAgentBootstrapReceipt(input: {
         ? 'warning'
         : 'failed',
     runtimeHostStatus === 'ready'
-      ? `${resolvedHost} has discoverable Workspai entry coverage.`
+      ? `${resolvedHost} entry artifacts match their binding. Host loading and model compliance are not observed.`
       : runtimeHostStatus === 'degraded'
-        ? (selectedHosts.find((host) => host.reason)?.reason ??
-          `${resolvedHost} entry coverage is degraded.`)
-        : `${resolvedHost} entry coverage is missing required files.`,
+        ? unboundHostArtifacts
+          ? 'Legacy entry coverage has no artifact binding; refresh project grounding.'
+          : (selectedHosts.find((host) => host.reason)?.reason ??
+            `${resolvedHost} entry coverage is degraded.`)
+        : `${resolvedHost} entry artifacts are missing, unsafe or changed since generation.`,
     entryFiles[0]
   );
 
@@ -659,6 +710,21 @@ export async function buildAgentBootstrapReceipt(input: {
   );
   checks.push(liveInputCheck);
 
+  const expiredVerificationFacts = Array.isArray(canonicalModel?.facts)
+    ? (
+        canonicalModel.facts as Array<{ freshness?: { category?: string; status?: string } }>
+      ).filter(
+        (fact) => fact.freshness?.category === 'verification' && fact.freshness.status === 'stale'
+      ).length
+    : 0;
+  if (expiredVerificationFacts > 0) {
+    check(
+      'verification-freshness',
+      'warning',
+      `${expiredVerificationFacts} workspace verification fact(s) are stale. Refresh the applicable checks before claiming environment or release readiness; structural grounding does not renew their TTL.`
+    );
+  }
+
   let activeGoal: AgentBootstrapReceipt['activeGoal'] = {
     present: false,
     appliesToProject: false,
@@ -752,7 +818,9 @@ export async function buildAgentBootstrapReceipt(input: {
     check('active-goal', 'passed', 'No Goal index is present for this workspace.');
   }
 
-  const architectureChecks = checks.filter((item) => item.id !== 'active-goal');
+  const architectureChecks = checks.filter(
+    (item) => item.id !== 'active-goal' && item.id !== 'verification-freshness'
+  );
   const architectureEvidenceStatus: AgentEntryHostStatus = architectureChecks.some(
     (item) => item.status === 'failed'
   )
@@ -767,7 +835,12 @@ export async function buildAgentBootstrapReceipt(input: {
     : checks.some((item) => item.id === 'active-goal' && item.status === 'warning')
       ? 'degraded'
       : 'ready';
-  const status = mergedStatus([runtimeHostStatus, architectureEvidenceStatus, goalStatus]);
+  const status = mergedStatus([
+    runtimeHostStatus,
+    architectureEvidenceStatus,
+    goalStatus,
+    expiredVerificationFacts > 0 ? 'degraded' : 'ready',
+  ]);
   const projectEnvironment = context.blockers.some((blocker) => blocker.severity === 'error')
     ? ('blocked' as const)
     : context.blockers.length > 0
@@ -818,6 +891,9 @@ export async function buildAgentBootstrapReceipt(input: {
       schemaVersion: PROJECT_AGENT_ENTRY_SCHEMA_VERSION,
       hostStatus: runtimeHostStatus,
       entryFiles,
+      statusScope: 'entry-artifacts' as const,
+      hostLoading: 'not-observed' as const,
+      modelCompliance: 'not-observed' as const,
     },
     canonicalEvidence: {
       projectContext: WORKSPACE_SUPPLEMENTAL_ARTIFACTS.projectContextAgent,

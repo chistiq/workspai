@@ -5,10 +5,11 @@ connect existing code, create new applications, prepare AI context, check
 changes, and use the same results in CI.
 
 Command syntax: [commands-reference.md](./commands-reference.md). Import and
-adopt behavior: [workspace-operations.md](./workspace-operations.md). All
-scenarios use the same
-[Workspace Intelligence runner](./workspace-intelligence-runner.md), so the
-system map, checks, and saved reports stay consistent.
+adopt behavior: [workspace-operations.md](./workspace-operations.md). These
+scenarios share the same Model and derived Graph. The
+[Workspace Intelligence runner](./workspace-intelligence-runner.md) keeps the
+system map, checks, and saved reports consistent when a full workspace refresh
+or release gate is needed. It is not a prerequisite for every local task.
 
 ## Scenario 0 — Existing project (adopt or import)
 
@@ -19,12 +20,17 @@ Goal: connect code you already have without reshuffling repositories.
 ```bash
 cd /path/to/existing-app
 npx workspai adopt . --workspace /path/to/workspace --json
-npx workspai project workspace status --json
-npx workspai workspace intelligence run --for-agent generic --strict --json
-npx workspai doctor project --json
+npx workspai agent context --project . --for-agent generic \
+  --task "Find the main entry points and available project checks"
 ```
 
 Works for Next.js, Vite, NestJS, FastAPI, Go, Spring Boot, and other detected stacks. See [workspace-operations.md#import-and-adoption](./workspace-operations.md#import-and-adoption).
+
+Adoption already seals initial intelligence. Compare packet status and scope
+with the selected project before using its Graph candidates, lifecycle commands
+and inline Skill. Use `npx workspai doctor project --json` for setup findings;
+workspace release readiness is a separate check. A prepared packet is not proof
+that an agent host loaded the instructions or a model used the evidence.
 
 ### Import (copy or clone into workspace)
 
@@ -40,9 +46,9 @@ cd my-workspace
 npx workspai create project nextjs marketing-web --yes
 ```
 
-Success check: `workspace registry status --json` lists each project once and
-the unified runner writes
-`.workspai/reports/workspace-intelligence-run-last-run.json`.
+Success check: `workspace registry status --json` lists each project once, and
+the task packet reports the intended canonical source path. Selection or budget
+refusals require their recovery action before packet components can be used.
 
 ## What changed from the old flow?
 
@@ -65,9 +71,8 @@ Goal: get productive quickly with minimal complexity.
 ### Steps
 
 ```bash
-npx workspai create workspace my-workspace --here --yes --profile polyglot
+npx workspai create workspace my-workspace --yes --profile polyglot
 cd my-workspace
-npx workspai bootstrap --profile polyglot
 npx workspai setup python
 npx workspai setup node --warm-deps
 npx workspai create project fastapi.standard api --output .
@@ -76,8 +81,8 @@ npx workspai init
 npx workspai dev
 ```
 
-Run the canonical chain from the workspace before treating its evidence as a
-release or agent input:
+For later workspace verification and release checks, run the canonical chain
+from the workspace. Ordinary project tasks can use scoped context immediately:
 
 ```bash
 cd ..
@@ -203,6 +208,21 @@ loading every source file or the complete graph into a model prompt.
 
 ### Steps
 
+For a task within one adopted project, request context from that source root:
+
+```bash
+npx workspai agent context --project . --for-agent generic \
+  --task "Find the authentication endpoint and its available checks"
+```
+
+Handle refusal status before components and verify project scope. Reuse the
+packet's current evidence rather than repeating bootstrap, Skill catalog reads
+or the same Graph query. Use targeted source inspection and applicable native
+checks; task context is guidance, not an execution grant.
+
+For workspace-wide exploration or a full refresh, use the separate workspace
+route:
+
 ```bash
 cd my-workspace
 npx workspai workspace intelligence run --for-agent generic --strict --json
@@ -212,7 +232,7 @@ npx workspai workspace mcp serve
 ```
 
 The runner creates and validates the model, knowledge graph, context, and agent
-surfaces. CLI consumers should start with `AGENTS.md` and
+surfaces. Workspace-level CLI consumers should start with `AGENTS.md` and
 `.workspai/reports/INDEX.json`, then call `workspace graph search` for a bounded
 result. MCP consumers should call `searchWorkspaceGraph`, follow returned proof
 references, and request the full graph only when the bounded evidence is not

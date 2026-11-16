@@ -11,6 +11,28 @@ import {
 } from '../utils/workspace-project-paths';
 
 describe('resolveWorkspaceProjectPaths', () => {
+  it('rejects conflicting canonical registrations instead of choosing the first', async () => {
+    const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'project-identity-conflict-'));
+    try {
+      await fsExtra.outputJson(path.join(root, '.workspai/workspace.contract.json'), {
+        projects: [{ relativePath: 'external/api', externalPath: path.join(root, 'first') }],
+      });
+      await fsExtra.outputJson(path.join(root, '.workspai/imported-projects.json'), {
+        projects: [{ relativePath: 'external/api', path: path.join(root, 'second') }],
+      });
+      expect(() => resolveWorkspaceProjectFilesystemPath(root, 'external/api')).toThrow(
+        'Ambiguous registered project identity'
+      );
+      await fsExtra.outputJson(path.join(root, '.workspai/imported-projects.json'), {
+        projects: [{ relativePath: 'external/api', path: path.join(root, 'first') }],
+      });
+      expect(resolveWorkspaceProjectFilesystemPath(root, 'external/api')).toBe(
+        path.join(root, 'first')
+      );
+    } finally {
+      await fsExtra.remove(root);
+    }
+  });
   it('uses in-workspace relative paths for imported projects', () => {
     const workspacePath = '/tmp/workspace';
     const projectPath = path.join(workspacePath, 'orders-api');

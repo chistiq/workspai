@@ -12,12 +12,24 @@ You need **Node.js 20.19+ and npm**. In your project's terminal:
 
 ```bash
 npx workspai adopt .
-npx workspai workspace intelligence run --for-agent generic
 ```
 
 Workspai adds metadata and agent entry files to your project and saves shared
 reports in a linked workspace. The system map and checks do not require an AI
-API key. Read the terminal summary to find context and checks that need attention.
+API key. Adoption already seals the initial Model, Graph and agent grounding;
+read its summary for remaining setup or release checks.
+
+For a project task, request a bounded packet from that project's terminal:
+
+```bash
+npx workspai agent context --project . --for-agent generic \
+  --task "Find the main entry points and available project checks"
+```
+
+Check the returned status and project scope before using its evidence. The
+packet includes relevant Graph candidates, lifecycle commands and a compact
+project Skill. Your agent host must load the generated instructions; prepared
+context alone does not prove that a model consumed it or ran any checks.
 
 Starting a new project? Run `npx workspai create` for guided setup.
 
@@ -33,9 +45,11 @@ Starting a new project? Run `npx workspai create` for guided setup.
 | Fix a reported blocker | [Doctor](./doctor-command.md) · [Repair workflow](./workspace-repair-engine.md) |
 | Run checks in CI | [CI guide](./ci-workflows.md) |
 
-You can keep working from the same project terminal. After changes, rerun the
-intelligence command to refresh the saved view. A blocked check names something
-to investigate; an empty graph search means no current evidence proves a match.
+You can keep working from the same project terminal. After changes, refresh the
+saved workspace view with `npx workspai workspace intelligence run --for-agent generic`.
+Use `npx workspai doctor project --json` for selected-project setup findings.
+A blocked check names something to investigate; an empty graph search does not
+prove that the source is absent. Follow its recovery action or use scoped native search.
 
 ## For CI and automation
 
@@ -77,7 +91,7 @@ Looking for a specific feature, integration, or contract? Open the complete inde
 | [agent-entry.md](./agent-entry.md)                                                             | Host-native discovery, canonical evidence preflight, receipt status, privacy, and consumer integration              |
 | [agent-framework-adapters.md](./agent-framework-adapters.md)                                   | Framework-neutral kit/attach contract, admitted Microsoft pins, implemented OpenAI adapters pending admission, and conformance |
 | [model-gateways.md](./model-gateways.md)                                                       | AI Gateway category, OpenRouter Client SDK baselines, routing/privacy policy, and lifecycle |
-| [workspace-knowledge-graph.md](./workspace-knowledge-graph.md)                                 | Two-minute graph quickstart, proof model, AI/MCP consumption, performance, and honest token-efficiency measurement  |
+| [workspace-knowledge-graph.md](./workspace-knowledge-graph.md)                                 | Graph quickstart, proof model, AI/MCP consumption, performance, and honest token-efficiency measurement  |
 | [graph-benchmark-methodology.md](./graph-benchmark-methodology.md)                             | Reproducible payload-reduction benchmark, formulas, claim boundaries, and publication rules                         |
 | [workspace-intelligence-evaluation.md](./workspace-intelligence-evaluation.md)                 | Provider usage, cost provenance, verified outcomes, comparison, and extension consumption                           |
 | [workspace-intelligence-benchmark.md](./workspace-intelligence-benchmark.md)                   | Fixed multi-scenario retrieval metrics, measured evaluation attachment, and publication-safe claim boundaries       |
@@ -99,7 +113,8 @@ Looking for a specific feature, integration, or contract? Open the complete inde
 - Adopt an existing repo: [workspace-operations.md#import-and-adoption](./workspace-operations.md#import-and-adoption)
 - Scaffold a frontend app: [commands-reference.md](./commands-reference.md) (`create project nextjs <name>`)
 - Canonical intelligence gate: `workspace intelligence run --for-agent generic --strict --json`
-- Agent entry preflight: `agent bootstrap --for-agent <host> --json`
+- Project task entry: `agent context --project . --task "<request>" --for-agent generic`
+- Standalone entry audit without a task: `agent bootstrap --for-agent <host> --json`
 - Governed agent runtime: `agent framework attach --project <name> --runtime <python|dotnet|node> --name <agent>`
 - Broader CI release gate: [commands-reference.md](./commands-reference.md) (`pipeline`, `readiness`)
 - Targeted model/context inspection — schemas in [contracts/workspace-intelligence/](../contracts/workspace-intelligence/)
@@ -119,7 +134,7 @@ FastAPI/NestJS module suggestions via OpenAI embeddings (optional).
 
 | Document                                                 | Description                |
 | -------------------------------------------------------- | -------------------------- |
-| [AI_QUICKSTART.md](./AI_QUICKSTART.md)                   | 60-second setup            |
+| [AI_QUICKSTART.md](./AI_QUICKSTART.md)                   | Optional recommender setup |
 | [AI_FEATURES.md](./AI_FEATURES.md)                       | Complete feature reference |
 | [AI_EXAMPLES.md](./AI_EXAMPLES.md)                       | Use-case examples          |
 | [AI_DYNAMIC_INTEGRATION.md](./AI_DYNAMIC_INTEGRATION.md) | Integration architecture   |

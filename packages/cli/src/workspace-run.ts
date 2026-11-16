@@ -78,9 +78,11 @@ export interface WorkspaceRunOptions {
 type GateStatus = 'pass' | 'warn' | 'fail' | 'skipped';
 
 interface GateResult {
-  gate: 'doctor-workspace' | 'readiness';
+  gate: 'doctor-workspace' | 'doctor-project' | 'readiness';
   status: GateStatus;
   summary: string;
+  scope?: 'project' | 'workspace';
+  project?: string;
 }
 
 interface ProjectExecutionResult {
@@ -313,6 +315,11 @@ function normalizePathForMatch(value: string): string {
 }
 
 function normalizeScope(value: string | undefined): string | null {
+  if (value !== undefined && (!value.trim() || value.trim() === 'project:')) {
+    throw new Error(
+      'Workspace run requires a non-empty project scope; omit --scope for the workspace.'
+    );
+  }
   const trimmed = value?.trim();
   if (!trimmed) {
     return null;
@@ -426,7 +433,11 @@ async function filterProjectsByScope(
     return { projects, normalizedScope: null };
   }
 
-  const requested = normalizePathForMatch(normalizedScope).toLowerCase();
+  const matchKey = (value: string) =>
+    process.platform === 'win32'
+      ? normalizePathForMatch(value).toLowerCase()
+      : normalizePathForMatch(value);
+  const requested = matchKey(normalizedScope);
   const matched: string[] = [];
   for (const projectPath of projects) {
     const declaredName = await readProjectDeclaredName(projectPath);
@@ -434,7 +445,8 @@ async function filterProjectsByScope(
       workspacePath,
       projectPath,
       declaredName,
-    }).map((item) => normalizePathForMatch(item).toLowerCase());
+    }).map(matchKey);
+    candidates.push(matchKey(path.resolve(projectPath)));
     if (candidates.includes(requested)) {
       matched.push(projectPath);
     }
@@ -442,6 +454,9 @@ async function filterProjectsByScope(
 
   if (matched.length === 0) {
     throw new Error(`Workspace run scope did not match any project: ${rawScope}`);
+  }
+  if (matched.length > 1) {
+    throw new Error(`Workspace run scope is ambiguous: ${rawScope}. Select a unique project path.`);
   }
 
   return { projects: matched, normalizedScope };
@@ -1812,6 +1827,58 @@ async function runWorkspaceGates(workspacePath: string): Promise<GateResult[]> {
   return gates;
 }
 
+/** Local execution validates its selected owners, not the release state of other projects. */
+async function runProjectGates(projectPaths: string[]): Promise<GateResult[]> {
+  const gates: GateResult[] = [];
+  for (const projectPath of projectPaths) {
+    const project = (await readProjectDeclaredName(projectPath)) ?? path.basename(projectPath);
+    const doctor = await runRapidkitSelfCommand(['doctor', 'project', '--json'], projectPath);
+    const payload = parseJsonOutput<Record<string, unknown>>(doctor.stdout);
+    const health = payload?.healthScore as Record<string, unknown> | undefined;
+    const errors = health?.errors;
+    const warnings = health?.warnings ?? 0;
+    const reportedProject = payload?.project as Record<string, unknown> | undefined;
+    const canonicalPath = (value: string) =>
+      fs.existsSync(value) ? fs.realpathSync(value) : path.resolve(value);
+    const bound =
+      payload?.scope === 'project' &&
+      typeof reportedProject?.path === 'string' &&
+      canonicalPath(reportedProject.path) === canonicalPath(projectPath);
+    // Missing/malformed evidence must not turn into a successful gate.
+    const valid =
+      typeof errors === 'number' &&
+      Number.isSafeInteger(errors) &&
+      errors >= 0 &&
+      typeof warnings === 'number' &&
+      Number.isSafeInteger(warnings) &&
+      warnings >= 0;
+    const reportedBlock = health?.verdict === 'blocked' || payload?.status === 'error';
+    const passed = doctor.exitCode === 0 && valid && bound && errors === 0 && !reportedBlock;
+    gates.push({
+      gate: 'doctor-project',
+      scope: 'project',
+      project,
+      status: passed ? (warnings > 0 ? 'warn' : 'pass') : 'fail',
+      summary: passed
+        ? `doctor project passed for ${project}${warnings > 0 ? ` with ${warnings} warning(s)` : ''}`
+        : !bound
+          ? `doctor project evidence did not match the selected project ${project}`
+          : !valid
+            ? `doctor project returned no valid health evidence for ${project}`
+            : reportedBlock
+              ? `doctor project reported a blocked verdict for ${project}`
+              : `doctor project blocked ${project}: ${errors} error(s), exit ${doctor.exitCode}`,
+    });
+  }
+  gates.push({
+    gate: 'readiness',
+    scope: 'workspace',
+    status: 'skipped',
+    summary: 'Workspace release readiness is not a prerequisite for project-scoped execution.',
+  });
+  return gates;
+}
+
 const RESERVED_NON_FLEET_STAGES = new Set(['dev', 'stop']);
 
 function ensureRunnableStage(stage: string): boolean {
@@ -1937,8 +2004,11 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
     options.stage === 'init' || options.planOnly === true
       ? false
       : await shouldEnforceWorkspaceRunGates(workspacePath, options.enforceGates);
+  const runTargets = scopedProjectPaths.filter((projectPath) => affectedProjects.has(projectPath));
   const gateResults: GateResult[] = enforceGates
-    ? await runWorkspaceGates(workspacePath)
+    ? normalizedScope !== null || affectedOnly
+      ? await runProjectGates(runTargets)
+      : await runWorkspaceGates(workspacePath)
     : [
         {
           gate: 'doctor-workspace',
@@ -1960,7 +2030,6 @@ export async function runWorkspaceStage(options: WorkspaceRunOptions): Promise<W
     attributes: { gates: gateResults },
   });
 
-  const runTargets = scopedProjectPaths.filter((projectPath) => affectedProjects.has(projectPath));
   const continueOnError = options.continueOnError === true || options.stage === 'init';
   const parallel = options.parallel === true;
   const maxWorkers = normalizeWorkers(options.maxWorkers, runTargets.length);

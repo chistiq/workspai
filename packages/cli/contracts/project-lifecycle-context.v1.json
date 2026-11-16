@@ -89,6 +89,11 @@
       "properties": {
         "stage": { "enum": ["init", "test", "build", "start"] },
         "command": { "type": "string", "minLength": 1 },
+        "cwd": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Working directory relative to the canonical selected project root; source reads do not select this directory for terminal commands."
+        },
         "confidence": { "enum": ["high", "medium"] },
         "preflight": { "enum": ["executable-and-inputs", "executable"] },
         "argvSequence": {

@@ -20,6 +20,19 @@ function criteriaFor(input: GoalPackKernelInput): GoalSuccessCriterion[] {
     producerCommand: 'workspai workspace verify --json',
     machineVerifiable: true,
   };
+  const projectVerify: GoalSuccessCriterion = {
+    id: 'project-verify',
+    kind: 'project-verify',
+    expected:
+      'The selected project and every affected transitive dependent have current passing verification evidence; workspace release readiness is reported separately.',
+    producerCommand: 'workspai change verify --change <change-id> --json',
+    machineVerifiable: true,
+  };
+  const verification =
+    input.scope.kind === 'project' &&
+    !['release-readiness', 'dependency-security'].includes(input.intent.category)
+      ? projectVerify
+      : workspaceVerify;
   if (input.intent.category === 'release-readiness') {
     return [
       {
@@ -29,7 +42,7 @@ function criteriaFor(input: GoalPackKernelInput): GoalSuccessCriterion[] {
         producerCommand: `workspai workspace goal plan release-readiness${scope} --json`,
         machineVerifiable: true,
       },
-      workspaceVerify,
+      verification,
     ];
   }
   if (input.intent.category === 'dependency-security') {
@@ -41,7 +54,7 @@ function criteriaFor(input: GoalPackKernelInput): GoalSuccessCriterion[] {
         producerCommand: `workspai workspace goal plan dependency-security${scope} --json`,
         machineVerifiable: true,
       },
-      workspaceVerify,
+      verification,
     ];
   }
   if (input.intent.category === 'test-coverage' && input.intent.requestedTarget) {
@@ -56,10 +69,10 @@ function criteriaFor(input: GoalPackKernelInput): GoalSuccessCriterion[] {
         producerCommand: `workspai workspace goal plan test-coverage${scope} --target ${input.intent.requestedTarget.value}${runtime} --json`,
         machineVerifiable: input.preflight.measurement.status === 'available',
       },
-      workspaceVerify,
+      verification,
     ];
   }
-  return [workspaceVerify];
+  return [verification];
 }
 
 function verifiedGoalCommand(input: GoalPackKernelInput): string | undefined {
@@ -102,6 +115,9 @@ export function buildGoalPack(
   handoff: GoalAgentHandoff;
 } {
   const criteria = criteriaFor(input);
+  const isProjectScopedVerification = criteria.some(
+    (criterion) => criterion.kind === 'project-verify'
+  );
   const requiresDecision = input.intent.ambiguities.length > 0;
   const requiresEvidence =
     !requiresDecision &&
@@ -111,7 +127,7 @@ export function buildGoalPack(
   const identity = {
     // Any semantic compiler change must advance this revision so an older
     // immutable Goal Pack can never be mistaken for current output.
-    kernelRevision: 'goal-pack-kernel-v12',
+    kernelRevision: 'goal-pack-kernel-v13',
     intent: input.intent.normalized,
     workspace: input.workspaceName,
     scope: input.scope,
@@ -316,7 +332,9 @@ export function buildGoalPack(
       ...(hasDeterministicOutcomeVerifier
         ? []
         : [
-            'For this general Goal, CLI verification proves workspace safety and freshness; final outcome acceptance requires evidence review against the complete objective.',
+            isProjectScopedVerification
+              ? 'For this project-scoped Goal, CLI verification covers the selected project and affected transitive dependents; workspace release readiness is reported separately. Final outcome acceptance still requires evidence review against the complete objective.'
+              : 'For this workspace-scoped Goal, CLI verification proves workspace safety and freshness; final outcome acceptance requires evidence review against the complete objective.',
           ]),
     ],
     workflow: [

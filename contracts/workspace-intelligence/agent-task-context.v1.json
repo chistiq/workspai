@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://workspai.dev/schemas/workspace-intelligence/agent-task-context.v1.json",
   "title": "Workspai bounded agent task context",
-  "description": "Read-only task entry packet combining canonical project grounding, scoped Graph discovery and closest manifest-derived lifecycle guidance. Missing Workspai evidence is explicit and does not block native project work.",
+  "description": "Read-only task entry with project selection checks, canonical grounding, scoped Graph and lifecycle evidence, and structured argv recovery. A refusal emits no task packet; missing evidence never grants authority or blocks authorized native project work.",
   "oneOf": [
     {
       "type": "object",
@@ -21,16 +21,28 @@
         "integrity"
       ],
       "properties": {
-        "schemaVersion": { "const": "workspai.agent-task-context.v1" },
-        "status": { "enum": ["ready", "partial"] },
+        "schemaVersion": {
+          "const": "workspai.agent-task-context.v1"
+        },
+        "status": {
+          "enum": ["ready", "partial"]
+        },
         "task": {
           "type": "object",
           "additionalProperties": false,
           "required": ["text", "use", "authority"],
           "properties": {
-            "text": { "type": "string", "minLength": 1, "maxLength": 4096 },
-            "use": { "const": "retrieval-query" },
-            "authority": { "const": "user-request" }
+            "text": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 4096
+            },
+            "use": {
+              "const": "retrieval-query"
+            },
+            "authority": {
+              "const": "user-request"
+            }
           }
         },
         "scope": {
@@ -38,36 +50,185 @@
           "additionalProperties": false,
           "required": ["project", "projectPath", "workspace", "binding"],
           "properties": {
-            "project": { "type": "string", "minLength": 1 },
-            "projectPath": { "type": "string", "minLength": 1 },
-            "workspace": { "type": ["string", "null"] },
-            "binding": { "enum": ["canonical-project-member", "not-workspai-managed"] }
+            "project": {
+              "type": "string",
+              "minLength": 1
+            },
+            "projectPath": {
+              "type": "string",
+              "minLength": 1
+            },
+            "workspace": {
+              "type": ["string", "null"]
+            },
+            "binding": {
+              "enum": ["canonical-project-member", "not-workspai-managed", "resolution-blocked"]
+            },
+            "workspaceResolution": {
+              "oneOf": [
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "source", "managedDefault"],
+                  "properties": {
+                    "status": { "const": "resolved" },
+                    "source": { "enum": ["parent", "local-link", "registry"] },
+                    "managedDefault": { "type": "boolean" }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "source", "managedDefault"],
+                  "properties": {
+                    "status": { "const": "unmanaged" },
+                    "source": { "const": "none" },
+                    "managedDefault": { "const": false }
+                  }
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": ["status", "source", "managedDefault", "reason"],
+                  "properties": {
+                    "status": { "const": "blocked" },
+                    "source": { "const": "none" },
+                    "managedDefault": { "const": false },
+                    "reason": {
+                      "enum": [
+                        "project.workspace.explicit-invalid",
+                        "project.workspace.membership-missing",
+                        "project.workspace.link-invalid",
+                        "project.workspace.link-stale",
+                        "project.workspace.ambiguous",
+                        "resolution-failed"
+                      ]
+                    }
+                  }
+                }
+              ]
+            }
           }
         },
         "grounding": {
-          "oneOf": [{ "$ref": "agent-bootstrap-view.v1.json" }, { "$ref": "#/$defs/unavailable" }]
+          "oneOf": [
+            {
+              "$ref": "agent-bootstrap-view.v1.json"
+            },
+            {
+              "$ref": "#/$defs/unavailable"
+            }
+          ]
         },
         "graph": {
           "oneOf": [
-            { "$ref": "workspace-graph-search-view.v1.json" },
-            { "$ref": "#/$defs/unavailable" }
+            {
+              "$ref": "workspace-graph-search-view.v1.json"
+            },
+            {
+              "$ref": "#/$defs/unavailable"
+            }
           ]
         },
-        "lifecycle": { "$ref": "https://workspai.dev/contracts/project-lifecycle-context.v1.json" },
+        "lifecycle": {
+          "$ref": "https://workspai.dev/contracts/project-lifecycle-context.v1.json"
+        },
+        "delivery": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "hostLoading", "modelCompliance"],
+          "properties": {
+            "status": {
+              "const": "prepared"
+            },
+            "hostLoading": {
+              "const": "not-observed"
+            },
+            "modelCompliance": {
+              "const": "not-observed"
+            }
+          }
+        },
+        "execution": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["cwdBase", "sourceReadsChangeCwd", "workspaceLocator"],
+          "properties": {
+            "cwdBase": {
+              "const": "canonical-project-root"
+            },
+            "sourceReadsChangeCwd": {
+              "const": false
+            },
+            "workspaceLocator": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "prefix",
+                    "base",
+                    "resolveCommand",
+                    "resolveCommandCwd",
+                    "pathField"
+                  ],
+                  "properties": {
+                    "prefix": {
+                      "const": "workspace:"
+                    },
+                    "base": {
+                      "const": "canonical-workspace-root"
+                    },
+                    "resolveCommand": {
+                      "const": "workspai project workspace status --json"
+                    },
+                    "resolveCommandCwd": {
+                      "const": "."
+                    },
+                    "pathField": {
+                      "const": "workspacePath"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
         "operatingRules": {
           "type": "array",
           "minItems": 1,
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
         },
-        "nextActions": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "nextActions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
         "budget": {
           "type": "object",
           "additionalProperties": false,
           "required": ["maxBytes", "usedBytes", "accounting"],
           "properties": {
-            "maxBytes": { "type": "integer", "minimum": 8192, "maximum": 131072 },
-            "usedBytes": { "type": "integer", "minimum": 1 },
-            "accounting": { "const": "utf8-json-with-newline" }
+            "maxBytes": {
+              "type": "integer",
+              "minimum": 8192,
+              "maximum": 131072
+            },
+            "usedBytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "accounting": {
+              "const": "utf8-json-with-newline"
+            }
           }
         },
         "integrity": {
@@ -75,8 +236,72 @@
           "additionalProperties": false,
           "required": ["algorithm", "payloadHash"],
           "properties": {
-            "algorithm": { "const": "sha256" },
-            "payloadHash": { "type": "string", "pattern": "^[a-f0-9]{64}$" }
+            "algorithm": {
+              "const": "sha256"
+            },
+            "payloadHash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        },
+        "selection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["source", "verifiedBy"],
+          "properties": {
+            "source": {
+              "enum": ["explicit-project", "working-directory"]
+            },
+            "verifiedBy": {
+              "enum": ["canonical-membership", "root-evidence", "explicit-directory"]
+            }
+          }
+        },
+        "skill": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "skillId",
+            "scope",
+            "project",
+            "runtimes",
+            "provenance",
+            "authority",
+            "procedure"
+          ],
+          "properties": {
+            "skillId": {
+              "type": "string",
+              "minLength": 1
+            },
+            "scope": {
+              "const": "project"
+            },
+            "project": {
+              "type": "string",
+              "minLength": 1
+            },
+            "runtimes": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "uniqueItems": true
+            },
+            "provenance": {
+              "enum": ["task-lifecycle-manifests", "native-fallback"]
+            },
+            "authority": {
+              "const": "guidance-only"
+            },
+            "procedure": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1
+            }
           }
         }
       }
@@ -86,23 +311,89 @@
       "additionalProperties": false,
       "required": ["schemaVersion", "status", "budget", "message", "nextActions"],
       "properties": {
-        "schemaVersion": { "const": "workspai.agent-task-context.v1" },
-        "status": { "const": "insufficient-budget" },
+        "schemaVersion": {
+          "const": "workspai.agent-task-context.v1"
+        },
+        "status": {
+          "const": "insufficient-budget"
+        },
         "budget": {
           "type": "object",
           "additionalProperties": false,
           "required": ["maxBytes", "requiredBytes", "accounting"],
           "properties": {
-            "maxBytes": { "type": "integer", "minimum": 8192, "maximum": 131072 },
-            "requiredBytes": { "type": "integer", "minimum": 1 },
-            "accounting": { "const": "utf8-json-with-newline" }
+            "maxBytes": {
+              "type": "integer",
+              "minimum": 8192,
+              "maximum": 131072
+            },
+            "requiredBytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "accounting": {
+              "const": "utf8-json-with-newline"
+            }
           }
         },
-        "message": { "type": "string", "minLength": 1 },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
         "nextActions": {
           "type": "array",
           "minItems": 1,
-          "items": { "type": "string", "minLength": 1 }
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "recovery": {
+          "$ref": "#/$defs/recovery"
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "status", "selection", "message", "nextActions", "recovery"],
+      "properties": {
+        "schemaVersion": {
+          "const": "workspai.agent-task-context.v1"
+        },
+        "status": {
+          "const": "project-selection-required"
+        },
+        "selection": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["reason", "source"],
+          "properties": {
+            "reason": {
+              "enum": ["unverified-working-directory", "path-not-found", "nested-project-boundary"]
+            },
+            "source": {
+              "enum": ["explicit-project", "working-directory"]
+            },
+            "path": {
+              "type": "string"
+            }
+          }
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nextActions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "recovery": {
+          "$ref": "#/$defs/recovery"
         }
       }
     }
@@ -113,10 +404,64 @@
       "additionalProperties": false,
       "required": ["status", "reason", "nextAction"],
       "properties": {
-        "status": { "const": "unavailable" },
-        "reason": { "type": "string", "minLength": 1 },
-        "nextAction": { "type": "string", "minLength": 1 },
-        "inputValidation": { "$ref": "agent-bootstrap-receipt.v1.json#/$defs/inputValidation" }
+        "status": {
+          "const": "unavailable"
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "nextAction": {
+          "type": "string",
+          "minLength": 1
+        },
+        "inputValidation": {
+          "$ref": "agent-bootstrap-receipt.v1.json#/$defs/inputValidation"
+        }
+      }
+    },
+    "recovery": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "message"],
+        "properties": {
+          "kind": {
+            "enum": ["retry", "select-project", "select-path", "native"]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          },
+          "requiredOption": {
+            "enum": ["--project", "--path"]
+          },
+          "command": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["executable", "args", "cwd", "cwdBase"],
+            "properties": {
+              "executable": {
+                "const": "workspai"
+              },
+              "args": {
+                "type": "array",
+                "minItems": 1,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "cwd": {
+                "const": "."
+              },
+              "cwdBase": {
+                "const": "request-project-directory"
+              }
+            }
+          }
+        }
       }
     }
   }

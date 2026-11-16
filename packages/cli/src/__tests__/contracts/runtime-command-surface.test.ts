@@ -301,7 +301,7 @@ describe('shared runtime command surface contract (npm)', () => {
     const extensionContractPath = path.resolve(
       process.cwd(),
       '..',
-      'rapidkit-vscode',
+      'workspai-vscode',
       'contracts',
       'runtime-command-surface.v1.json'
     );

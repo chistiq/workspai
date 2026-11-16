@@ -346,13 +346,20 @@ describe('npm publish contract', () => {
       ...readme.matchAll(/!\[[^\]]+\]\((https:\/\/raw\.githubusercontent\.com\/[^)]+)\)/g),
     ].map((match) => match[1]);
 
-    expect(rawImageUrls).toEqual(
-      expect.arrayContaining([
-        'https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-grpc-readme-cli.gif',
-        'https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-pcc-readme-cli.gif',
-        'https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspace-graph.gif',
-      ])
+    expect(rawImageUrls).toContain(
+      'https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/workspai-overview.svg'
     );
+    expect(rawImageUrls.some((url) => /\.gif(?:[?#]|$)/i.test(url))).toBe(false);
+    // Large demos remain discoverable links, without becoming inline downloads.
+    for (const name of [
+      'workspai-grpc-readme-cli.gif',
+      'workspai-pcc-readme-cli.gif',
+      'workspace-graph.gif',
+    ]) {
+      expect(readme).toContain(
+        `https://raw.githubusercontent.com/chistiq/workspai/main/packages/cli/docs/${name}`
+      );
+    }
     expect(packageJson.repository?.url).toBe('git+https://github.com/chistiq/workspai.git');
     expect(packageJson.author).toBe('Chistiq');
     expect(packageJson.homepage).toBe('https://www.workspai.com/');

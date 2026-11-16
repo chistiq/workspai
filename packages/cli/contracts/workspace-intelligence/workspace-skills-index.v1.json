@@ -5,19 +5,42 @@
   "type": "object",
   "required": ["schemaVersion", "generatedAt", "inputsHash", "skills"],
   "properties": {
-    "schemaVersion": { "const": "workspace-skills-index.v1" },
-    "generatedAt": { "type": "string", "format": "date-time" },
-    "inputsHash": { "type": "string", "minLength": 8 },
+    "schemaVersion": {
+      "const": "workspace-skills-index.v1"
+    },
+    "generatedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "inputsHash": {
+      "type": "string",
+      "minLength": 8
+    },
     "skills": {
       "type": "array",
       "items": {
         "type": "object",
         "required": ["skillId", "path", "schemaVersion", "title"],
         "properties": {
-          "skillId": { "type": "string" },
-          "path": { "type": "string" },
-          "schemaVersion": { "type": "string" },
-          "title": { "type": "string" }
+          "skillId": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "schemaVersion": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "scopedProjects": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "uniqueItems": true
+          }
         },
         "additionalProperties": false
       }
@@ -26,8 +49,14 @@
       "type": "object",
       "required": ["generatedCount", "suppressedCount", "decisions"],
       "properties": {
-        "generatedCount": { "type": "integer", "minimum": 0 },
-        "suppressedCount": { "type": "integer", "minimum": 0 },
+        "generatedCount": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "suppressedCount": {
+          "type": "integer",
+          "minimum": 0
+        },
         "decisions": {
           "type": "array",
           "items": {
@@ -42,13 +71,37 @@
               "scopedProjects"
             ],
             "properties": {
-              "skillId": { "type": "string", "minLength": 1 },
-              "title": { "type": "string" },
-              "status": { "enum": ["generated", "suppressed"] },
-              "confidence": { "enum": ["high", "medium"] },
-              "reasons": { "type": "array", "items": { "type": "string" } },
-              "signals": { "type": "array", "items": { "type": "string" } },
-              "scopedProjects": { "type": "array", "items": { "type": "string" } }
+              "skillId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "title": {
+                "type": "string"
+              },
+              "status": {
+                "enum": ["generated", "suppressed"]
+              },
+              "confidence": {
+                "enum": ["high", "medium"]
+              },
+              "reasons": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "signals": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "scopedProjects": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
             },
             "additionalProperties": false
           }

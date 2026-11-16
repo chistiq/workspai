@@ -1,6 +1,10 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
+import { hasRootLifecycleManifest } from './polyglot-lifecycle-plan.js';
+import { findContainingGitRoot } from './utils/git-worktree.js';
+import { taskContextRetry } from './agent-task-recovery.js';
+import type { AgentTaskRecovery, AgentTaskRequest } from './agent-task-recovery.js';
 import {
   AGENT_JSON_CONSUMPTION_GUIDANCE,
   AGENT_CONTINUATION_GUIDANCE,
@@ -16,7 +20,15 @@ import {
   buildAgentBootstrapReceipt,
   PROJECT_AGENT_ENTRY_RELATIVE_PATH,
 } from './project-agent-entry.js';
-import { resolveProjectWorkspaceSync } from './project-workspace-link.js';
+import {
+  ProjectWorkspaceResolutionError,
+  resolveProjectWorkspaceSync,
+} from './project-workspace-link.js';
+import type {
+  ProjectWorkspaceResolutionErrorCode,
+  ProjectWorkspaceResolutionSource,
+} from './project-workspace-link.js';
+import { resolveManagedDefaultImportWorkspacePath } from './utils/workspace-paths.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 import { readWorkspaceKnowledgeGraphSnapshot } from './workspace-knowledge-graph-snapshot.js';
 import type { WorkspaceKnowledgeGraphSnapshotResult } from './workspace-knowledge-graph-snapshot.js';
@@ -34,6 +46,7 @@ import type {
   ProjectLifecycleContext,
   ProjectLifecycleContextFailure,
 } from './project-lifecycle-context.js';
+import { buildTaskOperationalSkill } from './workspace-operational-skills.js';
 
 export const AGENT_TASK_CONTEXT_SCHEMA_VERSION = 'workspai.agent-task-context.v1' as const;
 export const DEFAULT_AGENT_TASK_CONTEXT_MAX_BYTES = 32 * 1024;
@@ -47,6 +60,22 @@ type ContextUnavailable = {
   inputValidation?: WorkspaceGraphInputValidation;
 };
 
+export type AgentTaskWorkspaceResolution =
+  | {
+      status: 'resolved';
+      source: Exclude<ProjectWorkspaceResolutionSource, 'explicit'>;
+      managedDefault: boolean;
+    }
+  | { status: 'unmanaged'; source: 'none'; managedDefault: false }
+  | {
+      status: 'blocked';
+      source: 'none';
+      managedDefault: false;
+      reason:
+        | Exclude<ProjectWorkspaceResolutionErrorCode, 'project.workspace.unlinked'>
+        | 'resolution-failed';
+    };
+
 export type AgentTaskContext = {
   schemaVersion: typeof AGENT_TASK_CONTEXT_SCHEMA_VERSION;
   status: 'ready' | 'partial';
@@ -55,11 +84,33 @@ export type AgentTaskContext = {
     project: string;
     projectPath: string;
     workspace: string | null;
-    binding: 'canonical-project-member' | 'not-workspai-managed';
+    binding: 'canonical-project-member' | 'not-workspai-managed' | 'resolution-blocked';
+    workspaceResolution: AgentTaskWorkspaceResolution;
+  };
+  selection: {
+    source: 'explicit-project' | 'working-directory';
+    verifiedBy: 'canonical-membership' | 'root-evidence' | 'explicit-directory';
   };
   grounding: AgentBootstrapView | AgentBootstrapBudgetFailure | ContextUnavailable;
   graph: WorkspaceGraphSearchView | WorkspaceGraphSearchBudgetFailure | ContextUnavailable;
   lifecycle: ProjectLifecycleContext | ProjectLifecycleContextFailure;
+  skill: ReturnType<typeof buildTaskOperationalSkill>;
+  execution: {
+    cwdBase: 'canonical-project-root';
+    sourceReadsChangeCwd: false;
+    workspaceLocator: {
+      prefix: 'workspace:';
+      base: 'canonical-workspace-root';
+      resolveCommand: 'workspai project workspace status --json';
+      resolveCommandCwd: '.';
+      pathField: 'workspacePath';
+    } | null;
+  };
+  delivery?: {
+    status: 'prepared';
+    hostLoading: 'not-observed';
+    modelCompliance: 'not-observed';
+  };
   operatingRules: string[];
   nextActions: string[];
   budget: { maxBytes: number; usedBytes: number; accounting: 'utf8-json-with-newline' };
@@ -72,6 +123,20 @@ export type AgentTaskContextBudgetFailure = {
   budget: { maxBytes: number; requiredBytes: number; accounting: 'utf8-json-with-newline' };
   message: string;
   nextActions: string[];
+  recovery: AgentTaskRecovery[];
+};
+
+export type AgentTaskContextSelectionRequired = {
+  schemaVersion: typeof AGENT_TASK_CONTEXT_SCHEMA_VERSION;
+  status: 'project-selection-required';
+  selection: {
+    reason: 'unverified-working-directory' | 'path-not-found' | 'nested-project-boundary';
+    source: 'explicit-project' | 'working-directory';
+    path?: string;
+  };
+  message: string;
+  nextActions: string[];
+  recovery: AgentTaskRecovery[];
 };
 
 export function agentTaskContextByteBudget(value?: string | number): number {
@@ -98,12 +163,106 @@ function sha256(value: string): string {
   return createHash('sha256').update(value).digest('hex');
 }
 
+function comparableLocalPath(value: string): string {
+  let resolved = path.resolve(value);
+  try {
+    resolved = fs.realpathSync(resolved);
+  } catch {
+    // The resolved workspace is expected to exist, but retain a lexical fallback
+    // so an inaccessible default path never becomes a fatal context error.
+  }
+  return process.platform === 'win32' ? resolved.toLocaleLowerCase('en-US') : resolved;
+}
+
+function describeWorkspaceResolution(
+  resolution: ReturnType<typeof resolveProjectWorkspaceSync>,
+  error: ProjectWorkspaceResolutionError | null,
+  unexpectedFailure: boolean
+): AgentTaskWorkspaceResolution {
+  if (resolution) {
+    if (resolution.source === 'explicit') {
+      return {
+        status: 'blocked',
+        source: 'none',
+        managedDefault: false,
+        reason: 'resolution-failed',
+      };
+    }
+    let managedDefault = false;
+    try {
+      managedDefault =
+        comparableLocalPath(resolution.workspacePath) ===
+        comparableLocalPath(resolveManagedDefaultImportWorkspacePath());
+    } catch {
+      // This is descriptive metadata only; resolution itself remains authoritative.
+    }
+    return { status: 'resolved', source: resolution.source, managedDefault };
+  }
+  if (!unexpectedFailure && error?.code === 'project.workspace.unlinked') {
+    return { status: 'unmanaged', source: 'none', managedDefault: false };
+  }
+  return {
+    status: 'blocked',
+    source: 'none',
+    managedDefault: false,
+    reason:
+      error?.code && error.code !== 'project.workspace.unlinked' ? error.code : 'resolution-failed',
+  };
+}
+
+function safeFailureCategory(
+  error: unknown
+): 'permission-denied' | 'artifact-missing' | 'validation-failed' {
+  if (error && typeof error === 'object' && 'code' in error) {
+    const code = (error as { code?: unknown }).code;
+    if (code === 'EACCES' || code === 'EPERM' || code === 'EROFS') return 'permission-denied';
+    if (code === 'ENOENT') return 'artifact-missing';
+  }
+  return 'validation-failed';
+}
+
 function failureBudget(
   maxBytes: number,
   requiredBytes: number,
-  componentLimited = false
+  request: AgentTaskRequest,
+  limitedComponents: string[] = []
 ): AgentTaskContextBudgetFailure {
+  const componentLimited = limitedComponents.length > 0;
   const canIncrease = !componentLimited && requiredBytes <= MAX_AGENT_TASK_CONTEXT_MAX_BYTES;
+  const recovery: AgentTaskRecovery[] = canIncrease
+    ? [
+        {
+          kind: 'retry',
+          message:
+            'Retry once with the exact aggregate byte budget. Preserve project, task and host.',
+          command: taskContextRetry(request, { maxBytes: requiredBytes }),
+        },
+      ]
+    : limitedComponents.length === 1 && limitedComponents[0] === 'graph' && request.limit > 1
+      ? [
+          {
+            kind: 'retry',
+            message: 'Reduce Graph matches to one; --limit counts matches, not bytes.',
+            command: taskContextRetry(request, { limit: 1 }),
+          },
+        ]
+      : [
+          ...(limitedComponents.includes('lifecycle') && request.path === undefined
+            ? [
+                {
+                  kind: 'select-path' as const,
+                  requiredOption: '--path' as const,
+                  message:
+                    'Select a verified project-relative source or manifest for the task. Do not guess a package or use a byte count as --limit.',
+                },
+              ]
+            : []),
+          {
+            kind: 'native' as const,
+            message:
+              'Use targeted native evidence and disclose unavailable Workspai context. Increasing the packet budget alone cannot satisfy this request.',
+          },
+        ];
   const failure: AgentTaskContextBudgetFailure = {
     schemaVersion: AGENT_TASK_CONTEXT_SCHEMA_VERSION,
     status: 'insufficient-budget',
@@ -117,9 +276,10 @@ function failureBudget(
       : 'The complete task context does not fit; no partial packet was emitted.',
     nextActions: [
       canIncrease
-        ? `Retry agent context with --max-bytes ${requiredBytes}, or narrow --limit/--path.`
-        : 'Narrow --limit, select the closest package with --path, or use targeted native evidence. Increasing the packet budget alone cannot satisfy this request.',
+        ? `Use recovery[0].command from its declared cwd base with --max-bytes ${requiredBytes}. Do not change the project, task or host.`
+        : 'Follow the structured recovery action once, or continue with targeted native evidence. --limit is a match count from 1 to 12; --max-bytes is a UTF-8 byte budget.',
     ],
+    recovery,
   };
   assertJsonSchemaContract(
     failure,
@@ -187,13 +347,17 @@ function pathInsideProject(projectPath: string, selectedPath?: string): string |
  */
 export async function buildAgentTaskContext(input: {
   projectPath: string;
+  projectSelected?: boolean;
   task: string;
   forAgent?: string;
   path?: string;
   limit?: number;
   maxBytes?: string | number;
-}): Promise<AgentTaskContext | AgentTaskContextBudgetFailure> {
-  const selectedProjectPath = path.resolve(input.projectPath);
+}): Promise<AgentTaskContext | AgentTaskContextBudgetFailure | AgentTaskContextSelectionRequired> {
+  const selectedProjectPath = fs.realpathSync(path.resolve(input.projectPath));
+  if (!fs.statSync(selectedProjectPath).isDirectory()) {
+    throw new Error('--project must select an existing directory.');
+  }
   const task = input.task.trim();
   if (!task) throw new Error('--task must contain a non-empty request.');
   if (Buffer.byteLength(task, 'utf8') > MAX_TASK_BYTES) {
@@ -202,9 +366,45 @@ export async function buildAgentTaskContext(input: {
   if (task.includes('\u0000')) throw new Error('--task must not contain NUL characters.');
   const limit = input.limit ?? 8;
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 12) {
-    throw new Error('--limit must be an integer between 1 and 12.');
+    throw new Error(
+      '--limit must be an integer between 1 and 12 (Graph matches, not bytes). Use --max-bytes for the UTF-8 byte budget.'
+    );
   }
   const maxBytes = agentTaskContextByteBudget(input.maxBytes);
+  const selectionSource =
+    input.projectSelected === false ? 'working-directory' : 'explicit-project';
+  const request: AgentTaskRequest = {
+    task,
+    forAgent: input.forAgent ?? 'generic',
+    project: '.',
+    ...(input.path === undefined ? {} : { path: input.path }),
+    limit,
+    maxBytes,
+  };
+  const selectionRequired = (
+    reason: AgentTaskContextSelectionRequired['selection']['reason'],
+    message: string,
+    recovery: AgentTaskRecovery[]
+  ): AgentTaskContextSelectionRequired => {
+    const failure: AgentTaskContextSelectionRequired = {
+      schemaVersion: AGENT_TASK_CONTEXT_SCHEMA_VERSION,
+      status: 'project-selection-required',
+      selection: {
+        reason,
+        source: selectionSource,
+        ...(input.path === undefined ? {} : { path: input.path }),
+      },
+      message,
+      nextActions: recovery.map((action) => action.message),
+      recovery,
+    };
+    assertJsonSchemaContract(
+      failure,
+      'contracts/workspace-intelligence/agent-task-context.v1.json',
+      'Agent task project selection'
+    );
+    return failure;
+  };
 
   let grounding: AgentTaskContext['grounding'];
   let graph: AgentTaskContext['graph'];
@@ -215,29 +415,120 @@ export async function buildAgentTaskContext(input: {
   const nextActions: string[] = [];
 
   let resolution: ReturnType<typeof resolveProjectWorkspaceSync> = null;
+  let resolutionError: ProjectWorkspaceResolutionError | null = null;
+  let unexpectedResolutionFailure = false;
   try {
     resolution = resolveProjectWorkspaceSync({
       startPath: selectedProjectPath,
       strict: true,
       requireProjectMembership: true,
     });
-  } catch {
-    // An unregistered or ambiguous target can still use native lifecycle guidance.
+  } catch (error) {
+    if (error instanceof ProjectWorkspaceResolutionError) resolutionError = error;
+    else unexpectedResolutionFailure = true;
   }
+  const workspaceResolution = describeWorkspaceResolution(
+    resolution,
+    resolutionError,
+    unexpectedResolutionFailure
+  );
+  if (workspaceResolution.status === 'blocked') binding = 'resolution-blocked';
   const projectPath = resolution?.projectPath ?? selectedProjectPath;
   const projectRelativePath = pathInsideProject(projectPath, input.path);
+  request.project =
+    path.relative(selectedProjectPath, projectPath).split(path.sep).join('/') || '.';
+  request.path = projectRelativePath;
+  const rootManifest = hasRootLifecycleManifest(projectPath);
+  const gitRoot =
+    !resolution?.projectPath && !rootManifest && fs.existsSync(path.join(projectPath, '.git'))
+      ? await findContainingGitRoot(projectPath)
+      : null;
+  const hasRootEvidence =
+    !!resolution?.projectPath ||
+    rootManifest ||
+    (gitRoot !== null && path.relative(fs.realpathSync(gitRoot), projectPath) === '');
+  if (!hasRootEvidence && input.projectSelected === false) {
+    return selectionRequired(
+      'unverified-working-directory',
+      'The working directory has no verified project boundary. No descendant projects were scanned and no task packet was emitted.',
+      [
+        {
+          kind: 'select-project',
+          requiredOption: '--project',
+          message:
+            'Retry with --project set to the user-selected source root. Resolve it from the request or the instruction file location; reading a file does not select its directory. Do not adopt or scan sibling projects to guess the target.',
+        },
+      ]
+    );
+  }
+  if (projectRelativePath !== undefined) {
+    const target = path.resolve(projectPath, projectRelativePath);
+    if (!fs.existsSync(target)) {
+      return selectionRequired(
+        'path-not-found',
+        'The supplied --path does not exist inside the selected project. Project context was withheld instead of treating another directory as the target.',
+        [
+          {
+            kind: 'select-project',
+            requiredOption: '--project',
+            message:
+              'Compare the selected project with the user target. Correct --project if the terminal is elsewhere; --path is relative to that project, not the terminal.',
+          },
+          {
+            kind: 'select-path',
+            requiredOption: '--path',
+            message:
+              'Use a known existing project-relative source or manifest, or omit --path when planning a new file.',
+          },
+        ]
+      );
+    }
+    let boundary = fs.statSync(target).isDirectory() ? target : path.dirname(target);
+    while (boundary !== projectPath && isPathWithin(projectPath, boundary)) {
+      if (
+        fs.existsSync(path.join(boundary, '.git')) ||
+        fs.existsSync(path.join(boundary, '.workspai/project.json'))
+      ) {
+        const nested =
+          path.relative(selectedProjectPath, boundary).split(path.sep).join('/') || '.';
+        const nestedPath = path.relative(boundary, target).split(path.sep).join('/') || '.';
+        return selectionRequired(
+          'nested-project-boundary',
+          'The selected source belongs to a nested project boundary. No parent or sibling context was substituted.',
+          [
+            {
+              kind: 'select-project',
+              message:
+                'Confirm that the nested project is the user target, then use this rebased command from the original request directory.',
+              command: taskContextRetry(request, { project: nested, path: nestedPath }),
+            },
+          ]
+        );
+      }
+      boundary = path.dirname(boundary);
+    }
+  }
   if (!resolution?.projectPath) {
+    const blockedResolution = workspaceResolution.status === 'blocked';
+    const resolutionReason =
+      workspaceResolution.status === 'blocked' ? workspaceResolution.reason : undefined;
     grounding = {
       status: 'unavailable',
-      reason: 'No canonical Workspai project membership was resolved for this directory.',
-      nextAction:
-        'Continue with the repository instructions, source and native checks. Workspai adoption is optional and requires the user’s choice.',
+      reason: blockedResolution
+        ? `Canonical Workspai workspace resolution is blocked (${resolutionReason}).`
+        : 'No canonical Workspai project membership was resolved for this directory.',
+      nextAction: blockedResolution
+        ? 'Do not treat this target as unmanaged or adopt it automatically. Continue with native project evidence; resolve the workspace binding only if the task needs Workspai evidence.'
+        : 'Continue with the repository instructions, source and native checks. Workspai adoption is optional and requires the user’s choice.',
     };
     graph = {
       status: 'unavailable',
-      reason: 'A project-scoped Workspai graph is unavailable without canonical membership.',
-      nextAction:
-        'Use native source search and project manifests; request adoption only when it would materially help and the user has not declined.',
+      reason: blockedResolution
+        ? `Project-scoped Graph evidence is withheld because workspace resolution is blocked (${resolutionReason}).`
+        : 'A project-scoped Workspai graph is unavailable without canonical membership.',
+      nextAction: blockedResolution
+        ? 'Use native source and test search. Do not infer that source is absent or refresh a different workspace; ask the user to choose the canonical workspace only if Graph evidence is required.'
+        : 'Use native source search and project manifests; request adoption only when it would materially help and the user has not declined.',
     };
   } else {
     binding = 'canonical-project-member';
@@ -268,6 +559,7 @@ export async function buildAgentTaskContext(input: {
       // The complete aggregate below is the only admission decision.
       grounding = buildAgentBootstrapView(receipt, {
         maxBytes: MAX_AGENT_BOOTSTRAP_BYTES,
+        projectTask: true,
         completedReads: completedReads.flatMap((entry) => [entry, `${entry} --view agent`]),
       });
       const snapshot =
@@ -289,21 +581,26 @@ export async function buildAgentTaskContext(input: {
           reason: `The canonical graph snapshot is unavailable (${snapshot.reason}).`,
           ...(snapshot.inputValidation ? { inputValidation: snapshot.inputValidation } : {}),
           nextAction:
-            'Continue with targeted native source and test search. Refresh Workspai intelligence only if a graph claim is needed.',
+            'Graph unavailability does not prove source absence. Continue with targeted native source and test search. Refresh canonical workspace intelligence only when the task requires Graph evidence and a workspace-wide refresh is authorized.',
         };
       }
-    } catch {
+    } catch (error) {
+      const failureCategory = safeFailureCategory(error);
       grounding = {
         status: 'unavailable',
-        reason: 'Canonical project grounding could not be validated.',
+        reason: `Canonical project grounding could not be validated (${failureCategory}).`,
         nextAction:
-          'Keep the request scoped to the selected project and use native project instructions, source search and checks.',
+          failureCategory === 'permission-denied'
+            ? 'The canonical Workspai metadata is not readable or writable in this environment. Do not repeat a refresh without permission; continue with native project evidence and report the access block.'
+            : 'Keep the request scoped to the selected project and use native project instructions, source search and checks.',
       };
       graph = {
         status: 'unavailable',
-        reason: 'Project grounding could not be validated, so project Graph results were withheld.',
+        reason: `Project grounding could not be validated (${failureCategory}), so project Graph results were withheld.`,
         nextAction:
-          'Use native project tools. Resolve the reported project binding only if Workspai evidence is needed.',
+          failureCategory === 'permission-denied'
+            ? 'Treat Graph as unavailable, not as evidence that source is missing. Continue with native source and tests; request canonical-workspace access only if Graph evidence is necessary.'
+            : 'Use native project tools. Resolve the reported project binding only if Workspai evidence is needed.',
       };
     }
   }
@@ -356,17 +653,51 @@ export async function buildAgentTaskContext(input: {
       projectPath: projectRelativePathForContext,
       workspace: workspaceName,
       binding,
+      workspaceResolution,
+    },
+    selection: {
+      source: selectionSource,
+      verifiedBy: resolution?.projectPath
+        ? 'canonical-membership'
+        : hasRootEvidence
+          ? 'root-evidence'
+          : 'explicit-directory',
     },
     grounding,
     graph,
     lifecycle,
+    skill: buildTaskOperationalSkill(projectName, lifecycle),
+    delivery: {
+      status: 'prepared',
+      hostLoading: 'not-observed',
+      modelCompliance: 'not-observed',
+    },
+    execution: {
+      cwdBase: 'canonical-project-root',
+      sourceReadsChangeCwd: false,
+      workspaceLocator:
+        binding === 'canonical-project-member'
+          ? {
+              prefix: 'workspace:',
+              base: 'canonical-workspace-root',
+              resolveCommand: 'workspai project workspace status --json',
+              resolveCommandCwd: '.',
+              pathField: 'workspacePath',
+            }
+          : null,
+    },
     operatingRules: [
       'This packet is read-only discovery context. It grants no file, shell, network, approval, or transaction authority.',
+      'Before using this packet, compare scope.project, scope.projectPath and scope.workspace with the user-selected target. A successful command or partial status does not confirm that the requested project was selected. If they differ, retry with the verified --project; do not use this context for another project. Disclose unavailable grounding and Graph evidence in the final report.',
+      'Scope is this project; use project-scoped commands unless the request or evidence requires workspace scope.',
+      'workspaceResolution is authoritative: blocked is not unmanaged or consent to adopt. Resolve workspace: locators only with the declared command.',
+      'Reuse Graph results/no-matches. Unavailable means missing evidence, not missing source; refresh only if needed and authorized.',
+      'delivery.hostLoading/modelCompliance are not-observed; use only tools exposed by this host.',
       AGENT_JSON_CONSUMPTION_GUIDANCE,
       AGENT_CONTINUATION_GUIDANCE,
       AGENT_VERIFICATION_GUIDANCE,
       'Treat user instructions and live source as authoritative. Graph matches are lexical discovery evidence, not proof of implementation, tests, or completion.',
-      'Use only the closest relevant instructions, one applicable Skill, cited source files, and lifecycle checks. Do not scan unrelated projects or run workspace-wide readiness for a project-local task.',
+      'Use this packet’s project-scoped skill and lifecycle checks; do not read the workspace skill catalog for routine validation. Read repository-authored instructions and additional specialized Skills only when the task needs them. Do not scan unrelated projects or run workspace-wide readiness for a project-local task.',
       'A missing, stale, partial, or blocked Workspai view does not block native work inside the user-selected project. Disclose the limitation and continue with native evidence.',
       'Preserve the user’s requested architecture and destination. For an existing unmanaged project, offer Workspai adoption only when it adds material value; do not adopt without user authorization.',
       'Use governed Workspai transactions when required by the project’s own policy or when a change crosses workspace architecture boundaries; do not create a Goal or transaction solely to satisfy this retrieval packet.',
@@ -386,19 +717,19 @@ export async function buildAgentTaskContext(input: {
   }
   const { integrity: _integrity, ...unsigned } = context;
   context.integrity.payloadHash = sha256(JSON.stringify(unsigned));
-  let componentLimited = false;
+  const limitedComponents: string[] = [];
   let extra = 0;
-  for (const component of [grounding, graph, lifecycle]) {
+  for (const [name, component] of Object.entries({ grounding, graph, lifecycle })) {
     if (component.status === 'insufficient-budget' && component.budget) {
-      componentLimited = true;
+      limitedComponents.push(name);
       extra += Math.max(0, component.budget.requiredBytes - wireBytes(component));
     }
   }
-  if (componentLimited) {
-    return failureBudget(maxBytes, requiredPacketBytes(context, extra), true);
+  if (limitedComponents.length > 0) {
+    return failureBudget(maxBytes, requiredPacketBytes(context, extra), request, limitedComponents);
   }
   if (context.budget.usedBytes > maxBytes) {
-    return failureBudget(maxBytes, requiredPacketBytes(context));
+    return failureBudget(maxBytes, requiredPacketBytes(context), request);
   }
   assertJsonSchemaContract(
     context,

@@ -32,6 +32,53 @@ function expectSameFilesystemEntry(actualPath: string, expectedPath: string): vo
 }
 
 describe('Doctor Command', () => {
+  it.each([
+    { manifest: {}, expected: true },
+    { manifest: { dependencies: {}, devDependencies: {} }, expected: true },
+    { manifest: { dependencies: { example: '1' } }, expected: false },
+    { manifest: { devDependencies: { example: '1' } }, expected: false },
+    { manifest: { peerDependencies: { example: '1' } }, expected: false },
+    { manifest: { optionalDependencies: { example: '1' } }, expected: false },
+    { manifest: { dependencies: [] }, expected: false },
+    { manifest: { workspaces: ['packages/*'] }, expected: false },
+  ])(
+    'requires a Node dependency tree only when its manifest requires one: %j',
+    async ({ manifest, expected }) => {
+      const root = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'doctor-dependency-contract-'));
+      const originalCwd = process.cwd();
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      try {
+        await fsExtra.outputJson(path.join(root, '.workspai/project.json'), {
+          name: 'native-tool',
+          runtime: 'node',
+          framework: 'node',
+        });
+        await fsExtra.outputJson(path.join(root, 'package.json'), {
+          name: 'native-tool',
+          scripts: { test: 'node --test' },
+          ...manifest,
+        });
+        mockedExeca.mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+        process.chdir(root);
+        const { runDoctor } = await import('../doctor.js');
+        await runDoctor({ project: true, json: true });
+        const payload = log.mock.calls
+          .map((call) => call[0])
+          .find((value) => typeof value === 'string' && value.trim().startsWith('{')) as string;
+        expect(JSON.parse(payload).project.depsInstalled).toBe(expected);
+      } finally {
+        process.chdir(originalCwd);
+        log.mockRestore();
+        await fsExtra.remove(root);
+      }
+    }
+  );
+  it('rejects conflicting programmatic scopes before collecting evidence', async () => {
+    const { runDoctor } = await import('../doctor.js');
+    await expect(runDoctor({ workspace: true, project: true })).rejects.toThrow(
+      'scopes are mutually exclusive'
+    );
+  });
   beforeEach(() => {
     vi.clearAllMocks();
   });

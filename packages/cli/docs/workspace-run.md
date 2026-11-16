@@ -58,12 +58,31 @@ packaging projects that have no agent entrypoint. An empty legacy root manifest 
 matches the exact older Workspai shell and a real `agents/primary` runtime
 exists. Any user edit restores the root as an independent unit.
 
-Planning and `init` do not require Doctor or release-readiness evidence. Real
-`test`, `build`, and `start` runs enforce the `doctor-workspace` and `readiness`
-gates by default. A failed gate prevents project commands from starting and is
-recorded as `gates.blocked` in the result. `--strict` converts a failing or
-warning gate into a non-zero process exit; without it, the structured gate
-result remains available without turning advisory policy into a process error.
+Planning and `init` do not require Doctor or release-readiness evidence. For
+other stages, default gates follow the selected scope:
+
+| Selection | Gates before execution |
+| --- | --- |
+| Unscoped fleet | `doctor-workspace` and workspace `readiness` |
+| Explicit project scope or `--affected` | `doctor-project` for the selected canonical project paths; workspace `readiness` is skipped |
+
+Project gates reject missing, malformed, blocked or differently bound Doctor
+evidence. Runtime prerequisites within each selected project still apply.
+Empty or ambiguous scope selectors are errors; they never fall back to the fleet.
+Doctor project/workspace selectors cannot be combined.
+
+A failed gate prevents execution and is recorded as `gates.blocked`; blocked or
+failed runs exit nonzero even without `--strict`. Advisory Doctor warnings
+remain visible and allow execution; `--strict` also makes warning gates produce
+a nonzero exit. These local gates do not prove workspace release readiness.
+
+A standalone Node manifest proving no dependency requirements does not need a
+`node_modules` directory. Workspace roots, agent owners and malformed dependency
+groups do not inherit that exemption from an empty shell manifest. For Python
+packaging projects, init includes a declared test/dev extra only when a supported
+static or setuptools-dynamic optional-dependency declaration proves pytest
+ownership; it does not invent a test dependency. Inspect the plan and native
+prerequisites when a project's setup convention is not supported.
 
 The authoritative scaffold/import/lifecycle tiers are in
 [contracts/RUNTIME_SUPPORT_MATRIX.md](./contracts/RUNTIME_SUPPORT_MATRIX.md).
@@ -117,7 +136,8 @@ Declare extra fleet stages in `.workspai/context.json`:
 }
 ```
 
-Run them with `npx workspai workspace run lint --scope project:<name>`.
+Run them with `npx workspai workspace run lint --scope "project:<name>"`,
+replacing `<name>` with the registered project identity.
 
 ### Stage dependencies and caching
 

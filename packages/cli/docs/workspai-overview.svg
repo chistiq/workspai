@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="200" viewBox="0 0 960 200" role="img" aria-labelledby="title description">
+  <title id="title">A project, shared context, and your coding agent</title>
+  <desc id="description">Create or adopt a project. Workspai prepares its map, evidence, and scoped context. Your coding agent inspects source, makes changes, and runs checks.</desc>
+  <rect width="960" height="200" rx="16" fill="#101820"/>
+  <g fill="none" stroke="#344957" stroke-width="1.5">
+    <rect x="24" y="38" width="254" height="108" rx="12"/>
+    <rect x="353" y="38" width="254" height="108" rx="12" stroke="#26cdbd"/>
+    <rect x="682" y="38" width="254" height="108" rx="12"/>
+    <path d="M294 92h42m-8-7 8 7-8 7M623 92h42m-8-7 8 7-8 7" stroke="#26cdbd" stroke-linecap="round" stroke-linejoin="round"/>
+  </g>
+  <g font-family="system-ui, -apple-system, 'Segoe UI', sans-serif" text-anchor="middle">
+    <g fill="#f1f5f8" font-size="21" font-weight="600">
+      <text x="151" y="79">Your project</text>
+      <text x="480" y="79">Workspai</text>
+      <text x="809" y="79">Your coding agent</text>
+    </g>
+    <g fill="#b5c7d1" font-size="14">
+      <text x="151" y="111">Create or adopt in place</text>
+      <text x="480" y="111">Map · evidence · scoped context</text>
+      <text x="809" y="111">Inspect · edit · run checks</text>
+    </g>
+    <text x="480" y="178" fill="#a6bac7" font-size="13">One workspace. One truth. Humans and AI aligned.</text>
+  </g>
+</svg>

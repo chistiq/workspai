@@ -201,9 +201,15 @@ must assess the final diff or answer against the complete immutable objective,
 while the CLI independently owns scope, repair transactions, build/test/audit
 checks, canonical workspace verification, rollback, and the attempt budget.
 Such a result is evidence-reviewed; only the three exact producer contracts may
-use the lifecycle claim `verified`. Its `workspace-verify` success criterion and
-final orchestration step explicitly describe safety and evidence freshness; they
-never describe that signal as proof of an arbitrary semantic outcome.
+use the lifecycle claim `verified`. Project-scoped Goals use a `project-verify`
+safety criterion for the selected project and affected transitive dependents,
+except release-readiness and dependency-security Goals, which keep
+`workspace-verify`. Workspace and project-set Goals also keep workspace
+verification. A single-project Change uses the focused gate only when its
+effects satisfy canonical containment and freshness requirements; strict
+verification retains the full workspace gate. These criteria describe safety
+and evidence freshness, never proof of an arbitrary semantic outcome. See
+[Proof-Carrying Change](./proof-carrying-change.md).
 
 ## Ownership and safety boundary
 

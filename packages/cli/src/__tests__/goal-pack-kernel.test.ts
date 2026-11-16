@@ -77,6 +77,25 @@ function input(intent: string) {
 }
 
 describe('goal pack pure kernel', () => {
+  it('does not reuse immutable v12 Goal IDs after changing verification criteria', () => {
+    let identity: Record<string, unknown> | undefined;
+    const goal = buildGoalPack(input('Improve retry backoff behavior'), {
+      digestCanonical(value) {
+        if (value && typeof value === 'object' && 'kernelRevision' in value) {
+          identity = value as Record<string, unknown>;
+        }
+        return hashCanonicalJson(value);
+      },
+    }).goalPack;
+    expect(identity).toBeDefined();
+    const previousFingerprint = hashCanonicalJson({
+      ...identity,
+      kernelRevision: 'goal-pack-kernel-v12',
+    });
+    expect(goal.successCriteria[0].kind).toBe('project-verify');
+    expect(goal.id).not.toBe(`goal-${goal.intent.category}-${previousFingerprint.slice(0, 16)}`);
+  });
+
   it('compiles a measurable coverage goal into the existing verified-goal primitive', () => {
     const { goalPack, handoff } = buildGoalPack(
       input('Raise test coverage to at least 85%'),
@@ -87,6 +106,10 @@ describe('goal pack pure kernel', () => {
     expect(goalPack.successCriteria[0]).toMatchObject({
       kind: 'test-coverage',
       machineVerifiable: true,
+    });
+    expect(goalPack.successCriteria[1]).toMatchObject({
+      id: 'project-verify',
+      kind: 'project-verify',
     });
     expect(goalPack.commands.planVerifiedGoal).toContain(
       'workspace goal plan test-coverage --scope project:api --target 85'
@@ -244,16 +267,17 @@ describe('goal pack pure kernel', () => {
     expect(goalPack.commands.planVerifiedGoal).toBeUndefined();
     expect(goalPack.successCriteria).toEqual([
       expect.objectContaining({
-        kind: 'workspace-verify',
+        id: 'project-verify',
+        kind: 'project-verify',
         machineVerifiable: true,
-        expected: expect.stringContaining('without claiming arbitrary semantic outcome'),
+        expected: expect.stringContaining('affected transitive dependent'),
       }),
     ]);
     expect(goalPack.orchestration.find((step) => step.id === 'verify')?.summary).toContain(
       'agent must review'
     );
     expect(handoff.guardrails).toContainEqual(
-      expect.stringContaining('final outcome acceptance requires evidence review')
+      expect.stringContaining('Final outcome acceptance still requires evidence review')
     );
     expect(handoff.workflow).toEqual(
       expect.arrayContaining([
@@ -270,6 +294,15 @@ describe('goal pack pure kernel', () => {
       ])
     );
     expect(handoff.workflow.at(-1)).toMatchObject({ order: 8, owner: 'agent' });
+  });
+
+  it('keeps release and dependency-security Goals on the workspace verification gate', () => {
+    for (const intent of ['Check release readiness', 'Review dependency security']) {
+      const { goalPack } = buildGoalPack(input(intent), ports);
+      expect(goalPack.successCriteria).toContainEqual(
+        expect.objectContaining({ id: 'workspace-verify', kind: 'workspace-verify' })
+      );
+    }
   });
 
   it('distinguishes domain memory features from runtime memory performance', () => {

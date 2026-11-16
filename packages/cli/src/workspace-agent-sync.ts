@@ -1,6 +1,6 @@
 import path from 'path';
 import fsExtra from 'fs-extra';
-import { AGENT_CONTEXT_GUIDANCE, AGENT_RESPONSE_GUIDANCE } from './agent-output-guidance.js';
+import { AGENT_ENTRY_GUIDANCE, AGENT_RESPONSE_GUIDANCE } from './agent-output-guidance.js';
 
 import {
   buildOperationalSkillsCatalogSection,
@@ -947,7 +947,7 @@ function buildAgentsMarkdown(input: {
     '- Refresh missing or stale evidence before relying on its workspace claims; ordinary project work can continue with native evidence and explicit limitations.',
     '- Keep project-scoped advice aligned with the active project named in the context pack.',
     `- ${AGENT_RESPONSE_GUIDANCE}`,
-    `- ${AGENT_CONTEXT_GUIDANCE}`,
+    `- ${AGENT_ENTRY_GUIDANCE}`,
     '- Never claim that an active goal is satisfied until its CLI-owned verification lifecycle is `verified`.',
     ''
   );
@@ -1818,7 +1818,7 @@ function buildWorkspaiAgent(input: {
     '',
     `Mode: ${input.mode}.`,
     '',
-    AGENT_CONTEXT_GUIDANCE,
+    AGENT_ENTRY_GUIDANCE,
     '',
     AGENT_RESPONSE_GUIDANCE,
     '',
@@ -1850,7 +1850,7 @@ function buildPortableGroundingSkill(input: {
     `2. Read only remaining project-lens or task-relevant context from \`${WORKSPACE_INTELLIGENCE_ARTIFACTS.agentContext}\` that the packet has not already supplied.`,
     '3. Select one matching Skill from the compact Skills index. Query the bounded Graph with the actual task and project scope only when the existing packet does not answer the retrieval need.',
     '4. Inspect returned proofs, targeted live source and only task-relevant fail/warn evidence; propose the smallest safe fix with explicit verification commands.',
-    AGENT_CONTEXT_GUIDANCE,
+    AGENT_ENTRY_GUIDANCE,
     '',
   ];
 

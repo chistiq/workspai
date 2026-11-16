@@ -432,6 +432,59 @@ describe('handleAdoptCommand workspace resolution', () => {
           externalPath: projectPath,
         }),
       ]);
+
+      // A previous adoption can retain its local link after membership is
+      // removed. Re-adoption must repair that exact destination transactionally.
+      const contractPath = path.join(workspacePath, WORKSPACE_CONTRACT_PATH);
+      const unregistered = JSON.parse(await fs.readFile(contractPath, 'utf8'));
+      unregistered.projects = [];
+      await fs.writeFile(contractPath, JSON.stringify(unregistered));
+      const authoredPath = path.join(projectPath, 'AGENTS.md');
+      await fs.appendFile(authoredPath, '\nKeep these authored repository rules.\n');
+      for (const report of [
+        'doctor-last-run.json',
+        'analyze-last-run.json',
+        'release-readiness-last-run.json',
+      ]) {
+        await fs.writeFile(
+          path.join(workspacePath, '.workspai/reports', report),
+          JSON.stringify({
+            generatedAt: '2020-01-01T00:00:00.000Z',
+            health: { errors: 0, warnings: 0 },
+          })
+        );
+      }
+      const previousCwd = process.cwd();
+      process.chdir(projectPath);
+      try {
+        vi.stubEnv('RAPIDKIT_TEST_ADOPT_SYNC_FAIL', '1');
+        expect(await handleAdoptCommand('.', { json: true })).toBe(1);
+        expect(JSON.parse(await fs.readFile(contractPath, 'utf8')).projects).toEqual([]);
+        expect(await fs.readFile(authoredPath, 'utf8')).toContain(
+          'Keep these authored repository rules.'
+        );
+        vi.stubEnv('RAPIDKIT_TEST_ADOPT_SYNC_FAIL', '');
+        expect(await handleAdoptCommand('.', { json: true })).toBe(0);
+        expect(await handleAdoptCommand('.', { json: true })).toBe(0);
+        expect(JSON.parse(await fs.readFile(contractPath, 'utf8')).projects).toHaveLength(1);
+        expect(await fs.readFile(authoredPath, 'utf8')).toContain(
+          'Keep these authored repository rules.'
+        );
+        const entry = JSON.parse(
+          await fs.readFile(path.join(projectPath, '.workspai/agent-entry.v1.json'), 'utf8')
+        );
+        expect(entry.protocol.taskContextCommand).toContain('agent context');
+        const model = JSON.parse(
+          await fs.readFile(
+            path.join(workspacePath, '.workspai/reports/workspace-model.json'),
+            'utf8'
+          )
+        );
+        expect(model.factFreshness.staleFacts).toBeGreaterThan(0);
+      } finally {
+        process.chdir(previousCwd);
+        vi.unstubAllEnvs();
+      }
     } finally {
       process.env.HOME = previousHome;
       process.env.USERPROFILE = previousUserProfile;

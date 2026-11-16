@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { mkdir, mkdtemp, readdir, rm, symlink, writeFile } from 'node:fs/promises';
+import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 
@@ -11,6 +11,7 @@ import fsExtra from 'fs-extra';
 import { agentTaskContextByteBudget, buildAgentTaskContext } from '../agent-task-context.js';
 import * as projectAgentEntry from '../project-agent-entry.js';
 import * as graphSnapshot from '../workspace-knowledge-graph-snapshot.js';
+import * as graphView from '../workspace-graph-search-view.js';
 import { syncProjectIntelligenceLens } from '../project-intelligence-lens.js';
 import { writeProjectWorkspaceLink } from '../project-workspace-link.js';
 import { buildWorkspaceModel, writeWorkspaceModel } from '../workspace-model.js';
@@ -26,18 +27,26 @@ import {
 import { WORKSPACE_SUPPLEMENTAL_ARTIFACTS } from '../contracts/workspace-intelligence-runtime-registry.js';
 import { hashCanonicalJson } from '../workspace-model-hash.js';
 import { buildPolyglotLifecyclePlan } from '../polyglot-lifecycle-plan.js';
+import { buildAgentBootstrapView } from '../agent-bootstrap-view.js';
 
 let projectPath: string | undefined;
 
 afterEach(async () => {
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   if (projectPath) await rm(projectPath, { recursive: true, force: true });
   projectPath = undefined;
 });
 
-async function managedProject() {
+async function managedProject(location: 'linked' | 'parent' | 'managed-default' = 'linked') {
   projectPath = await mkdtemp(path.join(tmpdir(), 'workspai-agent-context-managed-'));
-  const workspacePath = path.join(projectPath, 'workspace');
+  const homeDir = path.join(projectPath, 'test-home');
+  const workspacePath =
+    location === 'parent'
+      ? projectPath
+      : location === 'managed-default'
+        ? path.join(homeDir, '.workspai', 'workspaces', 'workspai')
+        : path.join(projectPath, 'workspace');
   const sourcePath = path.join(projectPath, 'sources', 'api');
   await fsExtra.outputFile(path.join(workspacePath, '.workspai-workspace'), 'lab\n');
   await fsExtra.outputJson(path.join(workspacePath, '.rapidkit/workspace.json'), {
@@ -125,12 +134,86 @@ async function managedProject() {
     await buildWorkspaceAgentReportsIndex({ workspacePath })
   );
   await syncProjectIntelligenceLens(lens);
-  return { workspacePath, sourcePath };
+  return { workspacePath, sourcePath, homeDir };
 }
 
 describe('agent task context', () => {
+  it('keeps a foreign Goal warning visible without exposing its repair route as a task continuation', async () => {
+    const { sourcePath } = await managedProject();
+    const receipt = await projectAgentEntry.buildAgentBootstrapReceipt({ startPath: sourcePath });
+    receipt.activeGoal = {
+      present: true,
+      appliesToProject: false,
+      status: 'invalid',
+      id: 'goal-foreign',
+      objective: 'Repair the other project',
+      goalPack: 'workspace:.workspai/goals/foreign/goal-pack.json',
+    };
+    receipt.status = 'degraded';
+    receipt.readiness.agentGrounding = 'degraded';
+    receipt.checks = receipt.checks.filter((check) => check.id !== 'active-goal');
+    receipt.checks.push({
+      id: 'active-goal',
+      status: 'warning',
+      message: 'Foreign goal is invalid; project evidence remains usable.',
+    });
+    receipt.nextActions = ['workspai goal --status --json'];
+    const { integrity, ...unsigned } = receipt;
+    receipt.integrity = { ...integrity, payloadHash: hashCanonicalJson(unsigned) };
+    const view = buildAgentBootstrapView(receipt, { projectTask: true });
+    expect(view.status).toBe('degraded');
+    if (view.status === 'insufficient-budget') throw new Error('Unexpected budget refusal');
+    expect(view.activeGoal).toEqual({ present: true, appliesToProject: false, status: 'invalid' });
+    expect(view.checks.findings.some((finding) => finding.id === 'active-goal')).toBe(true);
+    expect(view.nextActions.join(' ')).toContain('Continue authorized project work');
+    expect(view.nextActions.join(' ')).not.toContain('workspai goal');
+    expect(JSON.stringify(view.requiredReadOrder)).not.toContain('goals/foreign');
+  });
+  it.each([
+    { args: ['doctor', 'workspace', '--project', '--json'] },
+    { args: ['doctor', 'project', '--workspace', '--json'] },
+  ])('rejects contradictory Doctor scopes before collecting evidence: %j', async ({ args }) => {
+    const result = await execa(process.execPath, [path.resolve('dist/index.js'), ...args], {
+      reject: false,
+    });
+    expect(result.exitCode).toBe(1);
+    expect(result.stdout + result.stderr).toContain('scopes are mutually exclusive');
+  });
+
+  it('does not advertise a proven foreign Skill in the project host entry', async () => {
+    const { workspacePath, sourcePath } = await managedProject();
+    const indexPath = path.join(workspacePath, '.workspai/reports/workspace-skills-index.json');
+    const index = await fsExtra.readJson(indexPath);
+    index.skills.push({
+      skillId: 'worker-specialist',
+      title: 'Worker specialist',
+      path: '.workspai/skills/worker-specialist.md',
+      schemaVersion: 'workspace-operational-skill.v1',
+      scopedProjects: ['worker'],
+    });
+    await fsExtra.writeJson(indexPath, index);
+    await syncProjectIntelligenceLens({
+      workspacePath,
+      projectPath: sourcePath,
+      projectName: 'api',
+      relationship: 'adopted',
+      mode: 'managed',
+    });
+    expect(
+      await fsExtra.pathExists(path.join(sourcePath, '.agents/skills/worker-specialist/SKILL.md'))
+    ).toBe(false);
+    expect(
+      await fsExtra.pathExists(
+        path.join(sourcePath, '.agents/skills/workspai-node-runtime-validation/SKILL.md')
+      )
+    ).toBe(true);
+  });
   it('enters a canonical linked project once and returns scoped evidence without repeating completed reads', async () => {
     const { sourcePath } = await managedProject();
+    const projectGrounding = await readFile(
+      path.join(sourcePath, '.workspai', 'PROJECT-GROUNDING.md'),
+      'utf8'
+    );
     const bootstrap = vi.spyOn(projectAgentEntry, 'buildAgentBootstrapReceipt');
     const snapshots = vi.spyOn(graphSnapshot, 'readWorkspaceKnowledgeGraphSnapshot');
     const result = await buildAgentTaskContext({
@@ -141,12 +224,33 @@ describe('agent task context', () => {
     expect(bootstrap).toHaveBeenCalledTimes(1);
     expect(snapshots).toHaveBeenCalledTimes(1);
     expect(result.status).toBe('ready');
-    if (result.status === 'insufficient-budget') throw new Error('Unexpected budget refusal');
+    if (result.status !== 'ready' && result.status !== 'partial')
+      throw new Error('Unexpected budget refusal');
     expect(result.scope).toMatchObject({
       project: 'api',
       workspace: 'lab',
       projectPath: 'external/api',
       binding: 'canonical-project-member',
+      workspaceResolution: {
+        status: 'resolved',
+        source: 'local-link',
+        managedDefault: false,
+      },
+    });
+    expect(result.execution).toMatchObject({
+      cwdBase: 'canonical-project-root',
+      sourceReadsChangeCwd: false,
+      workspaceLocator: {
+        base: 'canonical-workspace-root',
+        resolveCommand: 'workspai project workspace status --json',
+        resolveCommandCwd: '.',
+        pathField: 'workspacePath',
+      },
+    });
+    expect(result.delivery).toEqual({
+      status: 'prepared',
+      hostLoading: 'not-observed',
+      modelCompliance: 'not-observed',
     });
     expect(result.graph.status).toBe('results');
     if (result.graph.status !== 'results' || result.grounding.status !== 'ready') {
@@ -163,6 +267,17 @@ describe('agent task context', () => {
     expect(result.grounding.requiredReadOrder).not.toContain(
       result.grounding.canonicalEvidence.projectContext
     );
+    expect(result.grounding.requiredReadOrder).not.toContain(
+      result.grounding.canonicalEvidence.workspaceSkillsIndex
+    );
+    expect(result.skill).toMatchObject({
+      scope: 'project',
+      project: 'api',
+      runtimes: ['node'],
+      skillId: 'workspai-node-runtime-validation',
+      authority: 'guidance-only',
+    });
+    expect(JSON.stringify(result.skill)).not.toContain('worker');
     expect(result.grounding.nextActions.join('\n')).not.toContain(
       'workspai workspace graph search'
     );
@@ -175,6 +290,12 @@ describe('agent task context', () => {
     expect(result.operatingRules.join(' ')).toContain('never require or execute that file');
     expect(result.operatingRules.join(' ')).toContain('locators, not a reading checklist');
     expect(result.operatingRules.join(' ')).toContain('silence alone is not failure');
+    expect(result.operatingRules.join(' ')).toContain('Scope is this project');
+    expect(result.operatingRules.join(' ')).toContain('workspaceResolution is authoritative');
+    expect(result.operatingRules.join(' ')).toContain('delivery.hostLoading/modelCompliance');
+    expect(projectGrounding).toContain('scope.workspaceResolution');
+    expect(projectGrounding).toContain('managedDefault');
+    expect(projectGrounding).toContain('do not repeat an identical CLI or MCP query');
 
     const cli = await execa(
       process.execPath,
@@ -196,8 +317,36 @@ describe('agent task context', () => {
       scope: { project: 'api', binding: 'canonical-project-member' },
       lifecycle: { status: 'ready', units: [{ manifest: 'packages/ui/package.json' }] },
     });
+    expect(installedPacket.lifecycle.units[0].stages).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ stage: 'test', command: 'npm run test', cwd: 'packages/ui' }),
+      ])
+    );
     expect(installedPacket.budget.usedBytes).toBe(Buffer.byteLength(`${cli.stdout}\n`, 'utf8'));
     expect(cli.stdout).not.toContain(sourcePath);
+
+    const fromParent = await execa(
+      process.execPath,
+      [
+        path.resolve('dist/index.js'),
+        'agent',
+        'context',
+        '--task',
+        'Inspect the widget',
+        '--project',
+        path.relative(projectPath!, sourcePath),
+        '--path',
+        'packages/ui/src/widget.ts',
+        '--for-agent',
+        'copilot',
+      ],
+      { cwd: projectPath! }
+    );
+    expect(JSON.parse(fromParent.stdout)).toMatchObject({
+      status: 'ready',
+      scope: { project: 'api', binding: 'canonical-project-member' },
+      selection: { source: 'explicit-project', verifiedBy: 'canonical-membership' },
+    });
 
     // Hosts may save plain JSON with a .txt suffix. Parsing must not execute it
     // or send the whole packet back into the conversation via an error stack.
@@ -207,7 +356,7 @@ describe('agent task context', () => {
       process.execPath,
       [
         '-e',
-        "const fs = require('node:fs'); const p = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); console.log(JSON.stringify({status:p.status, scope:p.scope, findings:p.grounding.checks?.findings, proofs:p.graph.proofs, lifecycle:p.lifecycle}));",
+        "const fs = require('node:fs'); const p = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); const selected = p.status === 'insufficient-budget' ? {status:p.status, budget:p.budget, message:p.message, nextActions:p.nextActions} : {status:p.status, scope:p.scope, findings:p.grounding?.checks?.findings, proofs:p.graph?.proofs, lifecycle:p.lifecycle, skill:p.skill, execution:p.execution}; console.log(JSON.stringify(selected));",
         savedOutput,
       ],
       { encoding: 'utf8' }
@@ -218,6 +367,164 @@ describe('agent task context', () => {
       findings: [],
     });
     expect(selected.length).toBeLessThan(cli.stdout.length);
+
+    const budgetRequest = 'x'.repeat(4000);
+    const budgetRefusal = await execa(
+      process.execPath,
+      [
+        path.resolve('dist/index.js'),
+        'agent',
+        'context',
+        '--task',
+        budgetRequest,
+        '--max-bytes',
+        '8192',
+      ],
+      { cwd: sourcePath, reject: false }
+    );
+    expect(budgetRefusal.exitCode).toBe(0);
+    const budgetPacket = JSON.parse(budgetRefusal.stdout);
+    expect(budgetPacket).toMatchObject({
+      status: 'insufficient-budget',
+      budget: { maxBytes: 8192, accounting: 'utf8-json-with-newline' },
+      nextActions: [expect.any(String)],
+    });
+    expect(budgetPacket).not.toHaveProperty('grounding');
+
+    const strictRefusal = await execa(
+      process.execPath,
+      [
+        path.resolve('dist/index.js'),
+        'agent',
+        'context',
+        '--task',
+        budgetRequest,
+        '--max-bytes',
+        '8192',
+        '--strict',
+      ],
+      { cwd: sourcePath, reject: false }
+    );
+    expect(strictRefusal.exitCode).toBe(2);
+    expect(JSON.parse(strictRefusal.stdout)).toMatchObject({
+      status: 'insufficient-budget',
+      budget: { maxBytes: 8192 },
+    });
+  });
+
+  it('does not misreport a stale project link as unmanaged or recommend adoption', async () => {
+    const { workspacePath, sourcePath } = await managedProject();
+    const contractPath = path.join(
+      workspacePath,
+      WORKSPACE_SUPPLEMENTAL_ARTIFACTS.workspaceContract
+    );
+    const contract = await fsExtra.readJson(contractPath);
+    contract.projects = contract.projects.filter(
+      (project: { slug: string }) => project.slug !== 'api'
+    );
+    await fsExtra.writeJson(contractPath, contract);
+
+    const result = await buildAgentTaskContext({
+      projectPath: sourcePath,
+      task: 'Explain why the retry test is failing',
+    });
+
+    expect(result.status).toBe('partial');
+    if (result.status !== 'partial') throw new Error('Expected partial context for stale binding');
+    expect(result.scope.workspaceResolution).toEqual({
+      status: 'blocked',
+      source: 'none',
+      managedDefault: false,
+      reason: 'project.workspace.link-stale',
+    });
+    expect(result.scope.binding).toBe('resolution-blocked');
+    expect(result.grounding).toMatchObject({ status: 'unavailable' });
+    expect(result.graph).toMatchObject({ status: 'unavailable' });
+    expect(result.nextActions.join(' ')).toContain('Do not treat this target as unmanaged');
+    expect(result.nextActions.join(' ')).not.toContain('Workspai adoption is optional');
+  });
+
+  it('does not fall through a marked parent with missing membership to a project link', async () => {
+    const { sourcePath } = await managedProject();
+    await fsExtra.outputFile(path.join(projectPath!, '.workspai-workspace'), 'parent\n');
+
+    const result = await buildAgentTaskContext({
+      projectPath: sourcePath,
+      task: 'Explain the retry implementation',
+    });
+
+    expect(result.status).toBe('partial');
+    if (result.status !== 'partial') throw new Error('Expected blocked parent resolution');
+    expect(result.scope.workspaceResolution).toEqual({
+      status: 'blocked',
+      source: 'none',
+      managedDefault: false,
+      reason: 'project.workspace.membership-missing',
+    });
+    expect(result.scope.binding).toBe('resolution-blocked');
+    expect(result.grounding).toMatchObject({ status: 'unavailable' });
+    expect(result.graph).toMatchObject({ status: 'unavailable' });
+  });
+
+  it('identifies an ancestor workspace as the selected project workspace', async () => {
+    const { sourcePath } = await managedProject('parent');
+
+    const result = await buildAgentTaskContext({
+      projectPath: sourcePath,
+      task: 'Explain the retry implementation',
+    });
+
+    expect(result.status).toBe('ready');
+    if (result.status !== 'ready' && result.status !== 'partial')
+      throw new Error('Expected a task context for a parent workspace');
+    expect(result.scope.workspaceResolution).toEqual({
+      status: 'resolved',
+      source: 'parent',
+      managedDefault: false,
+    });
+  });
+
+  it('distinguishes a linked managed-default workspace without emitting its path', async () => {
+    const { sourcePath, homeDir } = await managedProject('managed-default');
+    vi.stubEnv(process.platform === 'win32' ? 'USERPROFILE' : 'HOME', homeDir);
+
+    const result = await buildAgentTaskContext({
+      projectPath: sourcePath,
+      task: 'Explain the retry implementation',
+    });
+
+    expect(result.status).toBe('ready');
+    if (result.status !== 'ready' && result.status !== 'partial')
+      throw new Error('Expected a task context for the managed default workspace');
+    expect(result.scope.workspaceResolution).toEqual({
+      status: 'resolved',
+      source: 'local-link',
+      managedDefault: true,
+    });
+    expect(JSON.stringify(result)).not.toContain(homeDir);
+  });
+
+  it('reports an unlinked source as unmanaged without claiming host tool availability', async () => {
+    const { sourcePath } = await managedProject();
+    await fsExtra.remove(path.join(sourcePath, '.workspai/workspace-link.local.json'));
+
+    const result = await buildAgentTaskContext({
+      projectPath: sourcePath,
+      task: 'Explain the retry implementation',
+    });
+
+    expect(result.status).toBe('partial');
+    if (result.status !== 'partial') throw new Error('Expected partial context without a binding');
+    expect(result.scope.workspaceResolution).toEqual({
+      status: 'unmanaged',
+      source: 'none',
+      managedDefault: false,
+    });
+    expect(result.delivery).toEqual({
+      status: 'prepared',
+      hostLoading: 'not-observed',
+      modelCompliance: 'not-observed',
+    });
   });
 
   it('discloses another project changing after sealing without forcing workspace repair or claiming fresh Graph evidence', async () => {
@@ -234,7 +541,8 @@ describe('agent task context', () => {
     });
     expect(snapshot).toHaveBeenCalledTimes(1);
     expect(result.status).toBe('partial');
-    if (result.status === 'insufficient-budget') throw new Error('Expected partial packet');
+    if (result.status !== 'ready' && result.status !== 'partial')
+      throw new Error('Expected partial packet');
     expect(result.graph).toMatchObject({
       status: 'unavailable',
       inputValidation: {
@@ -272,7 +580,8 @@ describe('agent task context', () => {
     });
     expect(snapshot).toHaveBeenCalledTimes(1);
     expect(result.status).toBe('partial');
-    if (result.status === 'insufficient-budget') throw new Error('Expected partial packet');
+    if (result.status !== 'ready' && result.status !== 'partial')
+      throw new Error('Expected partial packet');
     expect(result.graph).toMatchObject({
       status: 'unavailable',
       reason: expect.stringContaining('input-scan-failed'),
@@ -289,7 +598,8 @@ describe('agent task context', () => {
     };
     const full = await buildAgentTaskContext({ ...request, maxBytes: 131072 });
     expect(full.status).toBe('ready');
-    if (full.status === 'insufficient-budget') throw new Error('Unexpected budget refusal');
+    if (full.status !== 'ready' && full.status !== 'partial')
+      throw new Error('Unexpected budget refusal');
     expect(full.budget.usedBytes).toBeGreaterThan(8192);
     const refusal = await buildAgentTaskContext({ ...request, maxBytes: 8192 });
     expect(refusal.status).toBe('insufficient-budget');
@@ -300,12 +610,24 @@ describe('agent task context', () => {
       refusal.budget.requiredBytes
     );
     expect(refusal.nextActions.join('\n')).toContain(`--max-bytes ${refusal.budget.requiredBytes}`);
+    const command = refusal.recovery[0].command!;
+    expect(command).toMatchObject({ cwd: '.', cwdBase: 'request-project-directory' });
+    const replay = await execa(process.execPath, [path.resolve('dist/index.js'), ...command.args], {
+      cwd: sourcePath,
+    });
+    expect(JSON.parse(replay.stdout)).toMatchObject({
+      status: 'ready',
+      task: { text: request.task },
+      scope: { project: 'api' },
+      lifecycle: { selection: { path: 'src/index.ts' } },
+    });
     const retry = await buildAgentTaskContext({
       ...request,
       maxBytes: refusal.budget.requiredBytes,
     });
     expect(retry.status).toBe('ready');
-    if (retry.status === 'insufficient-budget') throw new Error('One retry must suffice');
+    if (retry.status !== 'ready' && retry.status !== 'partial')
+      throw new Error('One retry must suffice');
     expect(retry.budget.usedBytes).toBe(refusal.budget.requiredBytes);
     expect(retry.graph).toEqual(full.graph);
     expect(retry.lifecycle).toEqual(full.lifecycle);
@@ -317,6 +639,53 @@ describe('agent task context', () => {
     expect(oneLess.budget).toHaveProperty('requiredBytes', refusal.budget.requiredBytes);
   });
 
+  it('recovers an oversized Graph with a valid match count while preserving task, host and project selection', async () => {
+    const { sourcePath } = await managedProject();
+    const buildView = vi.spyOn(graphView, 'buildWorkspaceGraphSearchView').mockReturnValueOnce({
+      schemaVersion: 'workspace-graph-search-view.v1',
+      status: 'insufficient-budget',
+      requestHash: 'a'.repeat(64),
+      graphHash: 'b'.repeat(64),
+      budget: { maxBytes: 131072, requiredBytes: 140000, accounting: 'utf8-json-with-newline' },
+      message: 'Oversized Graph evidence',
+      nextActions: ['Narrow Graph matches'],
+    });
+    const task = 'Fix "widget"; $(do-not-execute)';
+    const result = await buildAgentTaskContext({
+      projectPath: path.join(sourcePath, 'packages/ui'),
+      task,
+      forAgent: 'copilot',
+      path: 'packages/ui/src/widget.ts',
+      limit: 8,
+      maxBytes: 131072,
+    });
+    expect(result.status).toBe('insufficient-budget');
+    if (result.status !== 'insufficient-budget') throw new Error('Expected budget refusal');
+    expect(result.recovery[0].command?.args).toEqual([
+      'agent',
+      'context',
+      '--project',
+      '../..',
+      '--task',
+      task,
+      '--for-agent',
+      'copilot',
+      '--limit',
+      '1',
+      '--max-bytes',
+      '131072',
+      '--path',
+      'packages/ui/src/widget.ts',
+    ]);
+    buildView.mockRestore();
+    const replay = await execa(
+      process.execPath,
+      [path.resolve('dist/index.js'), ...result.recovery[0].command!.args],
+      { cwd: path.join(sourcePath, 'packages/ui') }
+    );
+    expect(JSON.parse(replay.stdout)).toMatchObject({ status: 'ready', scope: { project: 'api' } });
+  });
+
   it('uses the canonical project boundary for lifecycle selection when started in a nested package', async () => {
     const { sourcePath } = await managedProject();
     const result = await buildAgentTaskContext({
@@ -325,7 +694,8 @@ describe('agent task context', () => {
       path: 'packages/ui/src/widget.ts',
     });
     expect(result.status).toBe('ready');
-    if (result.status === 'insufficient-budget') throw new Error('Unexpected budget refusal');
+    if (result.status !== 'ready' && result.status !== 'partial')
+      throw new Error('Unexpected budget refusal');
     expect(result.scope.project).toBe('api');
     expect(result.lifecycle).toMatchObject({
       status: 'ready',
@@ -344,7 +714,8 @@ describe('agent task context', () => {
       task: 'Inspect the changed source',
     });
     expect(result.status).toBe('partial');
-    if (result.status === 'insufficient-budget') throw new Error('Unexpected budget refusal');
+    if (result.status !== 'ready' && result.status !== 'partial')
+      throw new Error('Unexpected budget refusal');
     expect(result.graph.status).toBe('unavailable');
     expect(result.nextActions.join('\n')).toContain('native');
     expect(result.nextActions.join('\n')).not.toMatch(
@@ -375,7 +746,8 @@ describe('agent task context', () => {
       task: 'Fix retry_delay',
       path: 'crates/sdk/src/lib.rs',
     });
-    if (result.status === 'insufficient-budget') throw new Error('Unexpected budget refusal');
+    if (result.status !== 'ready' && result.status !== 'partial')
+      throw new Error('Unexpected budget refusal');
     expect(result.lifecycle).toMatchObject({
       status: 'ready',
       units: [{ runtime: 'rust', root: 'crates/sdk', manifest: 'crates/sdk/Cargo.toml' }],
@@ -414,7 +786,8 @@ describe('agent task context', () => {
       task: 'Inspect retryDelay',
     });
     expect(result.status).toBe('ready');
-    if (result.status === 'insufficient-budget') throw new Error('Unexpected budget refusal');
+    if (result.status !== 'ready' && result.status !== 'partial')
+      throw new Error('Unexpected budget refusal');
     expect(result.grounding).toMatchObject({
       status: 'ready',
       claims: { sourceMutation: 'governed-cli-transaction-only' },
@@ -428,7 +801,8 @@ describe('agent task context', () => {
       task: 'Inspect retryDelay',
     });
     expect(tampered.status).toBe('partial');
-    if (tampered.status === 'insufficient-budget') throw new Error('Unexpected budget refusal');
+    if (tampered.status !== 'ready' && tampered.status !== 'partial')
+      throw new Error('Unexpected budget refusal');
     expect(tampered.grounding.status).toBe('unavailable');
     expect(tampered.graph.status).toBe('unavailable');
   });
@@ -456,8 +830,13 @@ describe('agent task context', () => {
     if (result.status !== 'insufficient-budget')
       throw new Error('Expected component-limit refusal');
     expect(result.message).toContain('component');
-    expect(result.nextActions.join('\n')).not.toContain('--max-bytes');
+    expect(result.recovery.some((action) => action.kind === 'retry')).toBe(false);
     expect(result.nextActions.join('\n')).toContain('native evidence');
+    expect(result.recovery).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ kind: 'select-path', requiredOption: '--path' }),
+      ])
+    );
   });
 
   it('returns useful native project checks when Workspai membership is absent', async () => {
@@ -479,12 +858,14 @@ describe('agent task context', () => {
     });
 
     expect(result.status).toBe('partial');
+    if (result.status !== 'partial') throw new Error('Expected native packet');
     expect(result.scope).toMatchObject({
       project: path.basename(projectPath),
       projectPath: '.',
       workspace: null,
       binding: 'not-workspai-managed',
     });
+    expect(result.execution.workspaceLocator).toBeNull();
     expect(result.grounding).toMatchObject({ status: 'unavailable' });
     expect(result.graph).toMatchObject({ status: 'unavailable' });
     expect(result.nextActions).toEqual(

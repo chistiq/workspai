@@ -35,6 +35,10 @@ import type {
   WorkspaceKnowledgeGraph,
 } from './contracts/workspace-knowledge-graph-contract.js';
 import type { WorkspaceContract } from './utils/workspace-contract.js';
+import type {
+  ProjectLifecycleContext,
+  ProjectLifecycleContextFailure,
+} from './project-lifecycle-context.js';
 import {
   WORKSPACE_INTELLIGENCE_ARTIFACTS,
   WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
@@ -45,6 +49,34 @@ const CORE_REQUIRED_REPORTS = [
   WORKSPACE_CONTEXT_AGENT_REPORT_PATH,
   WORKSPACE_VERIFY_REPORT_PATH,
 ] as const;
+
+export function buildTaskOperationalSkill(
+  project: string,
+  lifecycle: ProjectLifecycleContext | ProjectLifecycleContextFailure
+) {
+  const runtimes =
+    'units' in lifecycle ? [...new Set(lifecycle.units.map((unit) => unit.runtime))].sort() : [];
+  return {
+    skillId:
+      runtimes.length === 1
+        ? `workspai-${runtimes[0]}-runtime-validation`
+        : runtimes.length > 1
+          ? 'workspai-polyglot-change-validation'
+          : 'workspai-native-project-validation',
+    scope: 'project' as const,
+    project,
+    runtimes,
+    provenance:
+      runtimes.length > 0 ? ('task-lifecycle-manifests' as const) : ('native-fallback' as const),
+    authority: 'guidance-only' as const,
+    procedure: [
+      'Use lifecycle.units for the affected manifest boundary; once a source path is known, select --path if multiple units are present.',
+      'Set every command cwd relative to the selected project. Inspect declared setup and runner prerequisites once; lifecycle readiness does not prove an installed environment.',
+      'Run the relevant native check after the final edit. Report setup limitations separately from test failures; extracted-function checks do not verify package imports or integration.',
+      'Use project-scoped Doctor for project failures. Workspace release readiness applies to workspace/release work, not unrelated local validation.',
+    ],
+  };
+}
 
 export const WORKSPAI_GENERATED_OPERATIONAL_SKILL_MARKER =
   '<!-- WORKSPAI:GENERATED-OPERATIONAL-SKILL -->' as const;
@@ -760,6 +792,7 @@ export async function writeWorkspaceOperationalSkills(input: {
     skills: input.skills.map((skill) => ({
       id: skill.skillId,
       path: skill.canonicalPath,
+      scopedProjects: skill.scopedProjects,
       hash: computeInputsHash({ markdown: skill.markdown }),
     })),
     decisions: input.decisions ?? [],

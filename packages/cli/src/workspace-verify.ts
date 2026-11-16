@@ -10,6 +10,7 @@ import {
   WORKSPACE_IMPACT_SCHEMA_VERSION,
   WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH,
   workspaceVerificationPlan,
+  projectVerificationPlan,
   type WorkspaceImpact,
   type WorkspaceImpactCommand,
   type WorkspaceImpactRisk,
@@ -54,6 +55,7 @@ import {
   assertDoctorEvidenceSemanticInvariants,
   isDoctorEvidencePayloadCompatible,
 } from './utils/doctor-evidence-contract.js';
+import { transitiveDependents } from './workspace-graph-traversal.js';
 
 export const WORKSPACE_VERIFY_SCHEMA_VERSION = WORKSPACE_INTELLIGENCE_ARTIFACT_SCHEMAS.verify;
 export const WORKSPACE_VERIFY_REPORT_PATH = WORKSPACE_INTELLIGENCE_ARTIFACTS.verify;
@@ -163,6 +165,12 @@ export type BuildWorkspaceVerifyOptions = Pick<
 > & {
   fromImpactPath?: string;
   scope?: string;
+  /** Project mode verifies the selected project's impact closure without gating workspace readiness. */
+  verificationMode?: 'workspace' | 'project';
+  /** Pinned projects whose runtime checks remain mandatory even with no structural Model diff. */
+  requiredProjects?: string[];
+  /** Require project run evidence generated strictly after the latest governed effect. */
+  minimumEvidenceGeneratedAt?: string;
 };
 
 function resolveWorkspaceRelativePath(workspacePath: string, filePath: string): string {
@@ -474,7 +482,16 @@ function resolveKeyedProjectStage(
   payload: Record<string, unknown>,
   projectName: string,
   stage: string
-): { generatedAt?: string; status?: string } | 'ambiguous' | null {
+):
+  | {
+      generatedAt?: string;
+      status?: string;
+      durationMs?: number;
+      reusePassed?: boolean;
+      planOnly?: boolean;
+    }
+  | 'ambiguous'
+  | null {
   const projectStages =
     asRecord(payload.projectStages) ??
     asRecord(asRecord(payload.enterpriseControls)?.projectStages);
@@ -507,14 +524,41 @@ function resolveKeyedProjectStage(
     ? {
         generatedAt: typeof record.generatedAt === 'string' ? record.generatedAt : undefined,
         status: typeof record.status === 'string' ? record.status : undefined,
+        durationMs: typeof record.durationMs === 'number' ? record.durationMs : undefined,
+        reusePassed: record.reusePassed === true,
+        planOnly: record.planOnly === true,
       }
     : null;
+}
+
+function governedRunEvidenceError(
+  run: { generatedAt?: string; durationMs?: number; reusePassed?: boolean; planOnly?: boolean },
+  minimumGeneratedAt: string | undefined
+): string | null {
+  if (!minimumGeneratedAt) return null;
+  if (run.reusePassed || run.planOnly) {
+    return 'Governed verification requires an executed check; rerun without --reuse-passed or --plan.';
+  }
+  if (
+    typeof run.durationMs !== 'number' ||
+    !Number.isFinite(run.durationMs) ||
+    run.durationMs < 0
+  ) {
+    return 'Governed verification cannot establish the run start time; rerun the project check.';
+  }
+  const startedAt = Date.parse(run.generatedAt ?? '') - run.durationMs;
+  if (!Number.isFinite(startedAt) || startedAt <= Date.parse(minimumGeneratedAt)) {
+    return `Project verification must start after the latest governed effect ${minimumGeneratedAt}.`;
+  }
+  return null;
 }
 
 function evaluateWorkspaceRunEvidence(
   payload: Record<string, unknown>,
   command: WorkspaceImpactCommand,
-  minGeneratedAt?: string
+  minGeneratedAt?: string,
+  freshnessFloorLabel = 'impact',
+  requireStrictlyAfterFloor = false
 ): EvidenceEvaluation {
   const stage = resolveWorkspaceRunStageFromCommand(command);
   const stageReport = resolveWorkspaceRunStageReport(payload, stage ?? undefined);
@@ -565,7 +609,9 @@ function evaluateWorkspaceRunEvidence(
     const staleMessage = staleEvidenceMessage(
       stageReport.generatedAt,
       minGeneratedAt,
-      `Workspace run evidence for ${command.project ?? command.id}`
+      `Workspace run evidence for ${command.project ?? command.id}`,
+      freshnessFloorLabel,
+      requireStrictlyAfterFloor
     );
     if (staleMessage) {
       return { status: 'fail', message: staleMessage };
@@ -579,6 +625,18 @@ function evaluateWorkspaceRunEvidence(
       };
     }
     if (status === 'passed') {
+      const executionError = requireStrictlyAfterFloor
+        ? governedRunEvidenceError(
+            {
+              generatedAt: stageReport.generatedAt,
+              durationMs: stageReport.durationMs,
+              reusePassed: stageReport.options.reusePassed,
+              planOnly: stageReport.options.planOnly,
+            },
+            minGeneratedAt
+          )
+        : null;
+      if (executionError) return { status: 'fail', message: executionError };
       return { status: 'pass', message: `Workspace run evidence passed for ${command.project}.` };
     }
     if (status === 'skipped') {
@@ -593,12 +651,18 @@ function evaluateWorkspaceRunEvidence(
         const staleKeyed = staleEvidenceMessage(
           keyed.generatedAt,
           minGeneratedAt,
-          `Workspace run evidence for ${command.project ?? command.id}`
+          `Workspace run evidence for ${command.project ?? command.id}`,
+          freshnessFloorLabel,
+          requireStrictlyAfterFloor
         );
         if (staleKeyed) {
           return { status: 'fail', message: staleKeyed };
         }
         if (keyed.status === 'passed') {
+          const executionError = requireStrictlyAfterFloor
+            ? governedRunEvidenceError(keyed, minGeneratedAt)
+            : null;
+          if (executionError) return { status: 'fail', message: executionError };
           return {
             status: 'pass',
             message: `Workspace run evidence passed for ${command.project} from keyed project/stage history.`,
@@ -627,24 +691,27 @@ function evaluateWorkspaceRunEvidence(
 function staleEvidenceMessage(
   evidenceGeneratedAt: unknown,
   minGeneratedAt: string | undefined,
-  label: string
+  label: string,
+  freshnessFloorLabel = 'impact',
+  requireStrictlyAfterFloor = false
 ): string | null {
   if (!minGeneratedAt) {
     return null;
   }
   if (typeof evidenceGeneratedAt !== 'string' || evidenceGeneratedAt.trim().length === 0) {
-    return `${label} is stale: missing generatedAt timestamp (required after impact ${minGeneratedAt}).`;
+    return `${label} is stale: missing generatedAt timestamp (required after ${freshnessFloorLabel} ${minGeneratedAt}).`;
   }
   const evidenceTime = Date.parse(evidenceGeneratedAt);
   const minTime = Date.parse(minGeneratedAt);
   if (!Number.isFinite(evidenceTime)) {
-    return `${label} is stale: invalid generatedAt timestamp (required after impact ${minGeneratedAt}).`;
+    return `${label} is stale: invalid generatedAt timestamp (required after ${freshnessFloorLabel} ${minGeneratedAt}).`;
   }
   if (!Number.isFinite(minTime)) {
     return null;
   }
-  if (evidenceTime < minTime) {
-    return `${label} is stale: generated at ${evidenceGeneratedAt}, before impact ${minGeneratedAt}.`;
+  if (requireStrictlyAfterFloor ? evidenceTime <= minTime : evidenceTime < minTime) {
+    const relation = requireStrictlyAfterFloor ? 'not after' : 'before';
+    return `${label} is stale: generated at ${evidenceGeneratedAt}, ${relation} ${freshnessFloorLabel} ${minGeneratedAt}.`;
   }
   return null;
 }
@@ -672,7 +739,9 @@ async function evaluateCommandEvidence(
   command: WorkspaceImpactCommand,
   workspacePath: string,
   hasWorkspaceContract: boolean,
-  minGeneratedAt?: string
+  minGeneratedAt?: string,
+  freshnessFloorLabel = 'impact',
+  requireStrictlyAfterFloor = false
 ): Promise<WorkspaceVerifyStep> {
   const evidencePath = evidencePathForCommand(command, workspacePath);
   const relativeEvidencePath = evidencePath
@@ -839,7 +908,13 @@ async function evaluateCommandEvidence(
       evaluation = evaluateDoctorFixEvidence(payload);
     }
   } else if (command.id.startsWith('project.')) {
-    evaluation = evaluateWorkspaceRunEvidence(payload, command, minGeneratedAt);
+    evaluation = evaluateWorkspaceRunEvidence(
+      payload,
+      command,
+      minGeneratedAt,
+      freshnessFloorLabel,
+      requireStrictlyAfterFloor
+    );
   } else {
     const staleMessage = staleEvidenceMessage(
       payload.generatedAt,
@@ -1035,6 +1110,12 @@ async function resolveImpactForVerify(
   options: BuildWorkspaceVerifyOptions
 ): Promise<{ impact: WorkspaceImpact; fromImpactRef?: string; impactFromDisk: boolean }> {
   const workspacePath = path.resolve(options.workspacePath);
+  if (
+    options.minimumEvidenceGeneratedAt !== undefined &&
+    !Number.isFinite(Date.parse(options.minimumEvidenceGeneratedAt))
+  ) {
+    throw new Error('The governed effect freshness boundary must be a valid timestamp.');
+  }
 
   if (options.fromImpactPath) {
     const impactPath = resolveWorkspaceRelativePath(workspacePath, options.fromImpactPath);
@@ -1043,6 +1124,24 @@ async function resolveImpactForVerify(
       fromImpactRef: path.relative(workspacePath, impactPath).split(path.sep).join('/'),
       impactFromDisk: true,
     };
+  }
+
+  // A local project gate must recompute its impact closure from the stable
+  // model snapshot. The workspace-wide impact report can contain unrelated
+  // project changes and is not a safe scope boundary for a project task.
+  if (options.verificationMode === 'project') {
+    const snapshotPath = path.join(workspacePath, WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH);
+    if (await fsExtra.pathExists(snapshotPath)) {
+      return {
+        impact: await buildWorkspaceImpact({
+          workspacePath,
+          fromPath: WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH,
+          now: options.now,
+        }),
+        fromImpactRef: WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH,
+        impactFromDisk: false,
+      };
+    }
   }
 
   const defaultImpactPath = path.join(workspacePath, WORKSPACE_IMPACT_REPORT_PATH);
@@ -1059,7 +1158,7 @@ async function resolveImpactForVerify(
     const impact = await buildWorkspaceImpact({
       workspacePath,
       fromPath: WORKSPACE_MODEL_SNAPSHOT_REPORT_PATH,
-      scope: options.scope,
+      scope: options.verificationMode === 'project' ? undefined : options.scope,
       includeAbsolutePaths: options.includeAbsolutePaths,
       includeEvidence: options.includeEvidence,
       observableScanDepth: options.observableScanDepth,
@@ -1143,16 +1242,24 @@ async function resolveImpactForVerify(
 
 function resolveEvidenceFreshnessFloor(
   impact: WorkspaceImpact,
-  impactFromDisk: boolean
+  impactFromDisk: boolean,
+  minimumEvidenceGeneratedAt?: string
 ): string | undefined {
-  if (impactFromDisk) {
-    return impact.generatedAt;
+  const floors = [
+    ...(impactFromDisk ? [impact.generatedAt] : []),
+    ...(minimumEvidenceGeneratedAt ? [minimumEvidenceGeneratedAt] : []),
+  ].filter((value) => Number.isFinite(Date.parse(value)));
+  if (floors.length > 0) {
+    return floors.reduce((latest, value) =>
+      Date.parse(value) > Date.parse(latest) ? value : latest
+    );
   }
   // A default verify run may build an impact/diff object on the fly. That
   // generatedAt represents the verification command time, not an operator
   // supplied impact baseline. Using it as a freshness floor makes freshly
   // generated doctor/analyze/readiness evidence look stale by construction.
-  // Keep strict freshness gating for persisted impact reports and --from-impact.
+  // Keep floors for persisted impact reports, --from-impact, and explicit
+  // governed effect boundaries; ignore only ephemeral impact timestamps.
   return undefined;
 }
 
@@ -1160,7 +1267,25 @@ export async function buildWorkspaceVerify(
   options: BuildWorkspaceVerifyOptions
 ): Promise<WorkspaceVerify> {
   const workspacePath = path.resolve(options.workspacePath);
-  const { impact, fromImpactRef, impactFromDisk } = await resolveImpactForVerify(options);
+  if (options.verificationMode === 'project' && !options.scope) {
+    throw new Error('Project verification requires an explicit project scope.');
+  }
+  const {
+    impact: resolvedImpact,
+    fromImpactRef,
+    impactFromDisk,
+  } = await resolveImpactForVerify(options);
+  const impact =
+    options.verificationMode === 'project'
+      ? await buildWorkspaceImpact({
+          workspacePath,
+          fromPath: resolvedImpact.diff.fromRef,
+          diff: resolvedImpact.diff,
+          scope: options.scope,
+          includeTransitiveOutsideScope: true,
+          now: options.now,
+        })
+      : resolvedImpact;
   const model = impact.diff.currentModel;
   const currentModel = impactFromDisk
     ? await buildWorkspaceModel({
@@ -1177,7 +1302,7 @@ export async function buildWorkspaceVerify(
       workspacePath,
       fromPath: impact.diff.fromRef,
       diff: impact.diff,
-      scope: options.scope,
+      scope: options.verificationMode === 'project' ? undefined : options.scope,
       now: options.now,
     });
     const persistedSemantics = [
@@ -1225,11 +1350,94 @@ export async function buildWorkspaceVerify(
       );
     }
   }
-  const evidenceGeneratedAtFloor = resolveEvidenceFreshnessFloor(impact, impactFromDisk);
-  const verificationPlan = dedupeCommands([
-    ...workspaceVerificationPlan(),
-    ...impact.verificationPlan,
-  ]).filter((command) => scopeMatchesCommand(options.scope, command));
+  const evidenceGeneratedAtFloor = resolveEvidenceFreshnessFloor(
+    impact,
+    impactFromDisk,
+    options.minimumEvidenceGeneratedAt
+  );
+  let verificationPlan: WorkspaceImpactCommand[];
+  let projectScopeResolved = true;
+  const verificationProjectNames = new Set<string>();
+  if (options.verificationMode === 'project') {
+    const normalizedScope = (options.scope ?? '')
+      .replace(/^project:/u, '')
+      .trim()
+      .toLowerCase();
+    const targetProject = impact.diff.currentModel.projects.find((project) =>
+      [project.name, project.path, path.basename(project.path), project.absolutePath]
+        .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
+        .some((value) => value.trim().toLowerCase() === normalizedScope)
+    );
+    projectScopeResolved = Boolean(targetProject);
+    if (targetProject) {
+      verificationProjectNames.add(targetProject.name);
+      const topology = workspaceModelProjectTopology(impact.diff.currentModel);
+      if (topology) {
+        for (const projectName of transitiveDependents(
+          topology,
+          new Set([targetProject.name])
+        ).keys()) {
+          verificationProjectNames.add(projectName);
+        }
+      }
+    }
+    verificationPlan = dedupeCommands([
+      ...impact.diff.currentModel.projects
+        .filter((project) => verificationProjectNames.has(project.name))
+        .flatMap((project) => projectVerificationPlan(project)),
+      ...impact.verificationPlan.filter((command) => command.scope === 'project'),
+    ]);
+  } else {
+    verificationPlan = dedupeCommands([
+      ...workspaceVerificationPlan(),
+      ...impact.verificationPlan,
+    ]).filter((command) => scopeMatchesCommand(options.scope, command));
+  }
+
+  const projectScopeBlockingReasons: string[] = [];
+  for (const requiredProject of options.requiredProjects ?? []) {
+    const project = model.projects.find((candidate) => candidate.name === requiredProject);
+    if (!project) {
+      projectScopeBlockingReasons.push(
+        `project.verify: Required project '${requiredProject}' is not registered.`
+      );
+      continue;
+    }
+    verificationProjectNames.add(project.name);
+    const topology = workspaceModelProjectTopology(model);
+    if (topology) {
+      for (const dependent of transitiveDependents(topology, new Set([project.name])).keys()) {
+        verificationProjectNames.add(dependent);
+      }
+    }
+  }
+  if ((options.requiredProjects?.length ?? 0) > 0) {
+    verificationPlan = dedupeCommands([
+      ...verificationPlan,
+      ...model.projects
+        .filter((project) => verificationProjectNames.has(project.name))
+        .flatMap(projectVerificationPlan),
+    ]);
+  }
+  if (options.verificationMode === 'project' || (options.requiredProjects?.length ?? 0) > 0) {
+    if (options.verificationMode === 'project' && !projectScopeResolved) {
+      projectScopeBlockingReasons.push(
+        `project.verify: Scope '${options.scope}' does not resolve to a registered project.`
+      );
+    }
+    const projectsByName = new Map(model.projects.map((project) => [project.name, project]));
+    for (const projectName of [...verificationProjectNames].sort((a, b) => a.localeCompare(b))) {
+      const project = projectsByName.get(projectName);
+      if (
+        project &&
+        !projectVerificationPlan(project).some((command) => /\.(test|build)$/u.test(command.id))
+      ) {
+        projectScopeBlockingReasons.push(
+          `project.verify: Project '${projectName}' has no declared test or build stage; local verification cannot claim a passing result.`
+        );
+      }
+    }
+  }
 
   const steps: WorkspaceVerifyStep[] = [];
   for (const command of verificationPlan) {
@@ -1238,9 +1446,20 @@ export async function buildWorkspaceVerify(
         command,
         workspacePath,
         model.contracts.exists === true,
-        evidenceGeneratedAtFloor
+        evidenceGeneratedAtFloor,
+        options.minimumEvidenceGeneratedAt ? 'latest governed effect' : 'impact',
+        Boolean(options.minimumEvidenceGeneratedAt)
       )
     );
+  }
+  if (options.minimumEvidenceGeneratedAt) {
+    for (const step of steps) {
+      if (step.scope === 'project' && step.required && step.status !== 'pass') {
+        projectScopeBlockingReasons.push(
+          `project.verify: ${step.id} requires passing post-effect evidence (observed ${step.status}).`
+        );
+      }
+    }
   }
 
   const subgraphGate = computeAffectedSubgraphGate(impact, steps);
@@ -1272,6 +1491,7 @@ export async function buildWorkspaceVerify(
       ...integrityReasons,
       ...policyDecision.blockingReasons,
       ...impactDriftReasons,
+      ...projectScopeBlockingReasons,
     ],
     needsAttention: subgraphGate.needsAttention || policyDecision.needsAttention,
   });
@@ -1287,6 +1507,7 @@ export async function buildWorkspaceVerify(
     ...integrityReasons,
     ...policyDecision.blockingReasons,
     ...impactDriftReasons,
+    ...projectScopeBlockingReasons,
   ];
   const policyErrorCount = policyViolations.filter(
     (violation) => violation.severity === 'error'
@@ -1312,8 +1533,13 @@ export async function buildWorkspaceVerify(
       sourceCommand: sourceStep?.command.display,
       sourceArtifact: sourceStep?.evidencePath,
       verifyCommand:
-        'npx workspai workspace verify --from-impact .workspai/reports/workspace-impact-last-run.json --json',
-      verifyArtifact: WORKSPACE_VERIFY_REPORT_PATH,
+        options.verificationMode === 'project'
+          ? 'npx workspai change verify --change <change-id> --json'
+          : 'npx workspai workspace verify --from-impact .workspai/reports/workspace-impact-last-run.json --json',
+      verifyArtifact:
+        options.verificationMode === 'project'
+          ? '.workspai/changes/<change-id>/verification/workspace-verify.json'
+          : WORKSPACE_VERIFY_REPORT_PATH,
     });
   });
 
