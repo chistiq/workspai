@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
+- Canonicalize filesystem identity at project-discovery and graph-freshness
+  boundaries. Equivalent temporary/workspace paths no longer duplicate an
+  adopted project or invalidate workspace evidence; Git-root selection accepts
+  the same physical repository across platform-specific path spellings.
 - Separate structural grounding freshness from expired workspace verification
   reports so adoption can seal current source evidence without renewing Doctor,
   Analyze or Readiness TTLs. Keep stale reports visible and strict bootstrap
@@ -46,6 +50,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the central managed default from parent and other linked workspaces without
   emitting local paths, and preserve stale/ambiguous bindings as blocked instead
   of misclassifying them as unmanaged.
+- Let an agent request user approval before reading a project-scoped Graph from
+  the managed central or another canonical workspace. Validate exact project
+  membership on retry, keep the source scope unchanged, and never adopt, relink,
+  refresh or disclose the workspace path as part of this read-only route.
 - Make project-versus-workspace command scope explicit in task packets. Treat the
   packet's bounded Graph query as complete, keep separate Graph search optional,
   and distinguish unavailable host tools or permission failures from stale graph

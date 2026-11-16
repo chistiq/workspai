@@ -72,7 +72,7 @@
                   "required": ["status", "source", "managedDefault"],
                   "properties": {
                     "status": { "const": "resolved" },
-                    "source": { "enum": ["parent", "local-link", "registry"] },
+                    "source": { "enum": ["explicit", "parent", "local-link", "registry"] },
                     "managedDefault": { "type": "boolean" }
                   }
                 },
@@ -415,6 +415,24 @@
           "type": "string",
           "minLength": 1
         },
+        "userAction": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "status",
+            "managedDefaultOption",
+            "explicitWorkspaceOption",
+            "message"
+          ],
+          "properties": {
+            "kind": { "const": "request-project-graph-access" },
+            "status": { "enum": ["requires-consent", "workspace-choice-unverified"] },
+            "managedDefaultOption": { "const": "--workspace-default" },
+            "explicitWorkspaceOption": { "const": "--workspace" },
+            "message": { "type": "string", "minLength": 1 }
+          }
+        },
         "inputValidation": {
           "$ref": "agent-bootstrap-receipt.v1.json#/$defs/inputValidation"
         }
@@ -429,14 +447,14 @@
         "required": ["kind", "message"],
         "properties": {
           "kind": {
-            "enum": ["retry", "select-project", "select-path", "native"]
+            "enum": ["retry", "select-project", "select-path", "select-workspace", "native"]
           },
           "message": {
             "type": "string",
             "minLength": 1
           },
           "requiredOption": {
-            "enum": ["--project", "--path"]
+            "enum": ["--project", "--path", "--workspace", "--workspace-default"]
           },
           "command": {
             "type": "object",

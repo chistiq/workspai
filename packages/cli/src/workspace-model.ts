@@ -71,6 +71,7 @@ import {
   publishableWorkspaceProjectIdentity,
   resolveWorkspaceProjectFilesystemPath,
 } from './utils/workspace-project-paths.js';
+import { normalizeRegistryPath } from './utils/registry-path.js';
 import { resolveWorkspaceProfileCompatibility } from './workspace-profile-compatibility.js';
 import {
   buildProjectKnowledgeGraphReference,
@@ -433,10 +434,11 @@ function collectUniquePaths(paths: string[]): string[] {
   const output: string[] = [];
   for (const item of paths) {
     const resolved = path.resolve(item);
-    if (seen.has(resolved)) {
+    const physicalIdentity = normalizeRegistryPath(resolved);
+    if (seen.has(physicalIdentity)) {
       continue;
     }
-    seen.add(resolved);
+    seen.add(physicalIdentity);
     output.push(resolved);
   }
   return output.sort((a, b) => a.localeCompare(b));
@@ -1459,7 +1461,7 @@ async function discoverWorkspaceModelInputs(workspacePath: string, observableSca
       project.relativePath,
       project.externalPath ? { absolutePath: project.externalPath } : {}
     );
-    contractProjectPaths.set(projectPath, project);
+    contractProjectPaths.set(normalizeRegistryPath(projectPath), project);
   }
   const projectPaths = collectUniquePaths([
     ...rapidkitProjectPaths,
@@ -1513,7 +1515,7 @@ export async function buildWorkspaceModel(
       return buildProjectModel(workspacePath, projectPath, {
         includeAbsolutePaths,
         includeEvidence,
-        contractProject: contractProjectPaths.get(path.resolve(projectPath)),
+        contractProject: contractProjectPaths.get(normalizeRegistryPath(projectPath)),
       });
     })
   );

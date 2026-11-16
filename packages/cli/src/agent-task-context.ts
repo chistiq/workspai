@@ -3,10 +3,10 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { hasRootLifecycleManifest } from './polyglot-lifecycle-plan.js';
 import { findContainingGitRoot } from './utils/git-worktree.js';
+import { normalizeRegistryPath } from './utils/registry-path.js';
 import { taskContextRetry } from './agent-task-recovery.js';
 import type { AgentTaskRecovery, AgentTaskRequest } from './agent-task-recovery.js';
 import {
-  AGENT_JSON_CONSUMPTION_GUIDANCE,
   AGENT_CONTINUATION_GUIDANCE,
   AGENT_VERIFICATION_GUIDANCE,
 } from './agent-output-guidance.js';
@@ -57,13 +57,20 @@ type ContextUnavailable = {
   status: 'unavailable';
   reason: string;
   nextAction: string;
+  userAction?: {
+    kind: 'request-project-graph-access';
+    status: 'requires-consent' | 'workspace-choice-unverified';
+    managedDefaultOption: '--workspace-default';
+    explicitWorkspaceOption: '--workspace';
+    message: string;
+  };
   inputValidation?: WorkspaceGraphInputValidation;
 };
 
 export type AgentTaskWorkspaceResolution =
   | {
       status: 'resolved';
-      source: Exclude<ProjectWorkspaceResolutionSource, 'explicit'>;
+      source: ProjectWorkspaceResolutionSource;
       managedDefault: boolean;
     }
   | { status: 'unmanaged'; source: 'none'; managedDefault: false }
@@ -180,14 +187,6 @@ function describeWorkspaceResolution(
   unexpectedFailure: boolean
 ): AgentTaskWorkspaceResolution {
   if (resolution) {
-    if (resolution.source === 'explicit') {
-      return {
-        status: 'blocked',
-        source: 'none',
-        managedDefault: false,
-        reason: 'resolution-failed',
-      };
-    }
     let managedDefault = false;
     try {
       managedDefault =
@@ -230,22 +229,9 @@ function failureBudget(
   const componentLimited = limitedComponents.length > 0;
   const canIncrease = !componentLimited && requiredBytes <= MAX_AGENT_TASK_CONTEXT_MAX_BYTES;
   const recovery: AgentTaskRecovery[] = canIncrease
-    ? [
-        {
-          kind: 'retry',
-          message:
-            'Retry once with the exact aggregate byte budget. Preserve project, task and host.',
-          command: taskContextRetry(request, { maxBytes: requiredBytes }),
-        },
-      ]
+    ? [taskContextRetry(request, { maxBytes: requiredBytes })]
     : limitedComponents.length === 1 && limitedComponents[0] === 'graph' && request.limit > 1
-      ? [
-          {
-            kind: 'retry',
-            message: 'Reduce Graph matches to one; --limit counts matches, not bytes.',
-            command: taskContextRetry(request, { limit: 1 }),
-          },
-        ]
+      ? [taskContextRetry(request, { limit: 1 })]
       : [
           ...(limitedComponents.includes('lifecycle') && request.path === undefined
             ? [
@@ -275,9 +261,11 @@ function failureBudget(
       ? 'A required component exceeds its maximum view budget; no partial task packet was emitted.'
       : 'The complete task context does not fit; no partial packet was emitted.',
     nextActions: [
-      canIncrease
+      recovery[0]?.command
         ? `Use recovery[0].command from its declared cwd base with --max-bytes ${requiredBytes}. Do not change the project, task or host.`
-        : 'Follow the structured recovery action once, or continue with targeted native evidence. --limit is a match count from 1 to 12; --max-bytes is a UTF-8 byte budget.',
+        : recovery[0]?.kind === 'select-workspace'
+          ? recovery[0].message
+          : 'Follow the structured recovery action once, or continue with targeted native evidence. --limit is a match count from 1 to 12; --max-bytes is a UTF-8 byte budget.',
     ],
     recovery,
   };
@@ -351,6 +339,10 @@ export async function buildAgentTaskContext(input: {
   task: string;
   forAgent?: string;
   path?: string;
+  /** Explicit workspace root supplied by the user; membership is validated and no link is written. */
+  canonicalWorkspacePath?: string;
+  /** Resolve only the configured managed default, after user consent, then validate membership. */
+  managedDefaultWorkspace?: boolean;
   limit?: number;
   maxBytes?: string | number;
 }): Promise<AgentTaskContext | AgentTaskContextBudgetFailure | AgentTaskContextSelectionRequired> {
@@ -364,6 +356,19 @@ export async function buildAgentTaskContext(input: {
     throw new Error(`--task must not exceed ${MAX_TASK_BYTES} UTF-8 bytes.`);
   }
   if (task.includes('\u0000')) throw new Error('--task must not contain NUL characters.');
+  if (
+    (input.canonicalWorkspacePath !== undefined && input.managedDefaultWorkspace === true) ||
+    (input.canonicalWorkspacePath !== undefined &&
+      (typeof input.canonicalWorkspacePath !== 'string' ||
+        !input.canonicalWorkspacePath.trim() ||
+        input.canonicalWorkspacePath.length > 2000 ||
+        /[\0\r\n]/.test(input.canonicalWorkspacePath) ||
+        !path.isAbsolute(input.canonicalWorkspacePath)))
+  ) {
+    throw new Error(
+      'Supply either --workspace with an absolute canonical root or --workspace-default, not both.'
+    );
+  }
   const limit = input.limit ?? 8;
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 12) {
     throw new Error(
@@ -378,6 +383,11 @@ export async function buildAgentTaskContext(input: {
     forAgent: input.forAgent ?? 'generic',
     project: '.',
     ...(input.path === undefined ? {} : { path: input.path }),
+    ...(input.managedDefaultWorkspace
+      ? { workspaceChoice: 'managed-default' as const }
+      : input.canonicalWorkspacePath
+        ? { workspaceChoice: 'explicit' as const }
+        : {}),
     limit,
     maxBytes,
   };
@@ -420,6 +430,9 @@ export async function buildAgentTaskContext(input: {
   try {
     resolution = resolveProjectWorkspaceSync({
       startPath: selectedProjectPath,
+      explicitWorkspacePath:
+        input.canonicalWorkspacePath ??
+        (input.managedDefaultWorkspace ? resolveManagedDefaultImportWorkspacePath() : undefined),
       strict: true,
       requireProjectMembership: true,
     });
@@ -446,7 +459,7 @@ export async function buildAgentTaskContext(input: {
   const hasRootEvidence =
     !!resolution?.projectPath ||
     rootManifest ||
-    (gitRoot !== null && path.relative(fs.realpathSync(gitRoot), projectPath) === '');
+    (gitRoot !== null && normalizeRegistryPath(gitRoot) === normalizeRegistryPath(projectPath));
   if (!hasRootEvidence && input.projectSelected === false) {
     return selectionRequired(
       'unverified-working-directory',
@@ -492,15 +505,19 @@ export async function buildAgentTaskContext(input: {
         const nested =
           path.relative(selectedProjectPath, boundary).split(path.sep).join('/') || '.';
         const nestedPath = path.relative(boundary, target).split(path.sep).join('/') || '.';
+        const retry = taskContextRetry(request, { project: nested, path: nestedPath });
         return selectionRequired(
           'nested-project-boundary',
           'The selected source belongs to a nested project boundary. No parent or sibling context was substituted.',
           [
             {
               kind: 'select-project',
+              requiredOption: '--project',
               message:
-                'Confirm that the nested project is the user target, then use this rebased command from the original request directory.',
-              command: taskContextRetry(request, { project: nested, path: nestedPath }),
+                retry.kind === 'select-workspace'
+                  ? 'Confirm that the nested project is the user target, then retry from the original request directory with the rebased --project and --path. Repeat the exact user-approved canonical root with --workspace; the CLI validates membership again.'
+                  : 'Confirm that the nested project is the user target, then use this rebased command from the original request directory.',
+              ...(retry.command === undefined ? {} : { command: retry.command }),
             },
           ]
         );
@@ -527,8 +544,21 @@ export async function buildAgentTaskContext(input: {
         ? `Project-scoped Graph evidence is withheld because workspace resolution is blocked (${resolutionReason}).`
         : 'A project-scoped Workspai graph is unavailable without canonical membership.',
       nextAction: blockedResolution
-        ? 'Use native source and test search. Do not infer that source is absent or refresh a different workspace; ask the user to choose the canonical workspace only if Graph evidence is required.'
-        : 'Use native source search and project manifests; request adoption only when it would materially help and the user has not declined.',
+        ? 'If Graph is needed, ask once for approval, then retry with --workspace-default or the exact user-provided root via --workspace. Membership is checked; no adoption, relink or refresh occurs. Otherwise use native project tools.'
+        : 'If Graph is needed and the project may belong to a central workspace, ask once for approval. Retry with --workspace-default or the user-provided root via --workspace; otherwise use native source search and tests.',
+      userAction: {
+        kind: 'request-project-graph-access',
+        status:
+          input.canonicalWorkspacePath !== undefined || input.managedDefaultWorkspace === true
+            ? 'workspace-choice-unverified'
+            : 'requires-consent',
+        managedDefaultOption: '--workspace-default',
+        explicitWorkspaceOption: '--workspace',
+        message:
+          input.canonicalWorkspacePath !== undefined || input.managedDefaultWorkspace === true
+            ? `Workspace selection did not validate this project (${resolutionReason ?? 'resolution-failed'}). Do not guess roots; if host access was denied, request read permission once. Otherwise use native tools or ask for the canonical root.`
+            : 'Ask once for permission to read this project-scoped Graph. After approval use --workspace-default or the exact user-provided root with --workspace. If host access is denied, request read permission once.',
+      },
     };
   } else {
     binding = 'canonical-project-member';
@@ -536,6 +566,7 @@ export async function buildAgentTaskContext(input: {
       let validatedSnapshot: WorkspaceKnowledgeGraphSnapshotResult | undefined;
       const receipt = await buildAgentBootstrapReceipt({
         startPath: resolution.projectPath,
+        explicitWorkspacePath: resolution.workspacePath,
         forAgent: input.forAgent ?? 'generic',
         validateLiveInputs: true,
         onSnapshot: (snapshot) => {
@@ -693,7 +724,7 @@ export async function buildAgentTaskContext(input: {
       'workspaceResolution is authoritative: blocked is not unmanaged or consent to adopt. Resolve workspace: locators only with the declared command.',
       'Reuse Graph results/no-matches. Unavailable means missing evidence, not missing source; refresh only if needed and authorized.',
       'delivery.hostLoading/modelCompliance are not-observed; use only tools exposed by this host.',
-      AGENT_JSON_CONSUMPTION_GUIDANCE,
+      'Treat this as JSON data and check status before component fields. Follow one recovery action. Ask once before using project Graph after a userAction request; retry only with the approved workspace choice. If declined or inaccessible, continue with native tools.',
       ...(binding === 'canonical-project-member' ? [AGENT_CONTINUATION_GUIDANCE] : []),
       AGENT_VERIFICATION_GUIDANCE,
       'Treat user instructions and live source as authoritative. Graph matches are lexical discovery evidence, not proof of implementation, tests, or completion.',

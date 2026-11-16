@@ -1406,6 +1406,44 @@ function resolveKnowledgeProjectRoot(
   });
 }
 
+/** Resolve filesystem aliases before computing portable inventory-relative hashes. */
+function canonicalFingerprintPath(inputPath: string): string {
+  const resolved = path.resolve(inputPath);
+  try {
+    return fsExtra.realpathSync(resolved);
+  } catch {
+    return resolved;
+  }
+}
+
+function canonicalFingerprintFilePaths(rootInput: string, files: readonly string[]): string[] {
+  const lexicalRoot = path.resolve(rootInput);
+  const canonicalRoot = canonicalFingerprintPath(lexicalRoot);
+  return files.map((file) => {
+    const lexicalFile = path.resolve(file);
+    const lexicalRelative = path.relative(lexicalRoot, lexicalFile);
+    if (
+      lexicalRelative === '' ||
+      (lexicalRelative !== '..' &&
+        !lexicalRelative.startsWith(`..${path.sep}`) &&
+        !path.isAbsolute(lexicalRelative))
+    ) {
+      return path.resolve(canonicalRoot, lexicalRelative);
+    }
+    // Custom inventories can retain a different path spelling from the root.
+    // Resolve those exceptional entries physically; normal filesystem scans
+    // stay on the fast lexical path and avoid one realpath syscall per file.
+    return canonicalFingerprintPath(lexicalFile);
+  });
+}
+
+function resolveKnowledgeProjectFingerprintRoot(
+  workspacePath: string,
+  project: KnowledgeGraphFingerprintProject
+): string {
+  return canonicalFingerprintPath(resolveKnowledgeProjectRoot(workspacePath, project));
+}
+
 type KnowledgeGraphFingerprintInventories = {
   workspaceFiles?: readonly string[];
   projectFiles?: ReadonlyMap<string, readonly string[]>;
@@ -1853,11 +1891,14 @@ async function fingerprintScope(input: {
   inventoryStrategy?: ProjectFileInventory['strategy'];
   selection?: WorkspaceKnowledgeGraphInputFingerprint['scopes'][number]['selection'];
 }): Promise<WorkspaceKnowledgeGraphInputFingerprint['scopes'][number]> {
-  const inventory = [...new Set(input.files)].sort((left, right) => left.localeCompare(right));
+  const root = canonicalFingerprintPath(input.root);
+  const inventory = [...new Set(canonicalFingerprintFilePaths(input.root, input.files))].sort(
+    (left, right) => left.localeCompare(right)
+  );
   const eligibleFileCount = input.eligibleFileCount ?? inventory.length;
   const truncated = eligibleFileCount > input.fileLimit || inventory.length > input.fileLimit;
   const boundedFiles = inventory.slice(0, input.fileLimit);
-  const gitFingerprint = await gitFingerprintScope({ ...input, files: boundedFiles });
+  const gitFingerprint = await gitFingerprintScope({ ...input, root, files: boundedFiles });
   const inventoryMetadata = {
     eligibleFileCount,
     eligibleFileCountExact: input.eligibleFileCountExact ?? !truncated,
@@ -1869,7 +1910,7 @@ async function fingerprintScope(input: {
     return { ...gitFingerprint, fileCount: boundedFiles.length, truncated, ...inventoryMetadata };
   }
   const entries = await mapWithConcurrency(boundedFiles, 16, async (filePath) => ({
-    path: toPosix(path.relative(input.root, filePath)),
+    path: toPosix(path.relative(root, filePath)),
     hash: await contentHash(filePath),
   }));
   entries.sort((left, right) => left.path.localeCompare(right.path));
@@ -1901,10 +1942,10 @@ export async function computeWorkspaceKnowledgeGraphInputFingerprint(input: {
   workspaceFileLimit: number;
   inventories?: KnowledgeGraphFingerprintInventories;
 }): Promise<WorkspaceKnowledgeGraphInputFingerprint> {
-  const workspacePath = path.resolve(input.workspacePath);
+  const workspacePath = canonicalFingerprintPath(input.workspacePath);
   const projects = [...input.projects].sort((left, right) => left.id.localeCompare(right.id));
   const projectRoots = projects.map((project) =>
-    resolveKnowledgeProjectRoot(workspacePath, project)
+    resolveKnowledgeProjectFingerprintRoot(workspacePath, project)
   );
   const workspaceInventory =
     input.inventories?.workspaceInventory ??
@@ -1942,7 +1983,7 @@ export async function computeWorkspaceKnowledgeGraphInputFingerprint(input: {
       inventoryStrategy: scopedWorkspaceInventory.strategy,
     }),
     ...projects.map(async (project) => {
-      const root = resolveKnowledgeProjectRoot(workspacePath, project);
+      const root = resolveKnowledgeProjectFingerprintRoot(workspacePath, project);
       const providedFiles = input.inventories?.projectFiles?.get(project.id);
       const inventory =
         input.inventories?.projectInventories?.get(project.id) ??
@@ -2053,10 +2094,10 @@ export async function inspectWorkspaceKnowledgeGraphInputs(input: {
     add({ scope: { kind: 'workspace', id: 'workspace' }, reason: 'aggregate-mismatch' });
     return result();
   }
-  const workspacePath = path.resolve(input.workspacePath);
+  const workspacePath = canonicalFingerprintPath(input.workspacePath);
   const projects = [...input.projects].sort((left, right) => left.id.localeCompare(right.id));
   const projectRoots = projects.map((project) =>
-    resolveKnowledgeProjectRoot(workspacePath, project)
+    resolveKnowledgeProjectFingerprintRoot(workspacePath, project)
   );
   const projectById = new Map(projects.map((project) => [project.id, project] as const));
   const expectedIds = input.expected.scopes
@@ -2076,7 +2117,9 @@ export async function inspectWorkspaceKnowledgeGraphInputs(input: {
         add({ scope, reason: 'membership-mismatch' });
         continue;
       }
-      const root = project ? resolveKnowledgeProjectRoot(workspacePath, project) : workspacePath;
+      const root = project
+        ? resolveKnowledgeProjectFingerprintRoot(workspacePath, project)
+        : workspacePath;
 
       if (expectedScope.strategy === 'git-worktree-v2') {
         const actualHash = await persistedGitFingerprintHash({

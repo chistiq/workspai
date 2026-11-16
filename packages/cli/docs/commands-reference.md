@@ -89,7 +89,7 @@ npx workspai create project agent.microsoft.dotnet <name> [--agent-name <name>] 
 npx workspai create project gateway.openrouter.typescript <name> [--skip-git] [--json]
 npx workspai create project gateway.openrouter.python <name> [--skip-git] [--json]
 npx workspai agent bootstrap [--project <path>] [--for-agent <host>] [--no-live-inputs] [--strict] [--json]
-npx workspai agent context --task <request> [--project <path>] [--path <relative-path>] [--for-agent <host>] [--limit <1–12>] [--max-bytes <8192–131072>] [--strict]
+npx workspai agent context --task <request> [--project <path>] [--path <relative-path>] [--workspace <canonical-root> | --workspace-default] [--for-agent <host>] [--limit <1–12>] [--max-bytes <8192–131072>] [--strict]
 npx workspai agent framework list [--json]
 npx workspai agent framework plan --project <name> --runtime <python|dotnet|node> [--framework <id>] --name <agent> [--goal <goal-id>] [--workspace <path>] [--json]
 npx workspai agent framework attach --project <name> --runtime <python|dotnet|node> [--framework <id>] --name <agent> [-y] [--granted-by <identity>] [--workspace <path>] [--json]
@@ -288,6 +288,10 @@ or stale Workspai evidence is explicit and does not prevent native project
 work. The packet grants no mutation authority; existing-project adoption stays
 an explicit user choice. The default budget is 32 KiB, and an over-budget
 packet is rejected whole rather than silently truncated.
+If its `graph.userAction` requests workspace access and Graph matters to the
+task, ask the user before retrying with `--workspace-default` or the exact
+user-provided canonical root via `--workspace`. The CLI validates project
+membership and does not adopt, relink or refresh as part of this read.
 This is the primary generated task-entry route; separate bootstrap and
 membership commands are not additional prerequisites. Budget recovery reports
 the aggregate retry size, and targeted `--path` selection can discover Node

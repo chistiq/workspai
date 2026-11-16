@@ -38,16 +38,21 @@ afterEach(async () => {
   projectPath = undefined;
 });
 
-async function managedProject(location: 'linked' | 'parent' | 'managed-default' = 'linked') {
+async function managedProject(
+  location: 'linked' | 'parent' | 'managed-default' = 'linked',
+  pathAlias = false
+) {
   projectPath = await mkdtemp(path.join(tmpdir(), 'workspai-agent-context-managed-'));
+  const fixtureRoot = pathAlias ? path.join(projectPath, 'path-alias') : projectPath;
+  if (pathAlias) await symlink(projectPath, fixtureRoot, 'dir');
   const homeDir = path.join(projectPath, 'test-home');
   const workspacePath =
     location === 'parent'
-      ? projectPath
+      ? fixtureRoot
       : location === 'managed-default'
         ? path.join(homeDir, '.workspai', 'workspaces', 'workspai')
         : path.join(projectPath, 'workspace');
-  const sourcePath = path.join(projectPath, 'sources', 'api');
+  const sourcePath = path.join(fixtureRoot, 'sources', 'api');
   await fsExtra.outputFile(path.join(workspacePath, '.workspai-workspace'), 'lab\n');
   await fsExtra.outputJson(path.join(workspacePath, '.rapidkit/workspace.json'), {
     workspace_name: 'lab',
@@ -56,7 +61,7 @@ async function managedProject(location: 'linked' | 'parent' | 'managed-default' 
   const projects = ['api', 'worker'].map((name) => ({
     slug: name,
     relativePath: `external/${name}`,
-    externalPath: path.join(projectPath!, 'sources', name),
+    externalPath: path.join(fixtureRoot, 'sources', name),
     relationship: 'adopted',
     runtime: 'node',
     framework: 'generic',
@@ -484,6 +489,26 @@ describe('agent task context', () => {
     });
   });
 
+  it.skipIf(process.platform === 'win32')(
+    'resolves ancestor workspace evidence from a symlink-aliased fixture root',
+    async () => {
+      const { sourcePath } = await managedProject('parent', true);
+      const result = await buildAgentTaskContext({
+        projectPath: sourcePath,
+        task: 'Explain the retry implementation',
+      });
+      expect(result.status).toBe('ready');
+      if (result.status !== 'ready') throw new Error('Expected ready context from aliased root');
+      expect(result.scope.workspaceResolution).toEqual({
+        status: 'resolved',
+        source: 'parent',
+        managedDefault: false,
+      });
+      expect(result.graph.status).toBe('results');
+      expect(result.grounding.status).toBe('ready');
+    }
+  );
+
   it('distinguishes a linked managed-default workspace without emitting its path', async () => {
     const { sourcePath, homeDir } = await managedProject('managed-default');
     vi.stubEnv(process.platform === 'win32' ? 'USERPROFILE' : 'HOME', homeDir);
@@ -507,6 +532,7 @@ describe('agent task context', () => {
   it('reports an unlinked source as unmanaged without claiming host tool availability', async () => {
     const { sourcePath } = await managedProject();
     await fsExtra.remove(path.join(sourcePath, '.workspai/workspace-link.local.json'));
+    const snapshot = vi.spyOn(graphSnapshot, 'readWorkspaceKnowledgeGraphSnapshot');
 
     const result = await buildAgentTaskContext({
       projectPath: sourcePath,
@@ -520,11 +546,87 @@ describe('agent task context', () => {
       source: 'none',
       managedDefault: false,
     });
+    expect(result.graph).toMatchObject({
+      status: 'unavailable',
+      userAction: {
+        kind: 'request-project-graph-access',
+        status: 'requires-consent',
+        managedDefaultOption: '--workspace-default',
+        explicitWorkspaceOption: '--workspace',
+      },
+    });
+    if (result.graph.status !== 'unavailable')
+      throw new Error('Expected Graph access guidance on unavailable evidence');
+    expect(result.graph.userAction?.message).toContain('Ask once');
+    expect(snapshot).not.toHaveBeenCalled();
+    expect(JSON.stringify(result)).not.toContain(projectPath);
     expect(result.delivery).toEqual({
       status: 'prepared',
       hostLoading: 'not-observed',
       modelCompliance: 'not-observed',
     });
+  });
+
+  it('reads only the exact project Graph from the managed default after explicit workspace selection', async () => {
+    const { sourcePath, homeDir } = await managedProject('managed-default');
+    vi.stubEnv(process.platform === 'win32' ? 'USERPROFILE' : 'HOME', homeDir);
+    const linkPath = path.join(sourcePath, '.workspai/workspace-link.local.json');
+    await fsExtra.remove(linkPath);
+
+    const result = await buildAgentTaskContext({
+      projectPath: sourcePath,
+      task: 'Explain the retry implementation',
+      managedDefaultWorkspace: true,
+    });
+
+    expect(result.status).toBe('ready');
+    if (result.status !== 'ready' && result.status !== 'partial')
+      throw new Error('Expected project-scoped context after workspace selection');
+    expect(result.scope.workspaceResolution).toEqual({
+      status: 'resolved',
+      source: 'explicit',
+      managedDefault: true,
+    });
+    expect(result.scope.binding).toBe('canonical-project-member');
+    expect(result.graph.status).toBe('results');
+    expect(JSON.stringify(result)).not.toContain(homeDir);
+    expect(await fsExtra.pathExists(linkPath)).toBe(false);
+  });
+
+  it('does not read or relink when an explicitly selected workspace lacks exact project membership', async () => {
+    const { sourcePath } = await managedProject();
+    const wrongWorkspace = path.join(projectPath!, 'other-workspace');
+    await fsExtra.outputFile(path.join(wrongWorkspace, '.workspai-workspace'), 'other\n');
+    await fsExtra.outputJson(path.join(wrongWorkspace, '.rapidkit/workspace.json'), {
+      workspace_name: 'other',
+      profile: 'polyglot',
+    });
+    const linkPath = path.join(sourcePath, '.workspai/workspace-link.local.json');
+    const originalLink = await readFile(linkPath, 'utf8');
+    const snapshot = vi.spyOn(graphSnapshot, 'readWorkspaceKnowledgeGraphSnapshot');
+
+    const result = await buildAgentTaskContext({
+      projectPath: sourcePath,
+      task: 'Explain the retry implementation',
+      canonicalWorkspacePath: wrongWorkspace,
+    });
+
+    expect(result.status).toBe('partial');
+    if (result.status !== 'partial') throw new Error('Expected a safe native fallback');
+    expect(result.scope.workspaceResolution).toMatchObject({
+      status: 'blocked',
+      reason: 'project.workspace.membership-missing',
+    });
+    expect(result.graph).toMatchObject({
+      status: 'unavailable',
+      userAction: {
+        kind: 'request-project-graph-access',
+        status: 'workspace-choice-unverified',
+      },
+    });
+    expect(await readFile(linkPath, 'utf8')).toBe(originalLink);
+    expect(snapshot).not.toHaveBeenCalled();
+    expect(JSON.stringify(result)).not.toContain(wrongWorkspace);
   });
 
   it('discloses another project changing after sealing without forcing workspace repair or claiming fresh Graph evidence', async () => {
@@ -872,7 +974,7 @@ describe('agent task context', () => {
     expect(result.nextActions).toEqual(
       expect.arrayContaining([
         expect.stringContaining('repository instructions'),
-        expect.stringContaining('native source search'),
+        expect.stringContaining('native source search and tests'),
       ])
     );
     expect(result.lifecycle).toMatchObject({
@@ -960,5 +1062,79 @@ describe('agent task context', () => {
       lifecycle: { status: 'ready', selection: { path: 'index.ts', mode: 'closest-unit' } },
     });
     expect(result.stdout).not.toContain(projectPath);
+  });
+
+  it('supports a user-approved managed-default Graph read through the installed CLI without relinking', async () => {
+    const { sourcePath, homeDir } = await managedProject('managed-default');
+    vi.stubEnv(process.platform === 'win32' ? 'USERPROFILE' : 'HOME', homeDir);
+    const linkPath = path.join(sourcePath, '.workspai/workspace-link.local.json');
+    await fsExtra.remove(linkPath);
+
+    const result = await execa(
+      process.execPath,
+      [
+        path.resolve('dist/index.js'),
+        'agent',
+        'context',
+        '--task',
+        'Explain the retry implementation',
+        '--project',
+        sourcePath,
+        '--path',
+        'src/index.ts',
+        '--workspace-default',
+      ],
+      { reject: false }
+    );
+
+    expect(result.exitCode).toBe(0);
+    const packet = JSON.parse(result.stdout);
+    expect(packet).toMatchObject({
+      status: 'ready',
+      scope: {
+        binding: 'canonical-project-member',
+        workspaceResolution: { status: 'resolved', source: 'explicit', managedDefault: true },
+      },
+      graph: { status: 'results' },
+    });
+    expect(result.stdout).not.toContain(homeDir);
+    expect(await fsExtra.pathExists(linkPath)).toBe(false);
+  });
+
+  it('supports an exact user-approved non-default workspace root through the installed CLI', async () => {
+    const { sourcePath, workspacePath } = await managedProject('linked');
+    const linkPath = path.join(sourcePath, '.workspai/workspace-link.local.json');
+    const originalLink = await readFile(linkPath, 'utf8');
+
+    const result = await execa(
+      process.execPath,
+      [
+        path.resolve('dist/index.js'),
+        'agent',
+        'context',
+        '--task',
+        'Explain the retry implementation',
+        '--project',
+        sourcePath,
+        '--path',
+        'src/index.ts',
+        '--workspace',
+        workspacePath,
+      ],
+      { reject: false }
+    );
+
+    expect(result.exitCode).toBe(0);
+    const packet = JSON.parse(result.stdout);
+    expect(packet).toMatchObject({
+      status: 'ready',
+      scope: {
+        binding: 'canonical-project-member',
+        workspaceResolution: { status: 'resolved', source: 'explicit', managedDefault: false },
+      },
+      graph: { status: 'results' },
+    });
+    expect(result.stdout).not.toContain(workspacePath);
+    expect(await readFile(linkPath, 'utf8')).toBe(originalLink);
   });
 });

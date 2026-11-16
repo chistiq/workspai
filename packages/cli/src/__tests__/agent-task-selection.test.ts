@@ -249,8 +249,9 @@ describe('agent task project selection', () => {
       limit: 8,
       maxBytes: 8192,
     };
-    const command = taskContextRetry(request, { maxBytes: 24000 });
-    expect(command.args).toEqual([
+    const recovery = taskContextRetry(request, { maxBytes: 24000 });
+    expect(recovery.kind).toBe('retry');
+    expect(recovery.command?.args).toEqual([
       'agent',
       'context',
       '--project',
@@ -266,5 +267,40 @@ describe('agent task project selection', () => {
       '--path',
       request.path,
     ]);
+  });
+
+  it('never serializes a user-selected workspace path into a retry command', () => {
+    const request = {
+      task: 'Inspect the parser',
+      forAgent: 'generic',
+      project: 'project',
+      workspaceChoice: 'explicit' as const,
+      limit: 8,
+      maxBytes: 8192,
+    };
+    const recovery = taskContextRetry(request, { maxBytes: 24000 });
+    expect(recovery).toMatchObject({
+      kind: 'select-workspace',
+      requiredOption: '--workspace',
+      message: expect.stringContaining('--max-bytes 24000'),
+    });
+    expect(recovery).not.toHaveProperty('command');
+  });
+
+  it('preserves the managed-default workspace choice in a bounded retry', () => {
+    const recovery = taskContextRetry(
+      {
+        task: 'Inspect the parser',
+        forAgent: 'generic',
+        project: 'project',
+        workspaceChoice: 'managed-default',
+        limit: 8,
+        maxBytes: 8192,
+      },
+      { maxBytes: 24000 }
+    );
+    expect(recovery.kind).toBe('retry');
+    expect(recovery.command?.args).toContain('--workspace-default');
+    expect(recovery.command?.args).toContain('24000');
   });
 });

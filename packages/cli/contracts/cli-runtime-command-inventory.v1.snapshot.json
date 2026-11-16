@@ -127,6 +127,14 @@
           "attributeName": "path"
         },
         {
+          "flags": "--workspace <path>",
+          "attributeName": "workspace"
+        },
+        {
+          "flags": "--workspace-default",
+          "attributeName": "workspaceDefault"
+        },
+        {
           "flags": "--for-agent <agent>",
           "attributeName": "forAgent"
         },

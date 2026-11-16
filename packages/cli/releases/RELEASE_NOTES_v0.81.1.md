@@ -73,6 +73,17 @@ agent is not prompted to adopt a project whose workspace binding needs repair.
 The existing binding field also reports `resolution-blocked`, preventing older
 context consumers from treating stale ownership as an unmanaged project.
 
+When a project-scoped Graph is unavailable because its canonical workspace
+cannot be resolved from the current host context, task context now returns a
+structured `graph.userAction`. If Graph evidence matters, the agent can ask the
+user once, then retry against the managed central workspace with
+`--workspace-default` or an exact user-provided canonical root with
+`--workspace`. The CLI validates exact project membership before reading the
+Graph, does not modify project links or refresh workspace evidence, and keeps
+local workspace paths out of portable output. Declining or failing to resolve
+access leaves native project work available. The CLI does not grant host-level
+filesystem permissions; those remain controlled by the active host.
+
 Task instructions now distinguish project operations from workspace-wide
 operations. A completed bounded Graph query in task context is reused; a
 separate query is only for additional evidence. Host Graph picker
@@ -159,6 +170,17 @@ revision, preventing old and new immutable Goal contracts from sharing an ID.
 
 Workspace-scoped changes and strict verification continue to use the full
 workspace gate.
+
+## Consistent project identity across filesystem aliases
+
+Workspace discovery now deduplicates project roots by physical filesystem
+identity while retaining the registered project metadata. Graph freshness
+fingerprints canonicalize workspace and project roots before excluding project
+files from workspace scope, so equivalent path spellings do not create false
+stale evidence. Git-root project selection uses the same canonical identity
+comparison on Windows. These changes preserve content and membership checks;
+they only make equivalent paths resolve consistently. Cross-platform CI must
+still pass before claiming matrix qualification.
 
 ## Compatibility and scope
 

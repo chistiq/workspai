@@ -46,6 +46,10 @@ different directory than source reads.
 - Report the resolved workspace route in task context (`parent`, `local-link`,
   registry or managed default) without exposing machine-local paths. Keep stale
   and ambiguous bindings blocked instead of presenting them as unmanaged projects.
+- Allow an agent to ask the user before reading a project's scoped Graph from
+  its canonical central or explicitly selected workspace. The retry validates
+  exact project membership and is read-only: it does not adopt, relink, refresh,
+  change the selected source or disclose the workspace path.
 - State project-versus-workspace command scope directly. Reuse the task packet's
   bounded Graph query, distinguish host-picker and permission failures from stale
   Graph data, and reserve workspace-wide refresh for tasks that require and
@@ -89,6 +93,9 @@ different directory than source reads.
   ledger, including verification retries and legacy v1 full-history capsules.
 - Advance the Goal Pack compiler revision so project-verification criteria
   cannot reuse immutable IDs from the prior goal contract.
+- Deduplicate discovered project roots by physical identity, canonicalize graph
+  freshness scopes across filesystem aliases and compare Git-root selection
+  using normalized paths on Windows.
 - Clarify that Proof-Carrying Change prediction is part of a governed change
   and that strict verification retains workspace-wide readiness and freshness
   requirements.

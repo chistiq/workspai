@@ -34,6 +34,19 @@ async function makeTempDir(prefix: string): Promise<string> {
   return dir;
 }
 
+async function makeTempDirIn(root: string, prefix: string): Promise<string> {
+  const dir = await fs.mkdtemp(path.join(root, prefix));
+  tempDirs.push(dir);
+  return dir;
+}
+
+async function makeDirectoryAlias(target: string, suffix: string): Promise<string> {
+  const alias = path.join(path.dirname(target), `${path.basename(target)}-${suffix}-alias`);
+  await fs.symlink(target, alias, process.platform === 'win32' ? 'junction' : 'dir');
+  tempDirs.push(alias);
+  return alias;
+}
+
 async function makeWorkspaceRoot(prefix: string): Promise<string> {
   const workspacePath = await makeTempDir(prefix);
   await fs.mkdir(path.join(workspacePath, '.workspai'), { recursive: true });
@@ -404,10 +417,18 @@ describe('handleAdoptCommand workspace resolution', () => {
   }, 60_000);
 
   it('bootstraps an explicit empty workspace and adopts the external project into it', async () => {
-    const fakeHome = await makeTempDir('workspai-handle-adopt-explicit-home-');
-    const sourceRoot = await makeTempDir('workspai-handle-adopt-explicit-source-');
+    const physicalTempRoot = await makeTempDir('workspai-handle-adopt-explicit-parent-');
+    const tempRoot =
+      process.platform === 'win32'
+        ? physicalTempRoot
+        : await makeDirectoryAlias(physicalTempRoot, 'path');
+    const fakeHome = await makeTempDirIn(tempRoot, 'workspai-handle-adopt-explicit-home-');
+    const sourceRoot = await makeTempDirIn(tempRoot, 'workspai-handle-adopt-explicit-source-');
+    const workspacePath = await makeTempDirIn(
+      tempRoot,
+      'workspai-handle-adopt-explicit-workspace-'
+    );
     const projectPath = path.join(sourceRoot, 'my-project');
-    const workspacePath = await makeTempDir('workspai-handle-adopt-explicit-workspace-');
     await fs.mkdir(projectPath);
     await fs.writeFile(path.join(projectPath, 'package.json'), '{"name":"my-project"}');
     const previousHome = process.env.HOME;

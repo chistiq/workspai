@@ -9020,6 +9020,14 @@ agentCommand
     'Explicit source root; defaults to cwd only when a project boundary is present'
   )
   .option('--path <relative-path>', 'Select the closest runtime unit for a source file or manifest')
+  .option(
+    '--workspace <path>',
+    'Canonical workspace root explicitly supplied by the user; validates exact project membership without relinking'
+  )
+  .option(
+    '--workspace-default',
+    'Use the managed central workspace after user approval and validate exact project membership'
+  )
   .option('--for-agent <agent>', 'Agent host identifier', 'generic')
   .option('--limit <count>', 'Maximum project-scoped Graph matches (1–12)', '8')
   .option('--max-bytes <bytes>', 'Maximum UTF-8 JSON packet size (8192–131072; default 32768)')
@@ -9029,6 +9037,8 @@ agentCommand
       task: string;
       project?: string;
       path?: string;
+      workspace?: string;
+      workspaceDefault?: boolean;
       forAgent?: string;
       limit?: string;
       maxBytes?: string;
@@ -9040,6 +9050,8 @@ agentCommand
         const output = await buildAgentTaskContext({
           projectPath: options.project ?? process.cwd(),
           projectSelected: options.project !== undefined,
+          canonicalWorkspacePath: options.workspace,
+          managedDefaultWorkspace: options.workspaceDefault,
           task: options.task,
           ...(options.path === undefined ? {} : { path: options.path }),
           forAgent: options.forAgent,

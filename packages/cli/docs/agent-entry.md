@@ -128,7 +128,7 @@ explicitly workspace-wide request or a finding that requires workspace scope.
 Do not widen scope to recover a project-level failure.
 
 `scope.workspace` is a logical identity, not a path. The portable
-`scope.workspaceResolution` reports `source` as `parent`, `local-link` or
+`scope.workspaceResolution` reports `source` as `explicit`, `parent`, `local-link` or
 `registry`, plus `managedDefault` for the central managed default workspace.
 Resolution checks a marked parent, then a validated project link, then the
 reverse registry. A blocked higher-priority route does not fall through to a
@@ -146,6 +146,20 @@ pointer. If the packet itself reports Graph unavailable, use its `nextAction`
 and native source/tests; missing Graph evidence does not prove source is absent.
 A workspace intelligence refresh is workspace-wide and should run only when
 Graph evidence is necessary and that wider refresh is authorized.
+
+If `graph.userAction.kind` is `request-project-graph-access`, first decide
+whether Graph evidence is necessary for this task. If it is, ask the user once
+for permission to read this project's Graph from its canonical workspace. Do
+not guess workspace paths or scan other projects. After the user approves the
+managed central workspace, retry the same command with `--workspace-default`.
+For another workspace, use `--workspace <path>` only with the exact canonical
+root the user provides. The CLI validates that the selected workspace contract
+contains the exact project before reading its project-scoped Graph; it does
+not adopt, relink, refresh, change the selected source, or expose the absolute
+workspace path in the packet. If membership is unverified or the host denies
+filesystem access, do not try other roots: ask for the missing choice or host
+read permission once, then fall back to native project tools if access remains
+unavailable. Declining Graph access does not block the original project task.
 
 Prepared entry artifacts do not prove that the host loaded them or exposed its
 native tools. `delivery.hostLoading` and `delivery.modelCompliance` remain
@@ -176,6 +190,8 @@ No machine-local absolute path is persisted in the packet.
 Actions needing an unknown project or source identify `requiredOption` instead
 of inventing an executable placeholder. Resolve that input from the existing
 request and file locations; ask the user only when it remains ambiguous.
+Workspace access is a separate `userAction`, not an automatic retry: wait for
+approval before adding `--workspace-default` or `--workspace`.
 `--limit` is a Graph match count from 1 to 12; `--max-bytes` is the UTF-8 budget.
 A component already exceeding its maximum is not fixed by raising the aggregate
 budget. Recovery narrows the relevant component or explicitly falls back to

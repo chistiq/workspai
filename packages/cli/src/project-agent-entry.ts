@@ -423,6 +423,8 @@ function mergedStatus(statuses: readonly AgentEntryHostStatus[]): AgentEntryHost
 
 export async function buildAgentBootstrapReceipt(input: {
   startPath?: string;
+  /** Reuse an already validated workspace choice without requiring a local project link. */
+  explicitWorkspacePath?: string;
   forAgent?: string;
   validateLiveInputs?: boolean;
   /** Reuse this operation's validated snapshot without a second live-input scan. */
@@ -431,6 +433,7 @@ export async function buildAgentBootstrapReceipt(input: {
 }): Promise<AgentBootstrapReceipt> {
   const resolution = resolveProjectWorkspaceSync({
     startPath: path.resolve(input.startPath ?? process.cwd()),
+    explicitWorkspacePath: input.explicitWorkspacePath,
     strict: true,
     requireProjectMembership: true,
   });

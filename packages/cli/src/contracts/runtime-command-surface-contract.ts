@@ -496,7 +496,8 @@ const COMMAND_DOCUMENTATION_OVERRIDES: Readonly<
       defaultFormat: 'human-or-json',
       modes: [
         {
-          selector: '--task <request> [--project <path>] [--path <relative-path>]',
+          selector:
+            '--task <request> [--project <path>] [--path <relative-path>] [--workspace <path> | --workspace-default]',
           format: 'json',
           mediaType: 'application/json',
         },
