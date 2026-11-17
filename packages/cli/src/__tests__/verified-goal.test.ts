@@ -10,6 +10,7 @@ import {
   VERIFIED_GOAL_LAST_RUN_REPORT_PATH,
   verifyVerifiedGoal,
 } from '../verified-goal.js';
+import { normalizeRegistryPath } from '../utils/registry-path.js';
 
 const roots: string[] = [];
 
@@ -254,8 +255,11 @@ describe('verified engineering goals', () => {
     expect(planned.goal.scope).toEqual({
       kind: 'project-set',
       projects: [
-        { projectName: 'api', projectPath: path.join(workspacePath, 'api') },
-        { projectName: 'worker', projectPath: path.join(workspacePath, 'worker') },
+        { projectName: 'api', projectPath: normalizeRegistryPath(path.join(workspacePath, 'api')) },
+        {
+          projectName: 'worker',
+          projectPath: normalizeRegistryPath(path.join(workspacePath, 'worker')),
+        },
       ],
     });
     expect(planned.goal.summary).toContain('api, worker');
