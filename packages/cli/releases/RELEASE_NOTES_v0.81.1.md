@@ -13,11 +13,38 @@
 
 # Workspai CLI v0.81.1
 
-Released November 16, 2026. **Publication status: Published November 16, 2026.**
+Released November 17, 2026. **Publication status: Published November 17, 2026.**
 Package metadata is aligned to `0.81.1`. Cross-platform qualification has not
 been claimed.
 
 ## Clearer execution context for agents
+
+Re-adoption also recovers from deletion of the entire managed central workspace.
+An intact link to the configured default is validated before the CLI creates a
+fresh workspace, replaces its stale discovery registration and adopts the
+requested project. Dry-run reports creation without writing, while failure
+restores the source metadata and registry and removes the newly created
+workspace. Modified links, occupied/unmarked paths, and custom destinations do
+not trigger automatic recreation. Ordinary read commands keep rejecting stale
+membership. Deleted goals, history and other project memberships require their
+own recovery or re-adoption; this operation does not claim to restore them.
+
+Canonical evidence reads now preserve `EACCES` and `EPERM` as permission
+failures, including artifact lookup and membership checks. Task context emits
+`graph.userAction.kind: request-filesystem-read` and asks for host read access
+to the existing binding selected by the command or project link. After approval
+the same command is retried, with all membership, integrity and freshness
+checks intact. Recovery does not switch workspace, rewrite links or refresh
+evidence to bypass denied access. Corrupt and missing artifacts remain separate
+failures and do not invent a permission request.
+
+A partial packet can contain usable Graph matches. Task context now explicitly
+identifies completed retrieval and points agents to `graph.matches` and
+`graph.proofs`; an IDE picker failure does not invalidate these results. Empty
+results use `graph.retrieval.status: no-matches`. Saved-output examples show the
+actual Graph fields. Advisory verification findings and unrelated Goal warnings
+remain visible without directing local work into foreign Goal recovery or broad
+workspace refresh.
 
 Re-adoption now recovers an intact local link when its matching workspace is
 valid but project registration is absent. It rejects identity collisions,
@@ -201,10 +228,10 @@ The optional `wspai` alias uses the matching `0.81.1` version.
 
 ## Release qualification
 
-Latest local qualification on Linux with Node 24.20.0 completed November 16,
+Latest local qualification on Linux with Node 24.20.0 completed November 17,
 2026:
 
-- Full CLI suite: **3,271 passed**, **12 skipped**, **0 failed** across 280 files
+- Full CLI suite: **3,306 passed**, **12 skipped**, **0 failed** across 280 files
   (276 passed, 4 skipped).
 - Permanent regression cases cover compiler identity, host entry, scoped
   lifecycle gates, Graph retrieval, Skill applicability and
@@ -212,7 +239,13 @@ Latest local qualification on Linux with Node 24.20.0 completed November 16,
   explicit project selection, structured argv recovery, receipt integrity, sequential edits,
   deletion/recreation, stale and reused runtime evidence, canonical project
   boundaries, adopted sources, capsule replay, recovery, and domain admission.
-- Build, TypeScript typecheck, lint and formatting for the changed files passed.
+  Access regressions cover denied artifact lookup/reads, live input validation,
+  safe retries through the original binding, tampered-link rejection before
+  remote reads, and usable Graph results in advisory task packets. Adoption
+  regressions cover deleted central workspace recovery, read-only preview,
+  path aliases, rejected modified bindings and occupied/custom destinations,
+  registry cleanup and transactional failure rollback.
+- Build, TypeScript typecheck, lint and formatting passed.
 - Generated/shared contract parity, contract synchronization, agent
   customization drift, documentation drift, Markdown links, and release-note
   and announcement contracts passed.

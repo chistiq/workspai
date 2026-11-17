@@ -119,11 +119,23 @@ export function buildAgentBootstrapView(
   const findings = receipt.checks.filter((check) => check.status !== 'passed');
   const foreignGoal =
     options.projectTask && receipt.activeGoal.present && !receipt.activeGoal.appliesToProject;
+  const onlyAdvisoryTaskFindings =
+    options.projectTask &&
+    findings.every(
+      (finding) =>
+        finding.status === 'warning' &&
+        (finding.id === 'verification-freshness' || (foreignGoal && finding.id === 'active-goal'))
+    );
   const passed = receipt.checks.length - findings.length;
   const nextActions = receipt.nextActions.filter(
     (entry) =>
       !options.completedReads?.includes(entry) &&
       !options.completedReads?.includes(`command:${entry}`) &&
+      !(foreignGoal && /^workspai goal(?:\s|$)/.test(entry)) &&
+      !(
+        onlyAdvisoryTaskFindings &&
+        /^workspai (?:workspace intelligence run|agent bootstrap)(?:\s|$)/.test(entry)
+      ) &&
       !(foreignGoal && findings.every((finding) => finding.id === 'active-goal'))
   );
   if (nextActions.length === 0) {

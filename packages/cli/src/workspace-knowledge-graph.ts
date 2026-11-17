@@ -1,4 +1,5 @@
 import path from 'path';
+import { isFilesystemReadDenied } from './utils/filesystem-read-errors.js';
 import { createHash } from 'crypto';
 import { createReadStream } from 'node:fs';
 import { execFile } from 'node:child_process';
@@ -1341,7 +1342,8 @@ function portableAttributes(
 async function listFiles(
   root: string,
   maxFiles: number,
-  excludedRoots: readonly string[] = []
+  excludedRoots: readonly string[] = [],
+  preserveReadErrors = false
 ): Promise<string[]> {
   const files: string[] = [];
   const queue = [root];
@@ -1358,7 +1360,8 @@ async function listFiles(
     let entries: fsExtra.Dirent[];
     try {
       entries = await fsExtra.readdir(current, { withFileTypes: true });
-    } catch {
+    } catch (error) {
+      if (preserveReadErrors && isFilesystemReadDenied(error)) throw error;
       continue;
     }
     entries.sort((a, b) => a.name.localeCompare(b.name));
@@ -1452,12 +1455,16 @@ type KnowledgeGraphFingerprintInventories = {
   scanBudgetsByProject?: ReadonlyMap<string, ProjectGraphScanBudget>;
 };
 
-async function contentHash(filePath: string): Promise<string> {
-  return new Promise((resolve) => {
+async function contentHash(filePath: string, preserveReadErrors = false): Promise<string> {
+  return new Promise((resolve, reject) => {
     const hash = createHash('sha256');
     const stream = createReadStream(filePath);
     stream.on('data', (chunk) => hash.update(chunk));
     stream.on('error', (error: NodeJS.ErrnoException) => {
+      if (preserveReadErrors && isFilesystemReadDenied(error)) {
+        reject(error);
+        return;
+      }
       resolve(`unreadable:${error.code ?? 'unknown'}`);
     });
     stream.on('end', () => resolve(hash.digest('hex')));
@@ -1602,11 +1609,12 @@ async function gitProjectFileInventory(
 async function projectFileInventory(
   root: string,
   fileLimit: number,
-  excludedRoots: readonly string[] = []
+  excludedRoots: readonly string[] = [],
+  preserveReadErrors = false
 ): Promise<ProjectFileInventory> {
   const gitInventory = await gitProjectFileInventory(root, fileLimit, excludedRoots);
   if (gitInventory) return gitInventory;
-  const observed = await listFiles(root, fileLimit + 1, excludedRoots);
+  const observed = await listFiles(root, fileLimit + 1, excludedRoots, preserveReadErrors);
   const truncated = observed.length > fileLimit;
   return {
     files: truncated ? balancedProjectFileSelection(observed, fileLimit, root) : observed,
@@ -1624,6 +1632,7 @@ async function gitFingerprintScope(input: {
   root: string;
   files: readonly string[];
   fileLimit: number;
+  preserveReadErrors?: boolean;
 }): Promise<WorkspaceKnowledgeGraphInputFingerprint['scopes'][number] | null> {
   try {
     // Ask Git for the repository-relative scope instead of comparing absolute
@@ -1724,7 +1733,8 @@ async function gitFingerprintScope(input: {
         return {
           path: scopeRelativePath,
           hash: await contentHash(
-            path.resolve(input.root, ...scopeRelativePath.split('/').filter(Boolean))
+            path.resolve(input.root, ...scopeRelativePath.split('/').filter(Boolean)),
+            input.preserveReadErrors
           ),
         };
       }
@@ -1743,7 +1753,8 @@ async function gitFingerprintScope(input: {
       fileLimit: input.fileLimit,
       truncated: input.files.length >= input.fileLimit,
     };
-  } catch {
+  } catch (error) {
+    if (input.preserveReadErrors && isFilesystemReadDenied(error)) throw error;
     return null;
   }
 }
@@ -1753,6 +1764,7 @@ async function persistedGitFingerprintHash(input: {
   id: string;
   root: string;
   fileLimit: number;
+  preserveReadErrors?: boolean;
   excludedRoots?: readonly string[];
 }): Promise<string | null> {
   try {
@@ -1841,10 +1853,14 @@ async function persistedGitFingerprintHash(input: {
           try {
             const stats = await fsExtra.lstat(absolutePath);
             if (!stats.isFile() || stats.isSymbolicLink()) return null;
-          } catch {
+          } catch (error) {
+            if (input.preserveReadErrors && isFilesystemReadDenied(error)) throw error;
             return null;
           }
-          return { path: scopeRelativePath, hash: await contentHash(absolutePath) };
+          return {
+            path: scopeRelativePath,
+            hash: await contentHash(absolutePath, input.preserveReadErrors),
+          };
         }
       )
     ).filter((entry): entry is { path: string; hash: string } => entry !== null);
@@ -1855,7 +1871,8 @@ async function persistedGitFingerprintHash(input: {
     digest.update(createHash('sha256').update(diff).digest());
     for (const entry of extras) digest.update(`${entry.path}\0${entry.hash}\0`);
     return digest.digest('hex');
-  } catch {
+  } catch (error) {
+    if (input.preserveReadErrors && isFilesystemReadDenied(error)) throw error;
     return null;
   }
 }
@@ -1886,6 +1903,7 @@ async function fingerprintScope(input: {
   root: string;
   files: readonly string[];
   fileLimit: number;
+  preserveReadErrors?: boolean;
   eligibleFileCount?: number;
   eligibleFileCountExact?: boolean;
   inventoryStrategy?: ProjectFileInventory['strategy'];
@@ -1911,7 +1929,7 @@ async function fingerprintScope(input: {
   }
   const entries = await mapWithConcurrency(boundedFiles, 16, async (filePath) => ({
     path: toPosix(path.relative(root, filePath)),
-    hash: await contentHash(filePath),
+    hash: await contentHash(filePath, input.preserveReadErrors),
   }));
   entries.sort((left, right) => left.path.localeCompare(right.path));
   const hash = createHash('sha256');
@@ -2078,6 +2096,7 @@ export async function inspectWorkspaceKnowledgeGraphInputs(input: {
   workspacePath: string;
   projects: readonly KnowledgeGraphFingerprintProject[];
   expected: WorkspaceKnowledgeGraphInputFingerprint;
+  preserveReadErrors?: boolean;
 }): Promise<WorkspaceGraphInputValidation> {
   const findings: WorkspaceGraphInputFinding[] = [];
   let omittedFindings = 0;
@@ -2127,6 +2146,7 @@ export async function inspectWorkspaceKnowledgeGraphInputs(input: {
           id: expectedScope.id,
           root,
           fileLimit: expectedScope.fileLimit,
+          preserveReadErrors: input.preserveReadErrors,
           ...(expectedScope.kind === 'workspace' ? { excludedRoots: projectRoots } : {}),
         });
         if (actualHash !== null) {
@@ -2139,7 +2159,8 @@ export async function inspectWorkspaceKnowledgeGraphInputs(input: {
       const rawInventory = await projectFileInventory(
         root,
         expectedScope.fileLimit,
-        expectedScope.kind === 'workspace' ? projectRoots : []
+        expectedScope.kind === 'workspace' ? projectRoots : [],
+        input.preserveReadErrors
       );
       const files =
         expectedScope.kind === 'workspace'
@@ -2178,6 +2199,7 @@ export async function inspectWorkspaceKnowledgeGraphInputs(input: {
         root,
         files: inventory.files,
         fileLimit: expectedScope.fileLimit,
+        preserveReadErrors: input.preserveReadErrors,
         eligibleFileCount: inventory.eligibleFileCount,
         eligibleFileCountExact: inventory.eligibleFileCountExact,
         inventoryStrategy: inventory.strategy,
@@ -2191,7 +2213,8 @@ export async function inspectWorkspaceKnowledgeGraphInputs(input: {
           actualHash: actualScope.hash,
         });
       }
-    } catch {
+    } catch (error) {
+      if (input.preserveReadErrors && isFilesystemReadDenied(error)) throw error;
       add({ scope, reason: 'scan-failed' });
     }
   }

@@ -101,7 +101,7 @@ context. If the host already presents decoded JSON, no extra parsing is needed.
 When a file must be read, select only the fields needed for the next step:
 
 ```bash
-node -e 'const fs = require("node:fs"); const p = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); const selected = p.status === "ready" || p.status === "partial" ? {status:p.status, scope:p.scope, selection:p.selection, findings:p.grounding?.checks?.findings, proofs:p.graph?.proofs, lifecycle:p.lifecycle, skill:p.skill, execution:p.execution} : {status:p.status, selection:p.selection, budget:p.budget, message:p.message, nextActions:p.nextActions, recovery:p.recovery}; console.log(JSON.stringify(selected));' <saved-output-file>
+node -e 'const fs = require("node:fs"); const p = JSON.parse(fs.readFileSync(process.argv[1], "utf8")); const selected = p.status === "ready" || p.status === "partial" ? {status:p.status, scope:p.scope, selection:p.selection, findings:p.grounding?.checks?.findings, graph:{status:p.graph?.status,retrieval:p.graph?.retrieval,matches:p.graph?.matches,proofs:p.graph?.proofs,userAction:p.graph?.userAction}, lifecycle:p.lifecycle, skill:p.skill, execution:p.execution} : {status:p.status, selection:p.selection, budget:p.budget, message:p.message, nextActions:p.nextActions, recovery:p.recovery}; console.log(JSON.stringify(selected));' <saved-output-file>
 ```
 
 Use a bounded excerpt for a parse failure, rather than printing the raw packet
@@ -139,8 +139,18 @@ Absolute workspace paths stay local and are never included in the packet.
 binding needs resolution; it is not an unmanaged project and is not permission
 to adopt it again.
 
-When `graph.status` is `results` or `no-matches`, the packet's bounded Graph
-query is complete; do not repeat it through MCP or CLI. If an IDE Graph tool
+If the user intentionally deleted the managed central workspace, an explicit
+`workspai adopt` can recreate it using an intact local link to the configured
+default. `--dry-run` previews that recovery without writing. Successful adoption
+registers the requested project in a fresh workspace; it does not restore the
+deleted history, goals or other memberships. A failed sealing step rolls back
+the recreated workspace, project metadata and registry changes. Read-only agent
+commands never recreate the workspace themselves.
+
+Read component statuses independently: a `partial` task packet can contain
+usable `graph.status: "results"`. An empty completed query has
+`graph.retrieval.status: "no-matches"`; it does not use a different top-level
+Graph status. In either case the bounded query is complete; do not repeat it through MCP or CLI. If an IDE Graph tool
 cannot select the project folder, use the packet's CLI result or command
 pointer. If the packet itself reports Graph unavailable, use its `nextAction`
 and native source/tests; missing Graph evidence does not prove source is absent.
@@ -160,6 +170,16 @@ workspace path in the packet. If membership is unverified or the host denies
 filesystem access, do not try other roots: ask for the missing choice or host
 read permission once, then fall back to native project tools if access remains
 unavailable. Declining Graph access does not block the original project task.
+
+A `graph.userAction.kind` of `request-filesystem-read` has a different recovery:
+request host read permission for the existing project workspace binding and
+retry the **same command** after approval. Use the original explicit choice or
+`.workspai/workspace-link.local.json`; do not ask for another root, switch to
+the default workspace, adopt, relink or refresh to bypass denied access.
+`EACCES` and `EPERM` while looking up or reading canonical evidence are reported
+as `permission-denied`, separately from missing or malformed artifacts. If the
+user declines or the retry is still denied, disclose the limitation and use
+native project tools. The CLI cannot grant host filesystem access itself.
 
 Prepared entry artifacts do not prove that the host loaded them or exposed its
 native tools. `delivery.hostLoading` and `delivery.modelCompliance` remain

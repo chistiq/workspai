@@ -694,6 +694,90 @@ describe('project workspace binding', () => {
     }
   );
 
+  it.each(['deleted', 'occupied', 'tampered', 'custom'])(
+    'allows adoption-only bootstrap of a deleted managed workspace with intact identity: %s',
+    async (scenario) => {
+      const f = await fixture({ workspaceName: 'workspai' });
+      const destination =
+        scenario === 'custom'
+          ? f.workspacePath
+          : path.join(f.home, '.workspai/workspaces/workspai');
+      if (destination !== f.workspacePath) {
+        await fsp.mkdir(path.dirname(destination), { recursive: true });
+        await fsp.rename(f.workspacePath, destination);
+      }
+      const { linkPath } = await writeProjectWorkspaceLink({
+        workspacePath: destination,
+        projectPath: f.projectPath,
+        projectName: 'web',
+        relationship: 'adopted',
+      });
+      if (scenario === 'tampered') {
+        const link = JSON.parse(await fsp.readFile(linkPath, 'utf8'));
+        link.integrity.binding = '0'.repeat(64);
+        await fsp.writeFile(linkPath, JSON.stringify(link));
+      }
+      const originalLink = await fsp.readFile(linkPath, 'utf8');
+      await fsp.rm(destination, { recursive: true });
+      if (scenario === 'occupied') await fsp.mkdir(destination);
+      const options = {
+        startPath: f.projectPath,
+        strict: true,
+        env: { HOME: f.home, USERPROFILE: f.home },
+      };
+      expect(() => resolveProjectWorkspaceSync(options)).toThrow(ProjectWorkspaceResolutionError);
+      expect(() =>
+        resolveProjectWorkspaceSync({
+          ...options,
+          requireProjectMembership: true,
+          recoverUnregisteredAdoption: true,
+        })
+      ).toThrow(ProjectWorkspaceResolutionError);
+      if (scenario === 'deleted') {
+        expect(
+          resolveProjectWorkspaceSync({ ...options, recoverUnregisteredAdoption: true })
+        ).toMatchObject({
+          workspacePath: destination,
+          adoptionBootstrapRequired: true,
+          recovered: true,
+        });
+        await expect(fsp.access(destination)).rejects.toMatchObject({ code: 'ENOENT' });
+      } else {
+        expect(() =>
+          resolveProjectWorkspaceSync({ ...options, recoverUnregisteredAdoption: true })
+        ).toThrow(ProjectWorkspaceResolutionError);
+      }
+      expect(await fsp.readFile(linkPath, 'utf8')).toBe(originalLink);
+    }
+  );
+
+  it.skipIf(process.platform === 'win32')(
+    'preserves a deleted workspace binding through a filesystem path alias',
+    async () => {
+      const f = await fixture({ workspaceName: 'workspai' });
+      const homeAlias = path.join(f.root, 'home-alias');
+      await fsp.symlink(f.home, homeAlias, 'dir');
+      const destination = path.join(homeAlias, '.workspai/workspaces/workspai');
+      await fsp.mkdir(path.dirname(destination), { recursive: true });
+      await fsp.rename(f.workspacePath, destination);
+      await writeProjectWorkspaceLink({
+        workspacePath: destination,
+        projectPath: f.projectPath,
+        projectName: 'web',
+        relationship: 'adopted',
+      });
+      await fsp.rm(destination, { recursive: true });
+      expect(
+        resolveProjectWorkspaceSync({
+          startPath: f.projectPath,
+          strict: true,
+          env: { HOME: homeAlias },
+          recoverUnregisteredAdoption: true,
+        })
+      ).toMatchObject({ adoptionBootstrapRequired: true, recovered: true });
+    }
+  );
+
   it('refuses to bind a project that is absent from the canonical contract', async () => {
     const { workspacePath, projectPath } = await fixture();
     const contractPath = path.join(workspacePath, '.workspai', 'workspace.contract.json');

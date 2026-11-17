@@ -26,6 +26,7 @@ import {
 } from './workspace-knowledge-graph-projection.js';
 import { hashCanonicalJson } from './workspace-model-hash.js';
 import { readAgentEntryArtifact, type AgentEntryArtifact } from './utils/agent-entry-artifact.js';
+import { isFilesystemReadDenied } from './utils/filesystem-read-errors.js';
 
 export const PROJECT_AGENT_ENTRY_SCHEMA_VERSION =
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS.projectAgentEntry.schemaVersion;
@@ -567,7 +568,8 @@ export async function buildAgentBootstrapReceipt(input: {
       if (relativePath === WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph) {
         canonicalGraph = payload as Record<string, unknown>;
       }
-    } catch {
+    } catch (error) {
+      if (isFilesystemReadDenied(error)) throw error;
       invalidCanonical.push(relativePath);
     }
   }
@@ -668,7 +670,9 @@ export async function buildAgentBootstrapReceipt(input: {
       const liveInputMessage =
         snapshot.status === 'hit'
           ? 'Live project inputs match the persisted Model and Knowledge Graph snapshot.'
-          : `Live project inputs require an intelligence refresh (${snapshot.reason}).`;
+          : snapshot.reason === 'permission-denied'
+            ? 'Canonical evidence is not readable. Request host read permission for the resolved workspace and retry; no intelligence refresh is required to recover access.'
+            : `Live project inputs could not be validated (${snapshot.reason}); inspect that cause before authorizing any intelligence refresh.`;
       liveInputCheck = {
         id: 'live-inputs',
         status: liveInputsValidated ? 'passed' : 'failed',
@@ -677,7 +681,8 @@ export async function buildAgentBootstrapReceipt(input: {
           ? { inputValidation: snapshot.inputValidation }
           : {}),
       };
-    } catch {
+    } catch (error) {
+      if (isFilesystemReadDenied(error)) throw error;
       input.onSnapshot?.({ status: 'miss', reason: 'input-scan-failed' });
       liveInputCheck = {
         id: 'live-inputs',

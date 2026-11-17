@@ -2,11 +2,13 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import path from 'node:path';
+import { homedir } from 'node:os';
 import fsExtra from 'fs-extra';
 
 import { getWorkspaceRegistryFileCandidates } from './utils/platform-capabilities.js';
 import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 import { normalizeRegistryPath } from './utils/registry-path.js';
+import { isFilesystemReadDenied } from './utils/filesystem-read-errors.js';
 import {
   PROJECT_WORKSPACE_LINK_FILE,
   PROJECT_WORKSPACE_LINK_RELATIVE_PATH,
@@ -14,6 +16,8 @@ import {
   hasWorkspaceRootMarkers,
   projectMetadataCandidates,
   projectMetadataPath,
+  MANAGED_DEFAULT_WORKSPACE_NAME,
+  resolveManagedDefaultImportWorkspacePath,
 } from './utils/workspace-paths.js';
 import {
   WORKSPACE_SUPPLEMENTAL_ARTIFACT_CONTRACTS,
@@ -57,6 +61,8 @@ export interface ResolvedProjectWorkspace {
   source: ProjectWorkspaceResolutionSource;
   linkPath: string | null;
   recovered: boolean;
+  /** Adoption-only destination hint; this missing workspace is not a valid membership. */
+  adoptionBootstrapRequired?: true;
 }
 
 export type ProjectWorkspaceResolutionErrorCode =
@@ -226,7 +232,6 @@ function parseProjectWorkspaceLink(filePath: string): ProjectWorkspaceLink {
 
 function projectBelongsToContract(workspacePath: string, projectPath: string): boolean | null {
   const contractPath = path.join(workspacePath, '.workspai', 'workspace.contract.json');
-  if (!fs.existsSync(contractPath)) return null;
   try {
     const payload = readJsonSync(contractPath) as {
       projects?: Array<{ relativePath?: unknown; externalPath?: unknown }>;
@@ -248,7 +253,9 @@ function projectBelongsToContract(workspacePath: string, projectPath: string): b
         normalizedProject
       );
     });
-  } catch {
+  } catch (error) {
+    if (isFilesystemReadDenied(error)) throw error;
+    if (['ENOENT', 'ENOTDIR'].includes(String((error as NodeJS.ErrnoException).code))) return null;
     return false;
   }
 }
@@ -322,6 +329,10 @@ export function resolveProjectWorkspaceSync(
   const projectPath = findProjectRootUp(startPath);
 
   if (explicit) {
+    const membership =
+      options.requireProjectMembership === true && projectPath
+        ? projectBelongsToContract(explicit, projectPath)
+        : null;
     if (!hasWorkspaceRootMarkers(explicit)) {
       return strictOrNull(
         strict,
@@ -332,11 +343,7 @@ export function resolveProjectWorkspaceSync(
         )
       );
     }
-    if (
-      options.requireProjectMembership === true &&
-      projectPath &&
-      projectBelongsToContract(explicit, projectPath) !== true
-    ) {
+    if (options.requireProjectMembership === true && projectPath && membership !== true) {
       return strictOrNull(
         strict,
         new ProjectWorkspaceResolutionError(
@@ -409,9 +416,12 @@ export function resolveProjectWorkspaceSync(
       relativePath: link.project.relativePath,
       relationship: link.project.relationship,
     });
-    const membership = projectBelongsToContract(link.workspace.root, projectPath);
+    const bindingMatches = link.integrity.binding === expectedBinding;
+    const membership = bindingMatches
+      ? projectBelongsToContract(link.workspace.root, projectPath)
+      : false;
     if (
-      link.integrity.binding === expectedBinding &&
+      bindingMatches &&
       hasWorkspaceRootMarkers(link.workspace.root) &&
       fs.existsSync(path.join(link.workspace.root, link.workspace.marker)) &&
       membership === true
@@ -467,7 +477,39 @@ export function resolveProjectWorkspaceSync(
         relativePath: staleLink.project.relativePath,
         relationship: staleLink.project.relationship,
       });
+      const env = options.env ?? process.env;
+      const recoveryHome =
+        (options.platform ?? process.platform) === 'win32'
+          ? env.USERPROFILE || env.HOME || homedir()
+          : env.HOME || env.USERPROFILE || homedir();
+      const defaultWorkspace = resolveManagedDefaultImportWorkspacePath(recoveryHome);
+      if (
+        staleLink.integrity.binding === expectedBinding &&
+        staleLink.workspace.name === MANAGED_DEFAULT_WORKSPACE_NAME &&
+        normalizeRegistryPath(staleLink.workspace.root) === normalizeRegistryPath(defaultWorkspace)
+      ) {
+        let missing = false;
+        try {
+          fs.lstatSync(staleLink.workspace.root);
+        } catch (error) {
+          if (isFilesystemReadDenied(error)) throw error;
+          missing = (error as NodeJS.ErrnoException).code === 'ENOENT';
+        }
+        if (missing) {
+          return {
+            workspacePath: path.resolve(staleLink.workspace.root),
+            projectPath,
+            source: 'local-link',
+            linkPath,
+            recovered: true,
+            adoptionBootstrapRequired: true,
+          };
+        }
+      }
       try {
+        if (staleLink.integrity.binding !== expectedBinding) {
+          throw new Error('Adoption cannot trust a changed project workspace link binding.');
+        }
         const contract = readJsonSync(
           path.join(staleLink.workspace.root, staleLink.workspace.contract)
         ) as {

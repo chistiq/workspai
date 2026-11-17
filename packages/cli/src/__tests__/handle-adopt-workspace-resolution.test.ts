@@ -9,6 +9,10 @@ import { WORKSPACE_INTELLIGENCE_ARTIFACTS } from '../contracts/workspace-intelli
 import { handleAdoptCommand } from '../index.js';
 import * as cliPrompts from '../cli-ui/index.js';
 import { WORKSPACE_CONTRACT_PATH } from '../utils/workspace-contract.js';
+import { resolveProjectWorkspaceSync } from '../project-workspace-link.js';
+import { registerProjectInWorkspaceStrict } from '../workspace.js';
+import { getWorkspaceRegistryDirectory } from '../utils/platform-capabilities.js';
+import { normalizeRegistryPath } from '../utils/registry-path.js';
 
 const tempDirs: string[] = [];
 
@@ -18,6 +22,7 @@ afterEach(async () => {
   // final filesystem read, so use Node's bounded EBUSY/EPERM retry support.
   // A persistent lock still rejects the cleanup and fails the test.
   vi.restoreAllMocks();
+  vi.unstubAllEnvs();
   for (const dir of tempDirs.splice(0)) {
     await fs.rm(dir, {
       recursive: true,
@@ -59,6 +64,93 @@ async function makeWorkspaceRoot(prefix: string): Promise<string> {
 }
 
 describe('handleAdoptCommand workspace resolution', () => {
+  it.each(['success', 'rollback'])(
+    'recreates a deleted central workspace through adoption with transactional %s',
+    async (scenario) => {
+      const root = await makeTempDir('workspai-adopt-deleted-central-');
+      const fakeHome = path.join(root, 'home');
+      const source = path.join(root, 'source', 'demo');
+      const workspace = path.join(fakeHome, '.workspai/workspaces/workspai');
+      await fs.mkdir(source, { recursive: true });
+      await fs.writeFile(path.join(source, 'package.json'), '{"name":"demo","version":"1.0.0"}');
+      await fs.writeFile(path.join(source, 'index.js'), 'export const value = 1;\n');
+      vi.stubEnv('HOME', fakeHome);
+      vi.stubEnv('USERPROFILE', fakeHome);
+      vi.stubEnv('RAPIDKIT_TEST_ADOPT_SYNC_FAIL', '');
+      const log = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+      const cwd = process.cwd();
+      process.chdir(source);
+      try {
+        expect(await handleAdoptCommand('.', { json: true })).toBe(0);
+        await registerProjectInWorkspaceStrict(
+          workspace,
+          'not-restored',
+          path.join(root, 'other-project')
+        );
+        const registryPath = path.join(getWorkspaceRegistryDirectory(), 'workspaces.json');
+        const registryBefore = await fs.readFile(registryPath, 'utf8');
+        const linkPath = path.join(source, '.workspai/workspace-link.local.json');
+        const linkBefore = await fs.readFile(linkPath, 'utf8');
+        await fs.rm(workspace, { recursive: true });
+        expect(() =>
+          resolveProjectWorkspaceSync({
+            startPath: source,
+            strict: true,
+            requireProjectMembership: true,
+          })
+        ).toThrow();
+        log.mockClear();
+        expect(await handleAdoptCommand('.', { json: true, dryRun: true })).toBe(0);
+        const preview = JSON.parse(log.mock.calls.at(-1)![0]);
+        expect(preview).toMatchObject({
+          workspacePath: workspace,
+          workspaceResolution: 'default-auto',
+          wouldCreateDefaultWorkspace: true,
+        });
+        await expect(fs.access(workspace)).rejects.toMatchObject({ code: 'ENOENT' });
+        expect(await fs.readFile(linkPath, 'utf8')).toBe(linkBefore);
+        expect(await fs.readFile(registryPath, 'utf8')).toBe(registryBefore);
+        if (scenario === 'rollback') vi.stubEnv('RAPIDKIT_TEST_ADOPT_SYNC_FAIL', '1');
+        log.mockClear();
+        expect(await handleAdoptCommand('.', { json: true })).toBe(scenario === 'success' ? 0 : 1);
+        if (scenario === 'success') {
+          const result = JSON.parse(log.mock.calls.at(-1)![0]);
+          expect(result).toMatchObject({
+            defaultWorkspaceCreated: true,
+            consumerArtifacts: { freshnessSealed: true },
+          });
+          expect(result.agentBootstrap.status).not.toBe('blocked');
+          expect(
+            resolveProjectWorkspaceSync({
+              startPath: source,
+              strict: true,
+              requireProjectMembership: true,
+            })
+          ).toMatchObject({ workspacePath: workspace, source: 'local-link' });
+          const contract = JSON.parse(
+            await fs.readFile(path.join(workspace, WORKSPACE_CONTRACT_PATH), 'utf8')
+          );
+          expect(contract.projects.map((p: { slug: string }) => p.slug)).toEqual(['demo']);
+          const registry = JSON.parse(await fs.readFile(registryPath, 'utf8'));
+          expect(
+            registry.workspaces
+              .find((w: { path: string }) => w.path === normalizeRegistryPath(workspace))
+              ?.projects.map((p: { name: string }) => p.name)
+          ).toEqual(['demo']);
+        } else {
+          await expect(fs.access(workspace)).rejects.toMatchObject({ code: 'ENOENT' });
+          expect(await fs.readFile(linkPath, 'utf8')).toBe(linkBefore);
+          expect(await fs.readFile(registryPath, 'utf8')).toBe(registryBefore);
+        }
+        expect(await fs.readFile(path.join(source, 'index.js'), 'utf8')).toBe(
+          'export const value = 1;\n'
+        );
+      } finally {
+        process.chdir(cwd);
+      }
+    },
+    60_000
+  );
   it('previews bootstrap of an explicit empty workspace before adopt', async () => {
     const root = await makeTempDir('rapidkit-handle-adopt-explicit-');
     const projectPath = path.join(root, 'my-project');

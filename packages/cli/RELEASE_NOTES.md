@@ -5,10 +5,10 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## v0.81.1 (November 16, 2026)
+## v0.81.1 (November 17, 2026)
 
-Released November 16, 2026. Package metadata is aligned to `0.81.1`.
-**Publication status: Published November 16, 2026.** Cross-platform
+Released November 17, 2026. Package metadata is aligned to `0.81.1`.
+**Publication status: Published November 17, 2026.** Cross-platform
 qualification has not been claimed.
 
 ### Clearer execution context for coding agents
@@ -19,6 +19,20 @@ different directory than source reads.
 
 **What's New:**
 
+- Recover `adopt` after deletion of the managed central workspace, using an
+  intact project link and the configured default path. Rebuild and register the
+  requested project transactionally; dry-run remains read-only and failed
+  sealing restores the previous project and registry state. Deleted workspace
+  data and other prior project memberships are not restored automatically.
+- Preserve filesystem permission failures through canonical Graph lookup and
+  membership validation. Request host read access to the existing workspace
+  binding and retry unchanged; do not confuse denial with invalid evidence or
+  recover it by refreshing, adopting, relinking or choosing another workspace.
+- Make successful Graph retrieval explicit even when task grounding is partial;
+  distinguish `graph.retrieval.status: no-matches` and reuse returned matches
+  after an IDE picker failure. Clarify JSON field selection and project cwd.
+- Retain advisory verification and foreign Goal warnings without sending a
+  project-local task into unrelated Goal recovery or broad workspace refresh.
 - Recover re-adoption from intact links with missing membership after validating
   workspace identity and absence of name/path collisions; preserve transactional
   rollback and authored instructions. Ordinary tools still require membership.
@@ -111,14 +125,19 @@ create/adopt paths and bounded task context. Current guides distinguish scoped
 gates from fleet readiness and cover inline Skills, Graph recovery and explicit
 project selection without adding repeated full-workspace prerequisites.
 
-**Validation (November 16, 2026):** The full CLI suite on Linux/Node 24.20.0 completed with
-**3,271 passed, 12 skipped, and 0 failed**. Permanent regressions cover scoped
-gates, retrieval, Skill applicability, host entry, compiler identity and verification hardening. Build, typecheck,
-changed-file lint/formatting, contract parity/synchronization, agent customization
+**Validation (November 17, 2026):** The full CLI suite on Linux/Node 24.20.0 completed with
+**3,306 passed, 12 skipped, and 0 failed** across 280 files (276 passed, 4 skipped).
+Permanent regressions include permission-denied artifact lookup/reads and input
+validation, unchanged retries through existing workspace bindings, invalid-link
+rejection, usable Graph results in advisory task packets, and transactional
+re-adoption after deletion of the central workspace, including path aliases
+and failure rollback. Scoped gates,
+host entry, compiler identity and verification hardening remain covered. Build, typecheck,
+lint/formatting, contract parity/synchronization, agent customization
 drift, and documentation/release checks passed. Cross-platform qualification
 remains unclaimed.
 
-**Publication status:** Published November 16, 2026.
+**Publication status:** Published November 17, 2026.
 
 **Install or upgrade:**
 

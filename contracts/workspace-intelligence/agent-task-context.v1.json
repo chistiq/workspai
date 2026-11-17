@@ -416,22 +416,38 @@
           "minLength": 1
         },
         "userAction": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "kind",
-            "status",
-            "managedDefaultOption",
-            "explicitWorkspaceOption",
-            "message"
-          ],
-          "properties": {
-            "kind": { "const": "request-project-graph-access" },
-            "status": { "enum": ["requires-consent", "workspace-choice-unverified"] },
-            "managedDefaultOption": { "const": "--workspace-default" },
-            "explicitWorkspaceOption": { "const": "--workspace" },
-            "message": { "type": "string", "minLength": 1 }
-          }
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "status",
+                "managedDefaultOption",
+                "explicitWorkspaceOption",
+                "message"
+              ],
+              "properties": {
+                "kind": { "const": "request-project-graph-access" },
+                "status": { "enum": ["requires-consent", "workspace-choice-unverified"] },
+                "managedDefaultOption": { "const": "--workspace-default" },
+                "explicitWorkspaceOption": { "const": "--workspace" },
+                "message": { "type": "string", "minLength": 1 }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["kind", "status", "target", "retry", "message"],
+              "properties": {
+                "kind": { "const": "request-filesystem-read" },
+                "status": { "const": "requires-consent" },
+                "target": { "const": "project-workspace-evidence" },
+                "retry": { "const": "same-command" },
+                "message": { "type": "string", "minLength": 1 }
+              }
+            }
+          ]
         },
         "inputValidation": {
           "$ref": "agent-bootstrap-receipt.v1.json#/$defs/inputValidation"

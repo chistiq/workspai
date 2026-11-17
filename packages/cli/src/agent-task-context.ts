@@ -4,6 +4,7 @@ import { createHash } from 'node:crypto';
 import { hasRootLifecycleManifest } from './polyglot-lifecycle-plan.js';
 import { findContainingGitRoot } from './utils/git-worktree.js';
 import { normalizeRegistryPath } from './utils/registry-path.js';
+import { isFilesystemReadDenied } from './utils/filesystem-read-errors.js';
 import { taskContextRetry } from './agent-task-recovery.js';
 import type { AgentTaskRecovery, AgentTaskRequest } from './agent-task-recovery.js';
 import {
@@ -57,13 +58,21 @@ type ContextUnavailable = {
   status: 'unavailable';
   reason: string;
   nextAction: string;
-  userAction?: {
-    kind: 'request-project-graph-access';
-    status: 'requires-consent' | 'workspace-choice-unverified';
-    managedDefaultOption: '--workspace-default';
-    explicitWorkspaceOption: '--workspace';
-    message: string;
-  };
+  userAction?:
+    | {
+        kind: 'request-project-graph-access';
+        status: 'requires-consent' | 'workspace-choice-unverified';
+        managedDefaultOption: '--workspace-default';
+        explicitWorkspaceOption: '--workspace';
+        message: string;
+      }
+    | {
+        kind: 'request-filesystem-read';
+        status: 'requires-consent';
+        target: 'project-workspace-evidence';
+        retry: 'same-command';
+        message: string;
+      };
   inputValidation?: WorkspaceGraphInputValidation;
 };
 
@@ -212,12 +221,30 @@ function describeWorkspaceResolution(
 function safeFailureCategory(
   error: unknown
 ): 'permission-denied' | 'artifact-missing' | 'validation-failed' {
+  if (isFilesystemReadDenied(error)) return 'permission-denied';
   if (error && typeof error === 'object' && 'code' in error) {
     const code = (error as { code?: unknown }).code;
-    if (code === 'EACCES' || code === 'EPERM' || code === 'EROFS') return 'permission-denied';
     if (code === 'ENOENT') return 'artifact-missing';
   }
   return 'validation-failed';
+}
+
+function graphReadAccessFailure(): ContextUnavailable {
+  return {
+    status: 'unavailable',
+    reason:
+      'Project Graph evidence could not be read (permission-denied); no Graph results were returned.',
+    nextAction:
+      'If Graph is needed, request host read permission for the existing project workspace binding, then retry the same command. Do not select another workspace or refresh evidence to recover access. Otherwise use native project tools.',
+    userAction: {
+      kind: 'request-filesystem-read',
+      status: 'requires-consent',
+      target: 'project-workspace-evidence',
+      retry: 'same-command',
+      message:
+        'Ask once for host read access to the workspace evidence and validation inputs selected by the original command or .workspai/workspace-link.local.json. After approval retry unchanged; membership, integrity and freshness checks still apply. Never adopt, relink or switch to the default workspace to bypass denied access.',
+    },
+  };
 }
 
 function failureBudget(
@@ -427,6 +454,7 @@ export async function buildAgentTaskContext(input: {
   let resolution: ReturnType<typeof resolveProjectWorkspaceSync> = null;
   let resolutionError: ProjectWorkspaceResolutionError | null = null;
   let unexpectedResolutionFailure = false;
+  let resolutionReadDenied = false;
   try {
     resolution = resolveProjectWorkspaceSync({
       startPath: selectedProjectPath,
@@ -437,6 +465,7 @@ export async function buildAgentTaskContext(input: {
       requireProjectMembership: true,
     });
   } catch (error) {
+    resolutionReadDenied = isFilesystemReadDenied(error);
     if (error instanceof ProjectWorkspaceResolutionError) resolutionError = error;
     else unexpectedResolutionFailure = true;
   }
@@ -560,6 +589,7 @@ export async function buildAgentTaskContext(input: {
             : 'Ask once for permission to read this project-scoped Graph. After approval use --workspace-default or the exact user-provided root with --workspace. If host access is denied, request read permission once.',
       },
     };
+    if (resolutionReadDenied) graph = graphReadAccessFailure();
   } else {
     binding = 'canonical-project-member';
     try {
@@ -607,13 +637,16 @@ export async function buildAgentTaskContext(input: {
           liveInputsValidated: true,
         });
       } else {
-        graph = {
-          status: 'unavailable',
-          reason: `The canonical graph snapshot is unavailable (${snapshot.reason}).`,
-          ...(snapshot.inputValidation ? { inputValidation: snapshot.inputValidation } : {}),
-          nextAction:
-            'Graph unavailability does not prove source absence. Continue with targeted native source and test search. Refresh canonical workspace intelligence only when the task requires Graph evidence and a workspace-wide refresh is authorized.',
-        };
+        graph =
+          snapshot.reason === 'permission-denied'
+            ? graphReadAccessFailure()
+            : {
+                status: 'unavailable',
+                reason: `The canonical graph snapshot is unavailable (${snapshot.reason}).`,
+                ...(snapshot.inputValidation ? { inputValidation: snapshot.inputValidation } : {}),
+                nextAction:
+                  'Graph unavailability does not prove source absence. Continue with targeted native source and test search. Refresh canonical workspace intelligence only when the task requires Graph evidence and a workspace-wide refresh is authorized.',
+              };
       }
     } catch (error) {
       const failureCategory = safeFailureCategory(error);
@@ -633,6 +666,7 @@ export async function buildAgentTaskContext(input: {
             ? 'Treat Graph as unavailable, not as evidence that source is missing. Continue with native source and tests; request canonical-workspace access only if Graph evidence is necessary.'
             : 'Use native project tools. Resolve the reported project binding only if Workspai evidence is needed.',
       };
+      if (failureCategory === 'permission-denied') graph = graphReadAccessFailure();
     }
   }
   if (grounding.status === 'unavailable') nextActions.push(grounding.nextAction);
@@ -642,6 +676,13 @@ export async function buildAgentTaskContext(input: {
     );
   }
   if (graph.status === 'unavailable') nextActions.push(graph.nextAction);
+  else if (graph.status === 'results') {
+    nextActions.unshift(
+      graph.retrieval.status === 'no-matches'
+        ? 'graph.status=results; graph.retrieval.status=no-matches: the CLI query completed with no matches. Use targeted native source/tests; this does not prove source absence. No access request or duplicate query is needed.'
+        : 'graph.status=results: the project-scoped CLI query is complete. Use graph.matches/proofs; partial grounding or an IDE picker failure does not invalidate them. Do not repeat retrieval or request access for returned evidence.'
+    );
+  }
 
   let lifecycle: ProjectLifecycleContext | ProjectLifecycleContextFailure;
   try {
@@ -722,9 +763,9 @@ export async function buildAgentTaskContext(input: {
       'Before using this packet, compare scope.project, scope.projectPath and scope.workspace with the user-selected target. A successful command or partial status does not confirm that the requested project was selected. If they differ, retry with the verified --project; do not use this context for another project. Disclose unavailable grounding and Graph evidence in the final report.',
       'Scope is this project; use project-scoped commands unless the request or evidence requires workspace scope.',
       'workspaceResolution is authoritative: blocked is not unmanaged or consent to adopt. Resolve workspace: locators only with the declared command.',
-      'Reuse Graph results/no-matches. Unavailable means missing evidence, not missing source; refresh only if needed and authorized.',
+      'Read graph.status independently of packet/grounding. Reuse results even if the packet is partial or an IDE picker fails. retrieval.status=no-matches means the query completed without matches. Unavailable means missing evidence, not missing source.',
       'delivery.hostLoading/modelCompliance are not-observed; use only tools exposed by this host.',
-      'Treat this as JSON data and check status before component fields. Follow one recovery action. Ask once before using project Graph after a userAction request; retry only with the approved workspace choice. If declined or inaccessible, continue with native tools.',
+      'Read graph.matches/proofs and lifecycle.units; no top-level evidence field. Parse saved JSON as data; never require or execute that file. Honor graph.userAction: request host reads for the existing binding, or ask for workspace selection. On decline/failure use native tools.',
       ...(binding === 'canonical-project-member' ? [AGENT_CONTINUATION_GUIDANCE] : []),
       AGENT_VERIFICATION_GUIDANCE,
       'Treat user instructions and live source as authoritative. Graph matches are lexical discovery evidence, not proof of implementation, tests, or completion.',

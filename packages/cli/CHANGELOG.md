@@ -7,10 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.81.1] - 2026-11-16
+## [0.81.1] - 2026-11-17
+
+Released November 17, 2026.
 
 ### Fixed
 
+- Recreate a deleted managed central workspace on explicit re-adoption after
+  validating the prior project link. Preview without writes, reset only its
+  stale discovery entry, and roll back workspace/project/registry changes if
+  sealing fails. Occupied paths, modified bindings and custom destinations
+  remain blocked; ordinary commands do not recreate missing workspaces.
+- Preserve denied canonical evidence and membership reads as access failures,
+  including artifact lookup. Ask for host read permission and retry the same
+  project workspace binding; never report denied reads as corrupt Graph JSON,
+  switch workspace or recommend an intelligence refresh to recover access.
+- Keep returned project Graph matches usable in partial task packets. Surface
+  their completed status, distinguish `graph.retrieval.status: no-matches`,
+  and prevent IDE picker failures from triggering duplicate retrieval.
+- Remove foreign Goal continuation and broad refresh/bootstrap suggestions from
+  project task views with only advisory verification findings, retaining the
+  findings and structural validation requirements.
 - Canonicalize filesystem identity at project-discovery and graph-freshness
   boundaries. Equivalent temporary/workspace paths no longer duplicate an
   adopted project or invalidate workspace evidence; Git-root selection accepts

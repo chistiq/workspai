@@ -2810,6 +2810,7 @@ function resolveWorkspaceForIngestion(
 ): {
   workspacePath: string | null;
   error: ProjectWorkspaceResolutionError | null;
+  recreateManagedDefault: boolean;
 } {
   try {
     const resolution = resolveProjectWorkspaceSync({
@@ -2824,16 +2825,17 @@ function resolveWorkspaceForIngestion(
           ? workspacePath
           : null,
       error: null,
+      recreateManagedDefault: resolution?.adoptionBootstrapRequired === true,
     };
   } catch (error) {
     if (
       error instanceof ProjectWorkspaceResolutionError &&
       error.code === 'project.workspace.unlinked'
     ) {
-      return { workspacePath: null, error: null };
+      return { workspacePath: null, error: null, recreateManagedDefault: false };
     }
     if (error instanceof ProjectWorkspaceResolutionError) {
-      return { workspacePath: null, error };
+      return { workspacePath: null, error, recreateManagedDefault: false };
     }
     throw error;
   }
@@ -3757,7 +3759,7 @@ export async function handleAdoptCommand(
   let bootstrapTargetPath: string | null = null;
 
   let ingestionResolution = explicitWorkspace
-    ? { workspacePath: null as string | null, error: null }
+    ? { workspacePath: null as string | null, error: null, recreateManagedDefault: false }
     : resolveWorkspaceForIngestion(process.cwd(), path.resolve(process.cwd()) === sourcePath);
 
   // Preserve the current-workspace ownership rule for external adoption, but
@@ -3826,10 +3828,12 @@ export async function handleAdoptCommand(
     workspacePath = ingestionResolution.workspacePath;
     workspaceResolution = 'nearest';
   } else {
-    const outsideWorkspaceMode = await prepareOutsideWorkspaceAdopt(sourcePath, {
-      json: options.json,
-      explicitWorkspace: false,
-    });
+    const outsideWorkspaceMode = ingestionResolution.recreateManagedDefault
+      ? 'managed'
+      : await prepareOutsideWorkspaceAdopt(sourcePath, {
+          json: options.json,
+          explicitWorkspace: false,
+        });
 
     const outsideResolution = await resolveOutsideWorkspaceAdoptTarget({
       sourcePath,
@@ -3904,6 +3908,21 @@ export async function handleAdoptCommand(
           willCreateDefaultWorkspace || willBootstrapWorkspace ? workspacePath : undefined,
       });
       if (willCreateDefaultWorkspace) {
+        if (ingestionResolution.recreateManagedDefault) {
+          // Recheck after taking the lifecycle lock. Never reset a registry
+          // entry for a destination recreated by another writer meanwhile.
+          const targetExists = await fsExtra.lstat(workspacePath).then(
+            () => true,
+            (error: NodeJS.ErrnoException) => {
+              if (error.code === 'ENOENT') return false;
+              throw error;
+            }
+          );
+          if (targetExists)
+            throw new Error('Workspace destination changed during recovery. Retry adopt.');
+          const { unregisterWorkspaceStrict } = await import('./workspace.js');
+          await unregisterWorkspaceStrict(workspacePath);
+        }
         const ensuredWorkspace = await ensureManagedDefaultImportWorkspace({
           silent: options.json,
         });

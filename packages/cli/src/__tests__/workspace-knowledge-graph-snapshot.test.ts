@@ -4,7 +4,7 @@ import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';
 
 import fsExtra from 'fs-extra';
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import {
   WORKSPACE_INTELLIGENCE_ARTIFACTS,
@@ -39,6 +39,7 @@ describe('workspace knowledge graph snapshot', () => {
   ];
 
   afterEach(async () => {
+    vi.restoreAllMocks();
     await Promise.all(roots.splice(0).map((root) => fsExtra.remove(root)));
   });
 
@@ -126,6 +127,54 @@ describe('workspace knowledge graph snapshot', () => {
       graph: { workspace: { name: 'snapshot' } },
     });
   });
+
+  it.each(['EACCES', 'EPERM'])(
+    'preserves %s during artifact lookup instead of reporting missing evidence',
+    async (code) => {
+      const { root } = await fixture();
+      vi.spyOn(fsExtra, 'stat').mockRejectedValueOnce(Object.assign(new Error('denied'), { code }));
+      await expect(readWorkspaceKnowledgeGraphSnapshot(root)).resolves.toEqual({
+        status: 'miss',
+        reason: 'permission-denied',
+      });
+    }
+  );
+
+  it.each(['EACCES', 'EPERM'])(
+    'preserves %s while validating live input inventory without accepting stale evidence',
+    async (code) => {
+      const { root } = await fixture();
+      vi.spyOn(fsExtra, 'readdir').mockRejectedValueOnce(
+        Object.assign(new Error('denied'), { code })
+      );
+      await expect(readWorkspaceKnowledgeGraphSnapshot(root)).resolves.toEqual({
+        status: 'miss',
+        reason: 'permission-denied',
+      });
+    }
+  );
+
+  it.each([
+    ['model', 'EACCES'],
+    ['model', 'EPERM'],
+    ['knowledgeGraph', 'EACCES'],
+    ['knowledgeGraph', 'EPERM'],
+  ] as const)(
+    'preserves a %s read denied with %s instead of reporting invalid JSON',
+    async (artifact, code) => {
+      const { root } = await fixture();
+      const deniedPath = path.join(root, WORKSPACE_INTELLIGENCE_ARTIFACTS[artifact]);
+      const original = fsExtra.readJson;
+      vi.spyOn(fsExtra, 'readJson').mockImplementation(async (file) => {
+        if (String(file) === deniedPath) throw Object.assign(new Error('denied'), { code });
+        return original(file);
+      });
+      await expect(readWorkspaceKnowledgeGraphSnapshot(root)).resolves.toEqual({
+        status: 'miss',
+        reason: 'permission-denied',
+      });
+    }
+  );
 
   it.each(['missing', 'older', 'malformed', 'duplicate'] as const)(
     'rejects %s provider generations even with live source fingerprints',

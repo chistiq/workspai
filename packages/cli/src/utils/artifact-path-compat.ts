@@ -488,7 +488,8 @@ async function withWorkspaceArtifactFileLock<T>(
 
 export async function firstExistingWorkspaceArtifactPath(
   workspacePath: string,
-  relativePath: string
+  relativePath: string,
+  options: { preserveReadErrors?: boolean } = {}
 ): Promise<string | null> {
   const candidates = [
     resolveWorkspaceArtifactPath(workspacePath, relativePath),
@@ -496,7 +497,20 @@ export async function firstExistingWorkspaceArtifactPath(
   ];
 
   for (const candidate of candidates) {
-    if (await fsExtra.pathExists(candidate)) {
+    let exists: boolean;
+    if (options.preserveReadErrors) {
+      try {
+        await fsExtra.stat(candidate);
+        exists = true;
+      } catch (error) {
+        const code = (error as NodeJS.ErrnoException).code;
+        if (code !== 'ENOENT' && code !== 'ENOTDIR') throw error;
+        exists = false;
+      }
+    } else {
+      exists = await fsExtra.pathExists(candidate);
+    }
+    if (exists) {
       await assertExistingArtifactIsContained(workspacePath, candidate);
       return candidate;
     }

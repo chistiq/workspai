@@ -13,6 +13,7 @@ import {
 } from './workspace-knowledge-graph.js';
 import type { WorkspaceGraphInputValidation } from './workspace-knowledge-graph.js';
 import { firstExistingWorkspaceArtifactPath } from './utils/artifact-path-compat.js';
+import { isFilesystemReadDenied } from './utils/filesystem-read-errors.js';
 
 export type WorkspaceKnowledgeGraphSnapshotResult =
   | {
@@ -25,6 +26,7 @@ export type WorkspaceKnowledgeGraphSnapshotResult =
   | {
       status: 'miss';
       reason:
+        | 'permission-denied'
         | 'missing-model'
         | 'missing-graph'
         | 'invalid-model'
@@ -74,7 +76,8 @@ function isWorkspaceKnowledgeGraph(value: unknown): value is WorkspaceKnowledgeG
 async function readJson(path: string): Promise<unknown> {
   try {
     return await fsExtra.readJson(path);
-  } catch {
+  } catch (error) {
+    if (isFilesystemReadDenied(error)) throw error;
     return null;
   }
 }
@@ -89,11 +92,26 @@ export async function readWorkspaceKnowledgeGraphSnapshot(
   workspacePath: string,
   options: { includeInputDiagnostics?: boolean } = {}
 ): Promise<WorkspaceKnowledgeGraphSnapshotResult> {
+  try {
+    return await readSnapshot(workspacePath, options);
+  } catch (error) {
+    if (isFilesystemReadDenied(error)) return { status: 'miss', reason: 'permission-denied' };
+    throw error;
+  }
+}
+
+async function readSnapshot(
+  workspacePath: string,
+  options: { includeInputDiagnostics?: boolean }
+): Promise<WorkspaceKnowledgeGraphSnapshotResult> {
   const [modelPath, graphPath] = await Promise.all([
-    firstExistingWorkspaceArtifactPath(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.model),
+    firstExistingWorkspaceArtifactPath(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.model, {
+      preserveReadErrors: true,
+    }),
     firstExistingWorkspaceArtifactPath(
       workspacePath,
-      WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph
+      WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph,
+      { preserveReadErrors: true }
     ),
   ]);
   if (!modelPath) return { status: 'miss', reason: 'missing-model' };
@@ -145,8 +163,10 @@ export async function readWorkspaceKnowledgeGraphSnapshot(
         ...(project.absolutePath ? { absolutePath: project.absolutePath } : {}),
       })),
       expected: inputs,
+      preserveReadErrors: true,
     });
-  } catch {
+  } catch (error) {
+    if (isFilesystemReadDenied(error)) throw error;
     return { status: 'miss', reason: 'input-scan-failed' };
   }
   if (!inputValidation.matches) {

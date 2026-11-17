@@ -1,5 +1,6 @@
 import { createHash } from 'node:crypto';
-import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
+import fsp from 'node:fs/promises';
 import { mkdir, mkdtemp, readFile, readdir, rm, symlink, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
@@ -24,7 +25,10 @@ import {
   buildWorkspaceAgentReportsIndex,
   AGENT_REPORTS_INDEX_PATH,
 } from '../workspace-agent-sync.js';
-import { WORKSPACE_SUPPLEMENTAL_ARTIFACTS } from '../contracts/workspace-intelligence-runtime-registry.js';
+import {
+  WORKSPACE_INTELLIGENCE_ARTIFACTS,
+  WORKSPACE_SUPPLEMENTAL_ARTIFACTS,
+} from '../contracts/workspace-intelligence-runtime-registry.js';
 import { hashCanonicalJson } from '../workspace-model-hash.js';
 import { buildPolyglotLifecyclePlan } from '../polyglot-lifecycle-plan.js';
 import { buildAgentBootstrapView } from '../agent-bootstrap-view.js';
@@ -357,15 +361,16 @@ describe('agent task context', () => {
     // or send the whole packet back into the conversation via an error stack.
     const savedOutput = path.join(projectPath!, 'host-output.txt');
     await writeFile(savedOutput, cli.stdout);
-    const selected = execFileSync(
-      process.execPath,
-      [
-        '-e',
-        "const fs = require('node:fs'); const p = JSON.parse(fs.readFileSync(process.argv[1], 'utf8')); const selected = p.status === 'insufficient-budget' ? {status:p.status, budget:p.budget, message:p.message, nextActions:p.nextActions} : {status:p.status, scope:p.scope, findings:p.grounding?.checks?.findings, proofs:p.graph?.proofs, lifecycle:p.lifecycle, skill:p.skill, execution:p.execution}; console.log(JSON.stringify(selected));",
-        savedOutput,
-      ],
-      { encoding: 'utf8' }
-    );
+    const savedPacket = JSON.parse(await readFile(savedOutput, 'utf8'));
+    const selected = JSON.stringify({
+      status: savedPacket.status,
+      scope: savedPacket.scope,
+      findings: savedPacket.grounding?.checks?.findings,
+      graph: { status: savedPacket.graph?.status, proofs: savedPacket.graph?.proofs },
+      lifecycle: savedPacket.lifecycle,
+      skill: savedPacket.skill,
+      execution: savedPacket.execution,
+    });
     expect(JSON.parse(selected)).toMatchObject({
       status: 'ready',
       scope: { project: 'api' },
@@ -565,6 +570,208 @@ describe('agent task context', () => {
       hostLoading: 'not-observed',
       modelCompliance: 'not-observed',
     });
+  });
+
+  it.each(['EACCES', 'EPERM'])(
+    'requests host read access to the existing link when canonical Graph reading fails with %s',
+    async (code) => {
+      const { sourcePath, workspacePath } = await managedProject();
+      const graphPath = path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph);
+      const linkPath = path.join(sourcePath, '.workspai/workspace-link.local.json');
+      const originalLink = await readFile(linkPath, 'utf8');
+      const originalRead = fsp.readFile;
+      vi.spyOn(fsp, 'readFile').mockImplementation((...args) => {
+        if (String(args[0]) === graphPath)
+          return Promise.reject(Object.assign(new Error('local path must stay private'), { code }));
+        return Reflect.apply(originalRead, fsp, args);
+      });
+
+      const result = await buildAgentTaskContext({
+        projectPath: sourcePath,
+        task: 'Inspect retryDelay',
+        path: 'src/index.ts',
+      });
+      expect(result.status).toBe('partial');
+      if (result.status !== 'partial') throw new Error('Expected an access-limited packet');
+      expect(result.scope.workspaceResolution).toMatchObject({
+        status: 'resolved',
+        source: 'local-link',
+      });
+      expect(result.graph).toMatchObject({
+        status: 'unavailable',
+        reason: expect.stringContaining('permission-denied'),
+        userAction: {
+          kind: 'request-filesystem-read',
+          retry: 'same-command',
+          target: 'project-workspace-evidence',
+        },
+      });
+      expect(JSON.stringify(result)).not.toContain(workspacePath);
+      expect(JSON.stringify(result)).not.toContain('local path must stay private');
+      expect(result.lifecycle.status).toBe('ready');
+      expect(await readFile(linkPath, 'utf8')).toBe(originalLink);
+      vi.restoreAllMocks();
+      const retried = await buildAgentTaskContext({
+        projectPath: sourcePath,
+        task: 'Inspect retryDelay',
+        path: 'src/index.ts',
+      });
+      expect(retried).toMatchObject({ status: 'ready', graph: { status: 'results' } });
+    }
+  );
+
+  it('preserves a snapshot permission failure as a host access request without recommending refresh', async () => {
+    const { sourcePath } = await managedProject();
+    vi.spyOn(graphSnapshot, 'readWorkspaceKnowledgeGraphSnapshot').mockResolvedValue({
+      status: 'miss',
+      reason: 'permission-denied',
+    });
+    const result = await buildAgentTaskContext({
+      projectPath: sourcePath,
+      task: 'Inspect retryDelay',
+    });
+    expect(result.status).toBe('partial');
+    if (result.status !== 'partial') throw new Error('Expected partial context');
+    expect(result.graph).toMatchObject({
+      userAction: { kind: 'request-filesystem-read', retry: 'same-command' },
+    });
+    expect(result.nextActions.join(' ')).not.toContain('Refresh canonical workspace intelligence');
+  });
+
+  it('does not request host permission for malformed Graph evidence', async () => {
+    const { sourcePath, workspacePath } = await managedProject();
+    await fsExtra.writeFile(
+      path.join(workspacePath, WORKSPACE_INTELLIGENCE_ARTIFACTS.knowledgeGraph),
+      '{broken-json'
+    );
+    const result = await buildAgentTaskContext({
+      projectPath: sourcePath,
+      task: 'Inspect retryDelay',
+    });
+    expect(result.status).toBe('partial');
+    if (result.status !== 'partial') throw new Error('Expected invalid evidence to be withheld');
+    expect(result.graph).toMatchObject({
+      status: 'unavailable',
+      reason: expect.stringContaining('invalid-graph'),
+    });
+    expect(result.graph).not.toHaveProperty('userAction');
+  });
+
+  it('treats an empty completed Graph query as no matches instead of an access failure', async () => {
+    const { sourcePath } = await managedProject();
+    const result = await buildAgentTaskContext({ projectPath: sourcePath, task: 'zxqvjsapntrxe' });
+    if (result.status !== 'ready' && result.status !== 'partial')
+      throw new Error('Expected task context');
+    expect(result.graph).toMatchObject({
+      status: 'results',
+      retrieval: { status: 'no-matches' },
+      matches: [],
+    });
+    expect(result.graph).not.toHaveProperty('userAction');
+    expect(result.nextActions[0]).toContain('graph.retrieval.status=no-matches');
+  });
+
+  it('does not misclassify denied membership reads as a stale link or try the default workspace', async () => {
+    const { sourcePath, workspacePath } = await managedProject();
+    const contractPath = path.join(workspacePath, '.workspai/workspace.contract.json');
+    const originalRead = fs.readFileSync;
+    vi.spyOn(fs, 'readFileSync').mockImplementation((...args) => {
+      if (String(args[0]) === contractPath)
+        throw Object.assign(new Error('denied'), { code: 'EACCES' });
+      return Reflect.apply(originalRead, fs, args);
+    });
+    const snapshot = vi.spyOn(graphSnapshot, 'readWorkspaceKnowledgeGraphSnapshot');
+    const result = await buildAgentTaskContext({
+      projectPath: sourcePath,
+      task: 'Inspect retryDelay',
+    });
+    expect(result.status).toBe('partial');
+    if (result.status !== 'partial') throw new Error('Expected partial context');
+    expect(result.graph).toMatchObject({
+      userAction: { kind: 'request-filesystem-read', retry: 'same-command' },
+    });
+    expect(snapshot).not.toHaveBeenCalled();
+    expect(JSON.stringify(result)).not.toContain(workspacePath);
+  });
+
+  it('rejects a changed link binding before reading or requesting host access to its declared workspace', async () => {
+    const { sourcePath, workspacePath } = await managedProject();
+    const linkPath = path.join(sourcePath, '.workspai/workspace-link.local.json');
+    const link = JSON.parse(await readFile(linkPath, 'utf8'));
+    link.workspace.root = path.join(workspacePath, 'unverified');
+    await writeFile(linkPath, JSON.stringify(link));
+    const unverifiedContract = path.join(link.workspace.root, '.workspai/workspace.contract.json');
+    const originalRead = fs.readFileSync;
+    let readUnverifiedTarget = false;
+    vi.spyOn(fs, 'readFileSync').mockImplementation((...args) => {
+      if (String(args[0]) === unverifiedContract) {
+        readUnverifiedTarget = true;
+        throw Object.assign(new Error('denied'), { code: 'EACCES' });
+      }
+      return Reflect.apply(originalRead, fs, args);
+    });
+    const result = await buildAgentTaskContext({
+      projectPath: sourcePath,
+      task: 'Inspect retryDelay',
+    });
+    if (result.status !== 'partial')
+      throw new Error('Expected the unverified binding to be blocked');
+    expect(readUnverifiedTarget).toBe(false);
+    expect(result.scope.workspaceResolution).toMatchObject({
+      status: 'blocked',
+      reason: 'project.workspace.link-stale',
+    });
+    expect(result.graph).not.toMatchObject({ userAction: { kind: 'request-filesystem-read' } });
+  });
+
+  it('keeps returned Graph results usable when unrelated grounding findings make the packet partial', async () => {
+    const { sourcePath } = await managedProject();
+    const receipt = await projectAgentEntry.buildAgentBootstrapReceipt({ startPath: sourcePath });
+    receipt.status = 'degraded';
+    receipt.readiness.agentGrounding = 'degraded';
+    receipt.activeGoal = {
+      present: true,
+      appliesToProject: false,
+      status: 'invalid',
+      id: 'foreign-goal',
+      objective: 'Repair worker',
+    };
+    receipt.checks = receipt.checks.filter((check) => check.id !== 'active-goal');
+    receipt.checks.push({
+      id: 'active-goal',
+      status: 'warning',
+      message: 'A foreign Goal is invalid.',
+    });
+    receipt.nextActions = [
+      'workspai goal --status --json',
+      'workspai workspace intelligence run --for-agent generic --strict --json',
+      'workspai agent bootstrap --for-agent generic --strict --json',
+    ];
+    receipt.checks.push({
+      id: 'verification-freshness',
+      status: 'warning',
+      message: 'A verification report is stale; structural evidence is current.',
+    });
+    const { integrity: _integrity, ...payload } = receipt;
+    receipt.integrity.payloadHash = hashCanonicalJson(payload);
+    vi.spyOn(projectAgentEntry, 'buildAgentBootstrapReceipt').mockResolvedValue(receipt);
+    const result = await buildAgentTaskContext({
+      projectPath: sourcePath,
+      task: 'Inspect retryDelay',
+    });
+    expect(result).toMatchObject({
+      status: 'partial',
+      grounding: { status: 'degraded' },
+      graph: { status: 'results' },
+    });
+    if (result.status !== 'partial') throw new Error('Expected partial context');
+    expect(result.nextActions[0]).toContain('graph.status=results');
+    expect(result.graph).not.toHaveProperty('userAction');
+    if (result.grounding.status !== 'degraded') throw new Error('Expected advisory grounding');
+    expect(result.grounding.nextActions.join(' ')).not.toMatch(
+      /workspai (goal|workspace intelligence|agent bootstrap)/
+    );
+    expect(result.grounding.checks.findings).toHaveLength(2);
   });
 
   it('reads only the exact project Graph from the managed default after explicit workspace selection', async () => {

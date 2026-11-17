@@ -288,9 +288,11 @@ or stale Workspai evidence is explicit and does not prevent native project
 work. The packet grants no mutation authority; existing-project adoption stays
 an explicit user choice. The default budget is 32 KiB, and an over-budget
 packet is rejected whole rather than silently truncated.
-If its `graph.userAction` requests workspace access and Graph matters to the
-task, ask the user before retrying with `--workspace-default` or the exact
-user-provided canonical root via `--workspace`. The CLI validates project
+If `graph.userAction.kind` is `request-project-graph-access` and Graph matters
+to the task, ask the user before choosing `--workspace-default` or the exact
+user-provided canonical root via `--workspace`. For `request-filesystem-read`,
+request host read permission for the existing binding and retry unchanged; do
+not select another workspace to bypass denied access. The CLI validates project
 membership and does not adopt, relink or refresh as part of this read.
 This is the primary generated task-entry route; separate bootstrap and
 membership commands are not additional prerequisites. Budget recovery reports
