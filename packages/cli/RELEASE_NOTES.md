@@ -5,150 +5,76 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## v0.81.1 (November 17, 2026)
+## Planned Release: v0.82.0 (publication pending)
 
-Released November 17, 2026. Package metadata is aligned to `0.81.1`.
-**Publication status: Published November 17, 2026.** Cross-platform
-qualification has not been claimed.
+Target release date: November 19, 2026. Workspai CLI 0.82.0 rolls up all
+changes since v0.81.0, including the new task route, safer workspace
+recovery, and project-scoped verification.
 
-### Clearer execution context for coding agents
+### Focused task guidance
 
-Workspai 0.81.1 makes the selected project and working directory explicit in
-task context, reducing retries caused by shell commands running from a
-different directory than source reads.
+- `agent context --view route` returns up to three project-scoped actions
+  for source discovery, Graph access, and manifest-backed verification.
+  The full task packet remains the default. Both the output budget and
+  project-selection refusals remain machine-readable.
+- Generated entries, including Copilot instructions, bind the selected project
+  before requesting context. Reuse the project root and action working
+  directory even when the shell opens in a parent folder.
+- Pass a known test path with `--path` on the first context call. The route can
+  select an authored Node or Bun test script or a root-owned check in a
+  supported uv workspace. Strict lifecycle lookup refuses missing or
+  out-of-scope paths. Test suggestions carry ownership and prerequisites.
+- Host instruction refresh preserves authored bytes and validates managed
+  content against the entry manifest. Model compliance and tool permission
+  remain host observations.
 
-**What's New:**
+### Better Graph and workspace recovery
 
-- Recover `adopt` after deletion of the managed central workspace, using an
-  intact project link and the configured default path. Rebuild and register the
-  requested project transactionally; dry-run remains read-only and failed
-  sealing restores the previous project and registry state. Deleted workspace
-  data and other prior project memberships are not restored automatically.
-- Preserve filesystem permission failures through canonical Graph lookup and
-  membership validation. Request host read access to the existing workspace
-  binding and retry unchanged; do not confuse denial with invalid evidence or
-  recover it by refreshing, adopting, relinking or choosing another workspace.
-- Make successful Graph retrieval explicit even when task grounding is partial;
-  distinguish `graph.retrieval.status: no-matches` and reuse returned matches
-  after an IDE picker failure. Clarify JSON field selection and project cwd.
-- Retain advisory verification and foreign Goal warnings without sending a
-  project-local task into unrelated Goal recovery or broad workspace refresh.
-- Recover re-adoption from intact links with missing membership after validating
-  workspace identity and absence of name/path collisions; preserve transactional
-  rollback and authored instructions. Ordinary tools still require membership.
-- Separate structural grounding freshness from expired verification reports.
-  Report TTLs and strict-bootstrap warnings remain enforced without making
-  expired Doctor/Analyze/Readiness evidence block a structurally current adoption.
-- Isolate project-scoped run gates from workspace release readiness; validate
-  canonical Doctor ownership and reject empty, ambiguous or conflicting scopes.
-  Preserve advisory warnings and strict exits; reject blocked health verdicts.
-  Exempt only standalone Node manifests proving no dependency requirements from
-  the `node_modules` check, retaining conservative workspace/agent ownership.
-- Provide compact task-scoped Skills, filter foreign host Skill entries and
-  include manifest-declared Python validation extras during setup.
-  Retain unrelated Goal warnings without following foreign Goal repair routes.
-- Improve long-task Graph ranking and Unicode retrieval, normalize proof paths
-  and expose explicit recovery when lexical evidence cannot answer a query.
+- Fresh, correlated import and call evidence can surface shared source behind
+  multiple callers, including local TypeScript and JavaScript path aliases.
+  Long task queries preserve Unicode identifiers and distinguish completed
+  no-match results from unavailable evidence.
+- Source extraction and portable grounding continue for readable projects
+  when another registration in the workspace points to a missing checkout.
+- Scoped Graph access distinguishes host read denial from canonical workspace
+  selection. The approved retry reuses or verifies the binding without
+  mutating workspace links. Portable packets omit machine-local paths.
+- Explicit re-adoption can restore missing registration or recreate a deleted
+  managed default workspace from an intact link. Dry-run is read-only.
+  Failed sealing rolls back changes. Deleted history and unrelated memberships
+  require separate recovery.
+- Structural freshness is separate from expired Doctor and readiness evidence.
+  Project runs use correctly bound project Doctor results and retain strict
+  warning behavior. Canonical path checks keep project discovery stable across
+  equivalent filesystem paths.
 
-- Refuse an unverified umbrella cwd before descendant discovery. Missing source
-  paths and nested project boundaries return `project-selection-required`;
-  explicit native projects and ordinary monorepo packages remain supported.
-- Bind generated gates to an explicit project and require scope comparison.
-  Return structured argv recovery preserving task, host and project; distinguish
-  Graph match counts from byte budgets and never invent missing project inputs.
-  Consumers handle selection and budget refusals before task components.
-- Report the resolved workspace route in task context (`parent`, `local-link`,
-  registry or managed default) without exposing machine-local paths. Keep stale
-  and ambiguous bindings blocked instead of presenting them as unmanaged projects.
-- Allow an agent to ask the user before reading a project's scoped Graph from
-  its canonical central or explicitly selected workspace. The retry validates
-  exact project membership and is read-only: it does not adopt, relink, refresh,
-  change the selected source or disclose the workspace path.
-- State project-versus-workspace command scope directly. Reuse the task packet's
-  bounded Graph query, distinguish host-picker and permission failures from stale
-  Graph data, and reserve workspace-wide refresh for tasks that require and
-  authorize it. The existing binding field also reports `resolution-blocked`
-  so stale ownership cannot look unmanaged to older context consumers.
-- Use a compact shared agent entry and a native Copilot gate in
-  `.github/copilot-instructions.md`. Refresh and removal preserve authored
-  instructions; unsafe paths and tracked deletions remain protected.
-- Bind generated entry blocks and imported dependencies to their current content.
-  Bootstrap detects missing or changed gates and distinguishes artifact readiness
-  from unobserved host loading and model compliance. Task context reports its
-  delivery as prepared, without claiming session consumption.
-- Include a project-relative `cwd` for every manifest-derived lifecycle stage
-  and state that reading a source file does not change terminal working
-  directory. Generated entry guidance explains when to run from the selected
-  project root or pass `--project`.
-- Describe `workspace:` evidence as belonging to the canonical workspace and
-  provide the supported `workspai project workspace status --json` resolver,
-  including its `workspacePath` field. Reuse the result while project and
-  workspace identity remain unchanged.
-- Clarify that package scripts may ignore appended output arguments, and give
-  scoped guidance for temporary Git editor/signing requirements and
-  repository-required generated artifacts.
-- Keep typed `insufficient-budget` responses usable by agent hosts with a
-  successful exit by default, and add `agent context --strict` for automation
-  that requires a nonzero refusal. Generated guidance checks the response
-  status before accessing grounding or Graph fields, and the command inventory
-  includes the option.
-- Validate the latest artifact state before both Proof-Carrying Change gates.
-  Invalid digests or deletion tombstones block directly; sequential edits and
-  deletion/recreation retain their ledger history without requiring historical
-  file bytes to match the current filesystem.
-- Preserve canonical project containment for local and adopted sources, path
-  aliases, and overlapping artifact identities. Traversal and escaping symlinks
-  use the full workspace gate.
-- Keep the latest effect's freshness boundary in both gates, require actual
-  runtime execution after that effect, and reject cached or plan-only results.
-  Pinned projects and their transitive dependents remain mandatory even without
-  a structural Model diff; skipped checks cannot seal a change.
-- Publish current capsule references and independently validate them against the
-  ledger, including verification retries and legacy v1 full-history capsules.
-- Advance the Goal Pack compiler revision so project-verification criteria
-  cannot reuse immutable IDs from the prior goal contract.
-- Deduplicate discovered project roots by physical identity, canonicalize graph
-  freshness scopes across filesystem aliases and compare Git-root selection
-  using normalized paths on Windows.
-- Clarify that Proof-Carrying Change prediction is part of a governed change
-  and that strict verification retains workspace-wide readiness and freshness
-  requirements.
+### Scoped change verification
 
-**Compatibility:** The new task execution metadata is additive. Existing full
-Graph and bootstrap views remain available; entry/delivery metadata is additive.
-This release does not alter agent
-host permissions or guarantee that an external model follows generated
-guidance.
+- Proof-Carrying Change checks current artifact state and post-effect runtime
+  evidence before sealing. Selected projects and their affected dependents
+  stay in the verification plan. Workspace-wide and strict requests keep
+  the full workspace gate.
+- Capsule validation derives current effect and verification references from
+  the ledger. Goal Pack identity distinguishes changes to the verification
+  contract. Local and adopted projects use canonical containment checks.
 
-**Documentation:** The READMEs preserve the product slogans and lead with
-create/adopt paths and bounded task context. Current guides distinguish scoped
-gates from fleet readiness and cover inline Skills, Graph recovery and explicit
-project selection without adding repeated full-workspace prerequisites.
+### Local validation
 
-**Validation (November 17, 2026):** The full CLI suite on Linux/Node 24.20.0 completed with
-**3,306 passed, 12 skipped, and 0 failed** across 280 files (276 passed, 4 skipped).
-Permanent regressions include permission-denied artifact lookup/reads and input
-validation, unchanged retries through existing workspace bindings, invalid-link
-rejection, usable Graph results in advisory task packets, and transactional
-re-adoption after deletion of the central workspace, including path aliases
-and failure rollback. Scoped gates,
-host entry, compiler identity and verification hardening remain covered. Build, typecheck,
-lint/formatting, contract parity/synchronization, agent customization
-drift, and documentation/release checks passed. Cross-platform qualification
-remains unclaimed.
+On Linux with Node 24.20.0, 3,314 CLI tests passed and 12 were skipped.
+The enterprise package and alias smoke checks passed, and npm reported zero
+dependency vulnerabilities. Publication remains pending the required CI gates.
 
-**Publication status:** Published November 17, 2026.
-
-**Install or upgrade:**
+### Install after publication
 
 ```bash
-npm install -g workspai@0.81.1
+npm install -g workspai@0.82.0
 workspai --version
 ```
 
-The optional `wspai` alias uses the matching `0.81.1` version.
-
-[Full v0.81.1 release notes](https://github.com/chistiq/workspai/blob/v0.81.1/packages/cli/releases/RELEASE_NOTES_v0.81.1.md).
+The alias package uses `wspai@0.82.0`. See the
+[agent entry guide](./docs/agent-entry.md),
+[command reference](./docs/commands-reference.md), and
+[full v0.82.0 release notes](https://github.com/chistiq/workspai/blob/main/packages/cli/releases/RELEASE_NOTES_v0.82.0.md).
 
 ## v0.81.0 (November 13, 2026)
 

@@ -4079,7 +4079,7 @@ const testSourceProvider: Provider = {
 
 const sourceStructureProvider: Provider = {
   id: 'source-structure',
-  version: '1.5.0',
+  version: '1.5.1',
   scanTier: 'adaptive-deep',
   applicable(context) {
     return context.projects.some((project) =>
@@ -4092,7 +4092,6 @@ const sourceStructureProvider: Provider = {
   },
   async run(context) {
     for (const project of context.projects) {
-      const resolveAliases = createProjectImportAliasResolver(project.root);
       const projectInventory = (context.deepFilesByProject.get(project.id) ?? []).filter(
         (file) => !isNonProductionArtifact(project.root, file)
       );
@@ -4110,6 +4109,8 @@ const sourceStructureProvider: Provider = {
           !isNonProductionArtifact(project.root, file)
       );
       const files = balancedSourceSelection(fullSourceCandidates, extractionLimit, project.root);
+      if (!files.length) continue;
+      const resolveAliases = createProjectImportAliasResolver(project.root);
       // Extraction stays deliberately bounded, but local import resolution
       // must see the complete fingerprint inventory. Otherwise imports from a
       // sampled file to a valid file outside the extraction window become

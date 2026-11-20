@@ -275,6 +275,31 @@ describe('workspace knowledge graph', () => {
     } as const;
   }
 
+  it('preserves source evidence when another registered project is missing', async () => {
+    const root = await fixture();
+    const missingProject = path.join(root, 'removed-projects', 'removed');
+    const graph = await buildWorkspaceKnowledgeGraph({
+      workspacePath: root,
+      workspace: { name: 'platform' },
+      projects: [
+        { id: 'removed', path: 'external/removed', absolutePath: missingProject },
+        { id: 'api', path: 'api', runtime: 'node' },
+      ],
+      projectTopology: topology(),
+      now: NOW,
+      source: modelSource(),
+    });
+    expect(graph.diagnostics.map(({ code }) => code)).not.toContain(
+      'graph.provider.source-structure.failed'
+    );
+    expect(graph.proofs).toContainEqual(
+      expect.objectContaining({
+        provider: 'source-structure',
+        artifact: 'api/src/health.service.ts',
+      })
+    );
+  });
+
   it('retrieves multilingual test sources without treating test fixtures as production', async () => {
     const root = await fixture();
     const cases = [

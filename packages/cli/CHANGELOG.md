@@ -7,23 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.82.0] - Unreleased
+
+Target release date: November 19, 2026.
+
 ### Added
 
-- `agent context --view route` gives coding agents up to three scoped actions
-  for source discovery, Graph access when necessary, and manifest-backed
-  verification. New and refreshed project instructions prefer this compact
-  entry point. Existing consumers retain the full context by default.
-- Preserve the selected project root in route follow-ups and use the same
-  first-contact flow in Copilot instructions. Recognize root-owned pytest
-  checks in uv workspaces and use corroborated local import and call edges
-  to prioritize shared source files.
-
-## [0.81.1] - 2026-11-17
-
-Released November 17, 2026.
+- Add `agent context --view route`, a versioned, byte-bounded packet with up to
+  three project-scoped actions for discovery, Graph access, and verification.
+  The full task context remains the default for existing consumers.
+- Preserve the verified project root and action working directory across
+  follow-ups. `project lifecycle plan --strict` requires an existing path in
+  the selected project and returns exit code 2 for a refused plan.
+- Recognize root-owned pytest checks in locked uv workspaces and select an
+  unambiguous Node or Bun test script for an explicitly selected test file.
+  Track the source and test owner manifests separately and expose scoped setup
+  and runner prerequisites as evidence.
+- Use corroborated, fresh Graph relations and scoped TypeScript or JavaScript
+  compiler aliases to surface shared source files. Keep the native search
+  fallback for unavailable or inconclusive Graph evidence.
+- Update generated entry guidance, including the Copilot gate, to request the
+  compact route and pass a known test path on the first call. Reuse an
+  applicable test action across follow-ups.
 
 ### Fixed
 
+- Keep source extraction and portable grounding available for readable projects
+  when a different registered checkout has been removed.
 - Recreate a deleted managed central workspace on explicit re-adoption after
   validating the prior project link. Preview without writes, reset only its
   stale discovery entry, and roll back workspace/project/registry changes if

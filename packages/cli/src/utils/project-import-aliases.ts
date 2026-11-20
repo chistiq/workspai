@@ -8,7 +8,13 @@ type Mapping = { prefix: string; suffix: string; wildcard: boolean; targets: str
 // Local compiler paths only. Package-based extends, dynamic config and external
 // targets stay unresolved rather than being attributed to the selected project.
 export function createProjectImportAliasResolver(root: string) {
-  const project = fs.realpathSync(root);
+  let project: string;
+  try {
+    project = fs.realpathSync(root);
+  } catch {
+    // A project can disappear between inventory and provider execution.
+    return (): string[] => [];
+  }
   const cache = new Map<string, Mapping[]>();
   const toRelative = (absolute: string): string =>
     path.relative(project, absolute).split(path.sep).join('/');

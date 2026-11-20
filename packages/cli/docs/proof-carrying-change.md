@@ -2,7 +2,7 @@
 
 Status: released in Workspai CLI v0.69.0; deletion-tombstone and overlapping
 artifact-identity hardening released in v0.70.0. Scoped verification and current
-effect-projection hardening are included in v0.81.1.
+effect-projection hardening are included in v0.82.0.
 
 > Every change carries its intent, pinned architecture baseline, predicted
 > impact, authorized effects, actual architecture delta, independent
