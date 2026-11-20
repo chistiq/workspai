@@ -5,11 +5,12 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
-## Planned Release: v0.82.0 (publication pending)
+## v0.82.0 (November 20, 2026)
 
-Target release date: November 19, 2026. Workspai CLI 0.82.0 rolls up all
-changes since v0.81.0, including the new task route, safer workspace
-recovery, and project-scoped verification.
+**Publication status: Published November 20, 2026.**
+
+Workspai CLI 0.82.0 rolls up all changes since v0.81.0, including the new
+task route, safer workspace recovery, and project-scoped verification.
 
 ### Focused task guidance
 
@@ -62,9 +63,9 @@ recovery, and project-scoped verification.
 
 On Linux with Node 24.20.0, 3,314 CLI tests passed and 12 were skipped.
 The enterprise package and alias smoke checks passed, and npm reported zero
-dependency vulnerabilities. Publication remains pending the required CI gates.
+dependency vulnerabilities.
 
-### Install after publication
+### Install or upgrade
 
 ```bash
 npm install -g workspai@0.82.0
@@ -74,7 +75,7 @@ workspai --version
 The alias package uses `wspai@0.82.0`. See the
 [agent entry guide](./docs/agent-entry.md),
 [command reference](./docs/commands-reference.md), and
-[full v0.82.0 release notes](https://github.com/chistiq/workspai/blob/main/packages/cli/releases/RELEASE_NOTES_v0.82.0.md).
+[full v0.82.0 release notes](https://github.com/chistiq/workspai/blob/v0.82.0/packages/cli/releases/RELEASE_NOTES_v0.82.0.md).
 
 ## v0.81.0 (November 13, 2026)
 

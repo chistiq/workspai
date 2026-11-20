@@ -13,7 +13,7 @@
 
 # Workspai CLI v0.82.0
 
-Target release date: November 19, 2026. Publication status: pending.
+Released November 20, 2026. **Publication status: Published November 20, 2026.**
 
 This release contains all CLI changes since v0.81.0. Package metadata for
 `workspai` and the `wspai` alias is aligned to `0.82.0`.
@@ -128,7 +128,7 @@ See [Proof-Carrying Change](../docs/proof-carrying-change.md) and
 
 ## Install or upgrade
 
-After publication, install the matching CLI and optional alias versions.
+Install the matching CLI and optional alias versions.
 
 ```bash
 npm install -g workspai@0.82.0
