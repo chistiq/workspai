@@ -8,9 +8,11 @@ type Mapping = { prefix: string; suffix: string; wildcard: boolean; targets: str
 // Local compiler paths only. Package-based extends, dynamic config and external
 // targets stay unresolved rather than being attributed to the selected project.
 export function createProjectImportAliasResolver(root: string) {
-  let project: string;
+  // Importers and candidates use the path spelling from the Graph inventory.
+  const project = path.resolve(root);
+  let physicalRoot: string;
   try {
-    project = fs.realpathSync(root);
+    physicalRoot = fs.realpathSync(project);
   } catch {
     // A project can disappear between inventory and provider execution.
     return (): string[] => [];
@@ -47,8 +49,9 @@ export function createProjectImportAliasResolver(root: string) {
         return mappings;
       if (options.baseUrl !== undefined && typeof options.baseUrl !== 'string') return mappings;
       if (raw?.extends !== undefined && options.baseUrl === undefined) return mappings;
-      const base = path.resolve(path.dirname(config), options.baseUrl ?? '.');
-      if (!isInsideProject(project, base)) return mappings;
+      const physicalBase = path.resolve(path.dirname(config), options.baseUrl ?? '.');
+      if (!isInsideProject(physicalRoot, physicalBase)) return mappings;
+      const base = path.resolve(project, path.relative(physicalRoot, physicalBase));
       const entries = Object.entries(paths);
       if (entries.length > 512) return mappings;
       for (const [key, rawTargets] of entries) {

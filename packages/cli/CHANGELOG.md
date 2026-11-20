@@ -32,6 +32,8 @@ Target release date: November 19, 2026.
 
 ### Fixed
 
+- Resolve local compiler aliases when the registered project root is reached
+  through a filesystem alias, preserving shared dependency evidence in task routes.
 - Keep source extraction and portable grounding available for readable projects
   when a different registered checkout has been removed.
 - Recreate a deleted managed central workspace on explicit re-adoption after

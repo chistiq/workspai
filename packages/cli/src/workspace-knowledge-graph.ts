@@ -4079,7 +4079,7 @@ const testSourceProvider: Provider = {
 
 const sourceStructureProvider: Provider = {
   id: 'source-structure',
-  version: '1.5.1',
+  version: '1.5.2',
   scanTier: 'adaptive-deep',
   applicable(context) {
     return context.projects.some((project) =>

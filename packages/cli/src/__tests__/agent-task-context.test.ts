@@ -1081,45 +1081,48 @@ describe('agent task context', () => {
     });
   });
 
-  it('routes to a shared dependency corroborated by two file anchors with local compiler aliases', async () => {
-    const { sourcePath } = await managedProject('linked', false, async (source) => {
-      await fsExtra.outputFile(
-        path.join(source, 'tsconfig.json'),
-        '{ /* authored paths */ "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }'
-      );
-      for (const file of ['storage-settings', 'storage-browser']) {
+  it.each(process.platform === 'win32' ? [false] : [false, true])(
+    'routes to a shared dependency corroborated by two file anchors with local compiler aliases (aliased root: %s)',
+    async (aliasedRoot) => {
+      const { sourcePath } = await managedProject('linked', aliasedRoot, async (source) => {
         await fsExtra.outputFile(
-          path.join(source, `src/${file}.ts`),
-          "import { present } from '@/shared/size';\nexport const storage = present(8);\n"
+          path.join(source, 'tsconfig.json'),
+          '{ /* authored paths */ "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }'
         );
-      }
-      await fsExtra.outputFile(
-        path.join(source, 'src/shared/size.ts'),
-        'export function present(value: number) { return `${value} B`; }\n'
-      );
-    });
-    const route = await buildAgentTaskContext({
-      projectPath: sourcePath,
-      task: 'Fix storage display',
-      view: 'route',
-      limit: 12,
-    });
-    expect(route).toMatchObject({
-      actions: expect.arrayContaining([
-        {
-          id: 'source.inspect',
-          scope: 'project',
-          effect: 'read',
-          files: expect.arrayContaining([
-            expect.objectContaining({
-              path: 'src/shared/size.ts',
-              relation: expect.objectContaining({ kind: 'calls' }),
-            }),
-          ]),
-        },
-      ]),
-    });
-  });
+        for (const file of ['storage-settings', 'storage-browser']) {
+          await fsExtra.outputFile(
+            path.join(source, `src/${file}.ts`),
+            "import { present } from '@/shared/size';\nexport const storage = present(8);\n"
+          );
+        }
+        await fsExtra.outputFile(
+          path.join(source, 'src/shared/size.ts'),
+          'export function present(value: number) { return `${value} B`; }\n'
+        );
+      });
+      const route = await buildAgentTaskContext({
+        projectPath: sourcePath,
+        task: 'Fix storage display',
+        view: 'route',
+        limit: 12,
+      });
+      expect(route).toMatchObject({
+        actions: expect.arrayContaining([
+          {
+            id: 'source.inspect',
+            scope: 'project',
+            effect: 'read',
+            files: expect.arrayContaining([
+              expect.objectContaining({
+                path: 'src/shared/size.ts',
+                relation: expect.objectContaining({ kind: 'calls' }),
+              }),
+            ]),
+          },
+        ]),
+      });
+    }
+  );
 
   it('binds strict follow-up and returns a root-owned uv check for member source', async () => {
     projectPath = await mkdtemp(path.join(tmpdir(), 'workspai-route-uv-workspace-'));
