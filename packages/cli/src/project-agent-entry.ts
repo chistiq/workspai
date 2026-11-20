@@ -310,7 +310,7 @@ export function buildProjectAgentEntryManifest(input: {
       mode: 'canonical-first',
       bootstrapCommand: 'workspai agent bootstrap --for-agent generic --strict --json',
       taskContextCommand:
-        'workspai agent context --task "<user request>" --for-agent generic --project .',
+        'workspai agent context --task "<user request>" --for-agent generic --project . --view route',
       verifyCommand: 'workspai project agent-entry verify --for-agent all --strict --json',
       requiredReadOrder: [
         PROJECT_AGENT_ENTRY_RELATIVE_PATH,

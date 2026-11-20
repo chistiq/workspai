@@ -23,6 +23,7 @@
     "agentBootstrapReceipt": "workspai.agent-bootstrap-receipt.v1",
     "agentBootstrapView": "workspai.agent-bootstrap-view.v1",
     "agentTaskContext": "workspai.agent-task-context.v1",
+    "agentTaskRoute": "workspai.agent-task-route.v1",
     "projectLifecycleContext": "workspai.project-lifecycle-context.v1",
     "doctorProjectEvidence": "doctor-project-evidence-v1",
     "doctorWorkspaceEvidence": "doctor-workspace-evidence-v1",

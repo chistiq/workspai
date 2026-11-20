@@ -1,5 +1,6 @@
 import path from 'path';
 import { isFilesystemReadDenied } from './utils/filesystem-read-errors.js';
+import { createProjectImportAliasResolver } from './utils/project-import-aliases.js';
 import { createHash } from 'crypto';
 import { createReadStream } from 'node:fs';
 import { execFile } from 'node:child_process';
@@ -951,7 +952,8 @@ function resolveLocalImportTarget(
   specifier: string,
   candidateFiles: ReadonlySet<string>,
   projectRoot?: string,
-  importKind?: string
+  importKind?: string,
+  aliasedBases: string[] = []
 ): string | null {
   const pythonImporter = path.extname(importerPath).toLowerCase() === '.py';
   const bases: string[] = [];
@@ -968,7 +970,7 @@ function resolveLocalImportTarget(
       bases.push(path.resolve(path.dirname(importerPath), specifier));
       if (projectRoot) bases.push(path.resolve(projectRoot, specifier));
     } else {
-      return null;
+      bases.push(...aliasedBases);
     }
   }
   const candidates = new Set<string>();
@@ -4077,7 +4079,7 @@ const testSourceProvider: Provider = {
 
 const sourceStructureProvider: Provider = {
   id: 'source-structure',
-  version: '1.4.0',
+  version: '1.5.0',
   scanTier: 'adaptive-deep',
   applicable(context) {
     return context.projects.some((project) =>
@@ -4090,6 +4092,7 @@ const sourceStructureProvider: Provider = {
   },
   async run(context) {
     for (const project of context.projects) {
+      const resolveAliases = createProjectImportAliasResolver(project.root);
       const projectInventory = (context.deepFilesByProject.get(project.id) ?? []).filter(
         (file) => !isNonProductionArtifact(project.root, file)
       );
@@ -4196,7 +4199,8 @@ const sourceStructureProvider: Provider = {
             imported.name,
             usableFiles,
             project.root,
-            imported.detail
+            imported.detail,
+            resolveAliases(file, imported.name)
           );
           if (localTarget) {
             const targetArtifact = context.state.artifactPath(localTarget, project);

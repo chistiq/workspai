@@ -17,12 +17,12 @@ For a project task, stay in the same source terminal:
 
 ```bash
 npx wspai agent context --project . --for-agent generic \
-  --task "Find the main entry points and available project checks"
+  --task "Find the main entry points and available project checks" --view route
 ```
 
-Check packet status and project scope before using its evidence. The packet
-includes bounded Graph candidates, lifecycle commands and a compact project
-Skill. Your host must load the generated instructions; prepared context alone
+Check packet status and project scope before using its evidence. The route
+suggests scoped source and lifecycle actions. Use the full view for further
+evidence or the project Skill. Your host must load the generated instructions; prepared context alone
 does not prove model use, edits or executed tests. Follow selection or budget
 recovery before reading packet components.
 

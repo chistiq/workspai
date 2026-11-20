@@ -9048,8 +9048,12 @@ agentCommand
     'Use the managed central workspace after user approval and validate exact project membership'
   )
   .option('--for-agent <agent>', 'Agent host identifier', 'generic')
-  .option('--limit <count>', 'Maximum project-scoped Graph matches (1–12)', '8')
-  .option('--max-bytes <bytes>', 'Maximum UTF-8 JSON packet size (8192–131072; default 32768)')
+  .option('--view <view>', 'Context representation: full (default) or route')
+  .option('--limit <count>', 'Maximum project-scoped Graph matches (1–12; full 8, route 4)')
+  .option(
+    '--max-bytes <bytes>',
+    'UTF-8 JSON budget: full 8192–131072 (default 32768), route 1024–131072 (default 8192)'
+  )
   .option('--strict', 'Exit nonzero when the bounded context packet cannot be produced')
   .action(
     async (options: {
@@ -9059,12 +9063,15 @@ agentCommand
       workspace?: string;
       workspaceDefault?: boolean;
       forAgent?: string;
+      view?: string;
       limit?: string;
       maxBytes?: string;
       strict?: boolean;
     }) => {
       try {
-        const limit = Number(options.limit ?? 8);
+        if (options.view !== undefined && options.view !== 'full' && options.view !== 'route') {
+          throw new Error('--view must be full or route.');
+        }
         const { buildAgentTaskContext } = await import('./agent-task-context.js');
         const output = await buildAgentTaskContext({
           projectPath: options.project ?? process.cwd(),
@@ -9074,7 +9081,8 @@ agentCommand
           task: options.task,
           ...(options.path === undefined ? {} : { path: options.path }),
           forAgent: options.forAgent,
-          limit,
+          view: options.view,
+          limit: options.limit === undefined ? undefined : Number(options.limit),
           maxBytes: options.maxBytes,
         });
         console.log(JSON.stringify(output));
@@ -9177,15 +9185,24 @@ lifecycleCommand
     'Select the closest runtime unit containing this source or manifest'
   )
   .option('--max-bytes <bytes>', 'Maximum UTF-8 JSON output size (default 8192)')
+  .option('--strict', 'Require an existing in-project path and return exit 2 for a refused plan')
   .option('--json', 'Emit the versioned machine-readable context')
   .action(
-    async (options: { project: string; path?: string; maxBytes?: string; json?: boolean }) => {
+    async (options: {
+      project: string;
+      path?: string;
+      maxBytes?: string;
+      json?: boolean;
+      strict?: boolean;
+    }) => {
       try {
         const { buildProjectLifecycleContext } = await import('./project-lifecycle-context.js');
         const context = buildProjectLifecycleContext(options.project, {
           path: options.path,
           maxBytes: options.maxBytes,
+          requireExistingPath: options.strict,
         });
+        if (options.strict && context.status !== 'ready') process.exitCode = 2;
         if (options.json) {
           console.log(JSON.stringify(context));
         } else if (context.status === 'ready' || context.status === 'no-lifecycle-units') {

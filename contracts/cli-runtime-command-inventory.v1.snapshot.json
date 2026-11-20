@@ -139,6 +139,10 @@
           "attributeName": "forAgent"
         },
         {
+          "flags": "--view <view>",
+          "attributeName": "view"
+        },
+        {
           "flags": "--limit <count>",
           "attributeName": "limit"
         },
@@ -1947,6 +1951,10 @@
         {
           "flags": "--max-bytes <bytes>",
           "attributeName": "maxBytes"
+        },
+        {
+          "flags": "--strict",
+          "attributeName": "strict"
         },
         {
           "flags": "--json",

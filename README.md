@@ -77,11 +77,11 @@ To inspect the context yourself, run from the linked project:
 
 ```bash
 npx workspai agent context --project . --for-agent generic \
-  --task "Find the main entry points and available project checks"
+  --task "Find the main entry points and available project checks" --view route
 ```
 
-The JSON packet identifies the selected project and provides source references,
-runtime boundaries, and checks discovered from its manifests. It reports missing
+The JSON route identifies the selected project and suggests up to three actions
+for source discovery, Graph access if needed, and manifest-backed checks. It reports missing
 or partial evidence explicitly. Preparing context does not edit source or run
 tests; your agent performs the work and reports the checks it actually ran.
 

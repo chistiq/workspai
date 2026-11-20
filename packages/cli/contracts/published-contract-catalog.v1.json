@@ -101,6 +101,11 @@
       "contractPath": "contracts/workspace-intelligence/agent-task-context.v1.json",
       "publication": "json-schema"
     },
+    "agentTaskRoute": {
+      "schemaVersion": "workspai.agent-task-route.v1",
+      "contractPath": "contracts/workspace-intelligence/agent-task-route.v1.json",
+      "publication": "json-schema"
+    },
     "projectLifecycleContext": {
       "schemaVersion": "workspai.project-lifecycle-context.v1",
       "contractPath": "contracts/project-lifecycle-context.v1.json",

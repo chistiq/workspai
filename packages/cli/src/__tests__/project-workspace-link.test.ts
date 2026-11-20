@@ -150,6 +150,11 @@ describe('project workspace binding', () => {
     expect(first.startsWith(WORKSPAI_AGENT_ENTRY_START)).toBe(true);
     expect(first.endsWith(authored)).toBe(true);
     expect(first).toContain('--for-agent copilot');
+    expect(first).toContain('--project "<verified source root>" --view route');
+    expect(first).toContain('`execution.projectRoot.relativePath`');
+    expect(first).toContain("use each action's cwd explicitly");
+    expect(first).toContain('Include `--path` for a known relevant test file.');
+    expect(first).toContain('Reuse candidates and applicable test actions.');
     expect(result.hostCoverage?.find((host) => host.id === 'copilot')).toMatchObject({
       discovery: 'native',
       status: 'ready',
@@ -1146,13 +1151,14 @@ describe('project workspace binding', () => {
     expect(agents).toContain('never merely for context retrieval');
     expect(agents).toContain('Workspace identity: `workspace` (logical name');
     expect(agents).toContain('workspai agent context --task');
+    expect(agents).toContain('--project "<verified source root>" --view route');
     expect(agents).toContain('Before source search or implementation/test reads');
     expect(agents).not.toContain("JSON.parse(fs.readFileSync(file, 'utf8'))");
     expect(agents.toLowerCase()).toContain(
       'do not repeat bootstrap, membership lookup or graph retrieval'
     );
     expect(agents).toContain('--project "<verified source root>"');
-    expect(agents).toContain('compare `scope` with the user target');
+    expect(agents).toContain('Compare `scope` with the user target');
     expect(agents).not.toContain("Follow the receipt's `requiredReadOrder` exactly");
     expect(agents).toContain('`workspace:` paths belong to the canonical workspace');
     expect(agents.startsWith('<!-- WORKSPAI:PROJECT-GROUNDING:START -->')).toBe(true);
@@ -1190,7 +1196,7 @@ describe('project workspace binding', () => {
       schemaVersion: 'workspai.agent-entry.v1',
       protocol: {
         taskContextCommand:
-          'workspai agent context --task "<user request>" --for-agent generic --project .',
+          'workspai agent context --task "<user request>" --for-agent generic --project . --view route',
       },
       workspace: {
         identityIsFilesystemPath: false,
@@ -1241,6 +1247,12 @@ describe('project workspace binding', () => {
       expect(adapter).toContain(imported);
       expect(adapter).toContain(`workspai agent bootstrap --for-agent ${host} --strict --json`);
       expect(adapter).toContain(`Workspai host binding · ${host}`);
+      if (host === 'copilot') {
+        expect(adapter).toContain(
+          '--for-agent copilot --project "<verified source root>" --view route'
+        );
+        expect(adapter).toContain('execution.projectRoot.relativePath');
+      }
       expect(adapter).toContain('workspace locator privacy policy');
       expect(adapter).toContain('the imported instructions or replace repository-authored');
       expect(adapter).not.toContain('Routine project-local changes follow repository instructions');

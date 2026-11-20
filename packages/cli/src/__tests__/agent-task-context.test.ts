@@ -44,7 +44,8 @@ afterEach(async () => {
 
 async function managedProject(
   location: 'linked' | 'parent' | 'managed-default' = 'linked',
-  pathAlias = false
+  pathAlias = false,
+  configure?: (sourcePath: string) => Promise<void>
 ) {
   projectPath = await mkdtemp(path.join(tmpdir(), 'workspai-agent-context-managed-'));
   const fixtureRoot = pathAlias ? path.join(projectPath, 'path-alias') : projectPath;
@@ -128,6 +129,7 @@ async function managedProject(
     path.join(sourcePath, 'packages/ui/src/widget.ts'),
     'export const widget = 1;\n'
   );
+  await configure?.(sourcePath);
   const model = await buildWorkspaceModel({ workspacePath, includeEvidence: true });
   await writeWorkspaceModel(model, workspacePath);
   const context = await buildWorkspaceAgentContext({ workspacePath, model, agent: 'generic' });
@@ -896,6 +898,373 @@ describe('agent task context', () => {
       reason: expect.stringContaining('input-scan-failed'),
     });
     expect(result.lifecycle.status).toBe('ready');
+  });
+
+  it('routes the installed CLI to scoped source and manifest evidence in a smaller packet', async () => {
+    const { sourcePath, workspacePath } = await managedProject();
+    const args = [
+      path.resolve('dist/index.js'),
+      'agent',
+      'context',
+      '--project',
+      '.',
+      '--task',
+      'Fix retryDelay calculation and test retries',
+      '--path',
+      'src/index.ts',
+    ];
+    const full = await execa(process.execPath, args, { cwd: sourcePath });
+    const { stdout } = await execa(process.execPath, [...args, '--view', 'route'], {
+      cwd: sourcePath,
+    });
+    const route = JSON.parse(stdout);
+    expect(route).toMatchObject({
+      schemaVersion: 'workspai.agent-task-route.v1',
+      status: 'ready',
+      scope: JSON.parse(full.stdout).scope,
+      host: { availability: 'not-observed', permission: 'not-observed', execution: 'not-observed' },
+      actions: [
+        {
+          id: 'source.inspect',
+          files: expect.arrayContaining([
+            expect.objectContaining({ path: 'src/index.ts', evidenceId: expect.any(String) }),
+            expect.objectContaining({ path: 'tests/retry.test.ts' }),
+          ]),
+        },
+        {
+          id: 'lifecycle.test',
+          cwd: '.',
+          manifest: 'package.json',
+          command: 'npm run test',
+          provenance: 'manifest-derived',
+        },
+      ],
+    });
+    expect(route.graph.evidence.args).toEqual(
+      expect.arrayContaining(['--scope', 'project:api', '--expected-graph-hash'])
+    );
+    const evidenceId: string = route.actions[0].files[0].evidenceId;
+    const graphArgs: string[] = route.graph.evidence.args;
+    const expanded = await execa(
+      process.execPath,
+      [args[0], ...graphArgs.map((value) => (value === '<id>' ? evidenceId : value))],
+      { cwd: sourcePath }
+    );
+    expect(JSON.parse(expanded.stdout)).toMatchObject({ found: true });
+    expect(route.budget.usedBytes).toBe(Buffer.byteLength(`${stdout}\n`));
+    expect(route.budget.usedBytes).toBeLessThan(Buffer.byteLength(full.stdout) / 2);
+    expect(stdout).not.toContain(workspacePath);
+    expect(stdout).not.toContain('Fix retryDelay calculation and test retries');
+    const { integrity, ...payload } = route;
+    expect(integrity.payloadHash).toBe(
+      createHash('sha256').update(JSON.stringify(payload)).digest('hex')
+    );
+
+    const short = await execa(
+      process.execPath,
+      [...args, '--view', 'route', '--max-bytes', '1024', '--strict'],
+      {
+        cwd: sourcePath,
+        reject: false,
+      }
+    );
+    const refusal = JSON.parse(short.stdout);
+    expect(short.exitCode).toBe(2);
+    expect(refusal.status).toBe('insufficient-budget');
+    expect(refusal).not.toHaveProperty('actions');
+    expect(refusal.budget.usedBytes).toBeLessThanOrEqual(1024);
+    const retried = await execa(
+      process.execPath,
+      [...args, '--view', 'route', '--max-bytes', String(refusal.budget.requiredBytes)],
+      { cwd: sourcePath }
+    );
+    expect(JSON.parse(retried.stdout).actions).toEqual(route.actions);
+  });
+
+  it('does not pick the root test when a workspace member may own the change', async () => {
+    projectPath = await mkdtemp(path.join(tmpdir(), 'workspai-task-route-monorepo-'));
+    await fsExtra.outputJson(path.join(projectPath, 'package.json'), {
+      name: 'route-root',
+      workspaces: ['packages/*'],
+      scripts: { test: 'node --test' },
+    });
+    await fsExtra.outputJson(path.join(projectPath, 'packages/ui/package.json'), {
+      name: 'route-ui',
+      scripts: { test: 'node --test' },
+    });
+    await fsExtra.outputFile(
+      path.join(projectPath, 'packages/ui/widget.js'),
+      'export const widget = true;\n'
+    );
+    const request = { projectPath, view: 'route' as const, task: 'Fix the widget' };
+    const ambiguous = await buildAgentTaskContext(request);
+    expect(ambiguous).toMatchObject({
+      status: 'partial',
+      actions: [
+        { id: 'source.search' },
+        {
+          id: 'lifecycle.select',
+          cwd: '.',
+          args: expect.arrayContaining(['<verified-source-path>']),
+        },
+        { id: 'graph.access', when: 'graph-needed', approval: 'canonical-workspace-selection' },
+      ],
+    });
+    const selected = await buildAgentTaskContext({ ...request, path: 'packages/ui/widget.js' });
+    expect(selected).toMatchObject({
+      actions: [
+        { id: 'source.inspect', files: [{ path: 'packages/ui/widget.js' }] },
+        {
+          id: 'lifecycle.test',
+          cwd: 'packages/ui',
+          workspaceOwner: { root: '.', manifest: 'package.json' },
+        },
+        { id: 'graph.access' },
+      ],
+    });
+  });
+
+  it('routes denied Graph reads without changing the selected binding', async () => {
+    const { sourcePath } = await managedProject();
+    vi.spyOn(graphSnapshot, 'readWorkspaceKnowledgeGraphSnapshot').mockResolvedValue({
+      status: 'miss',
+      reason: 'permission-denied',
+    });
+    const route = await buildAgentTaskContext({
+      projectPath: sourcePath,
+      task: 'Fix retryDelay',
+      view: 'route',
+    });
+    expect(route).toMatchObject({
+      status: 'partial',
+      graph: { status: 'unavailable' },
+      actions: expect.arrayContaining([
+        {
+          id: 'graph.access',
+          scope: 'project',
+          effect: 'read',
+          when: 'graph-needed',
+          approval: 'host-read',
+          retry: 'same-command',
+        },
+      ]),
+    });
+    expect(JSON.stringify(route)).not.toContain('--workspace-default');
+  });
+
+  it('reuses an exact authored Node script for a known regression file', async () => {
+    projectPath = await mkdtemp(path.join(tmpdir(), 'workspai-route-node-focused-'));
+    await fsExtra.outputJson(path.join(projectPath, 'package.json'), {
+      name: 'app',
+      scripts: {
+        test: 'npm run test:format && npm run test:other',
+        'test:format': 'tsx --test src/size.test.ts',
+        'test:other': 'node --test src/other.test.js',
+      },
+    });
+    await fsExtra.outputFile(path.join(projectPath, 'src/size.test.ts'), 'export {};\n');
+    const route = await buildAgentTaskContext({
+      projectPath,
+      task: 'Verify size formatting',
+      path: 'src/size.test.ts',
+      view: 'route',
+    });
+    expect(route).toMatchObject({
+      actions: expect.arrayContaining([
+        expect.objectContaining({
+          id: 'lifecycle.test',
+          focus: 'src/size.test.ts',
+          command: 'npm run test:format',
+          argvSequence: [{ executable: 'npm', args: ['run', 'test:format'] }],
+        }),
+      ]),
+    });
+  });
+
+  it('routes to a shared dependency corroborated by two file anchors with local compiler aliases', async () => {
+    const { sourcePath } = await managedProject('linked', false, async (source) => {
+      await fsExtra.outputFile(
+        path.join(source, 'tsconfig.json'),
+        '{ /* authored paths */ "compilerOptions": { "paths": { "@/*": ["./src/*"] } } }'
+      );
+      for (const file of ['storage-settings', 'storage-browser']) {
+        await fsExtra.outputFile(
+          path.join(source, `src/${file}.ts`),
+          "import { present } from '@/shared/size';\nexport const storage = present(8);\n"
+        );
+      }
+      await fsExtra.outputFile(
+        path.join(source, 'src/shared/size.ts'),
+        'export function present(value: number) { return `${value} B`; }\n'
+      );
+    });
+    const route = await buildAgentTaskContext({
+      projectPath: sourcePath,
+      task: 'Fix storage display',
+      view: 'route',
+      limit: 12,
+    });
+    expect(route).toMatchObject({
+      actions: expect.arrayContaining([
+        {
+          id: 'source.inspect',
+          scope: 'project',
+          effect: 'read',
+          files: expect.arrayContaining([
+            expect.objectContaining({
+              path: 'src/shared/size.ts',
+              relation: expect.objectContaining({ kind: 'calls' }),
+            }),
+          ]),
+        },
+      ]),
+    });
+  });
+
+  it('binds strict follow-up and returns a root-owned uv check for member source', async () => {
+    projectPath = await mkdtemp(path.join(tmpdir(), 'workspai-route-uv-workspace-'));
+    const source = path.join(projectPath, 'repo');
+    const target = 'packages/reader/reader/read.py';
+    await fsExtra.outputFile(path.join(source, target), 'def parse(): pass\n');
+    await fsExtra.outputFile(
+      path.join(source, 'packages/reader/pyproject.toml'),
+      '[project]\nname = "reader"\nversion = "1.0.0"\n'
+    );
+    await fsExtra.outputFile(
+      path.join(source, 'pyproject.toml'),
+      '[project]\nname = "bundle"\nversion = "1.0.0"\n[tool.uv.workspace]\nmembers = ["packages/**"]\nexclude = ["packages/ignored"]\n[dependency-groups]\ndev = ["pytest>=8", "poethepoet"]\n[tool.poe.tasks]\ntest_unit = "pytest tests/unit"\n'
+    );
+    await fsExtra.outputFile(path.join(source, 'uv.lock'), 'version = 1\n');
+    await fsExtra.outputFile(
+      path.join(source, 'tests/unit/test_reader.py'),
+      'def test_read(): pass\n'
+    );
+    await fsExtra.outputFile(
+      path.join(source, 'packages/ignored/pyproject.toml'),
+      '[project]\nname = "ignored"\nversion = "1.0.0"\n'
+    );
+    const excludedPath = 'packages/ignored/ignored/read.py';
+    await fsExtra.outputFile(path.join(source, excludedPath), 'def parse(): pass\n');
+    const request = { projectPath: source, task: 'Check the reader', view: 'route' as const };
+    const route = await buildAgentTaskContext(request);
+    if (!('actions' in route)) throw new Error('Expected a project route');
+    expect(route.execution.projectRoot).toEqual({
+      anchor: 'request-project-root',
+      relativePath: '.',
+    });
+    const select = route.actions.find((action) => action.id === 'lifecycle.select');
+    if (!select) throw new Error('Expected a scoped follow-up');
+    const cliPath = path.resolve('dist/index.js');
+    const wrongRoot = await execa(
+      process.execPath,
+      [
+        cliPath,
+        ...select.args.map((arg) =>
+          arg === '<verified-source-root>' ? '.' : arg === '<verified-source-path>' ? target : arg
+        ),
+      ],
+      { cwd: projectPath, reject: false }
+    );
+    expect(wrongRoot.exitCode).toBe(2);
+    expect(JSON.parse(wrongRoot.stdout).status).toBe('path-not-mapped');
+    const plan = await execa(
+      process.execPath,
+      [
+        cliPath,
+        ...select.args.map((arg) =>
+          arg === '<verified-source-root>'
+            ? source
+            : arg === '<verified-source-path>'
+              ? target
+              : arg
+        ),
+      ],
+      { cwd: projectPath }
+    );
+    expect(JSON.parse(plan.stdout)).toMatchObject({
+      units: [
+        {
+          root: 'packages/reader',
+          stages: expect.arrayContaining([
+            {
+              stage: 'test',
+              command: 'uv run --no-sync poe test_unit',
+              cwd: '.',
+              ownerManifest: 'pyproject.toml',
+              confidence: 'high',
+              preflight: 'executable-and-inputs',
+              argvSequence: [{ executable: 'uv', args: ['run', '--no-sync', 'poe', 'test_unit'] }],
+              setup: { executable: 'uv', args: ['sync', '--locked', '--all-packages'] },
+            },
+          ]),
+        },
+      ],
+    });
+    const selected = await buildAgentTaskContext({ ...request, path: target });
+    expect(selected).toMatchObject({
+      actions: expect.arrayContaining([
+        expect.objectContaining({
+          id: 'lifecycle.test',
+          cwd: '.',
+          manifest: 'pyproject.toml',
+          sourceManifest: 'packages/reader/pyproject.toml',
+          runner: 'inspect-once',
+        }),
+      ]),
+    });
+    const focused = await buildAgentTaskContext({ ...request, path: 'tests/unit/test_reader.py' });
+    expect(focused).toMatchObject({
+      actions: expect.arrayContaining([
+        expect.objectContaining({
+          id: 'lifecycle.test',
+          cwd: '.',
+          focus: 'tests/unit/test_reader.py',
+          argvSequence: [
+            {
+              executable: 'uv',
+              args: ['run', '--no-sync', 'pytest', './tests/unit/test_reader.py'],
+            },
+          ],
+        }),
+      ]),
+    });
+    const excluded = await buildAgentTaskContext({ ...request, path: excludedPath });
+    expect(excluded).toMatchObject({
+      actions: expect.arrayContaining([
+        expect.objectContaining({
+          id: 'lifecycle.review',
+          manifest: 'packages/ignored/pyproject.toml',
+        }),
+      ]),
+    });
+  });
+
+  it('uses the affected source runtime to distinguish manifests at the same root', async () => {
+    projectPath = await mkdtemp(path.join(tmpdir(), 'workspai-task-route-polyglot-'));
+    await fsExtra.outputJson(path.join(projectPath, 'package.json'), {
+      name: 'route-js',
+      scripts: { test: 'node --test' },
+    });
+    await fsExtra.outputJson(path.join(projectPath, 'composer.json'), {
+      name: 'workspai/route-php',
+    });
+    await fsExtra.outputFile(path.join(projectPath, 'widget.mjs'), 'export const widget = true;\n');
+    await fsExtra.outputFile(path.join(projectPath, 'notes.md'), 'Project notes.\n');
+    const request = { projectPath, view: 'route' as const, task: 'Check the widget' };
+    const source = await buildAgentTaskContext({ ...request, path: 'widget.mjs' });
+    expect(source).toMatchObject({
+      actions: expect.arrayContaining([
+        expect.objectContaining({
+          id: 'lifecycle.test',
+          manifest: 'package.json',
+          selectedBy: 'source-runtime',
+        }),
+      ]),
+    });
+    const ambiguous = await buildAgentTaskContext({ ...request, path: 'notes.md' });
+    expect(ambiguous).toMatchObject({
+      actions: expect.arrayContaining([expect.objectContaining({ id: 'lifecycle.review' })]),
+    });
   });
 
   it('uses one aggregate byte budget and returns an exact, valid one-retry recovery without dropping evidence', async () => {

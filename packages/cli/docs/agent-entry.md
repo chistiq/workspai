@@ -64,8 +64,68 @@ current request:
 npx workspai agent context \
   --project "<verified source root>" \
   --task "Find why the retry policy fails for empty input and fix it" \
-  --path src/retry.py
+  --path src/retry.py \
+  --view route
 ```
+
+### Follow the task route
+
+Generated agent instructions ask for the route on the first call for a concrete
+task. `--view route` emits the [`workspai.agent-task-route.v1` contract](../contracts/workspace-intelligence/agent-task-route.v1.json).
+The default full view and `--view full` retain the `agent-task-context.v1`
+packet. Older CLIs that explicitly reject `--view` can retry once without it.
+
+For `ready` or `partial`, verify `scope` and use `actions` from the canonical
+source root. Keep the absolute directory selected by the first `--project`
+in the current session and resolve `execution.projectRoot.relativePath`
+against it. The route emits no absolute path. Set the host working directory
+for each action from that root, including when the session opened its parent.
+Include `--path` in the first call when the relevant test file is already
+known. Reuse an applicable `lifecycle.test` action. Request a strict lifecycle
+lookup when a newly discovered path needs a different check. Each route
+contains at most three actions.
+
+- `source.inspect` points to live files inside the selected project. It can
+  prioritize a shared dependency backed by multiple scoped file relations.
+  Graph candidates are discovery hints. `graph.evidence.args` can expand a returned
+  ID against the same Graph revision and project scope. Replace its `<id>`
+  placeholder with that ID. If present, fill `<approved-workspace-root>` only
+  from the previously approved workspace. `source.search` uses native tools
+  in the same project when there are no usable file candidates.
+- `lifecycle.test` identifies the manifest, working directory and runner
+  preflight for the recommended check. `selectedBy` identifies an exact
+  manifest match, a unique source-compatible runtime, or a single lifecycle
+  unit. Run the check when the task calls for
+  verification, after the latest relevant change. Inspect the manifest and
+  its runner before executing. If `argvSequence` is absent, `command` is a
+  preview of the manifest-backed command to review. Respect `workspaceOwner`
+  for dependency setup. A `focus` path means the selected check names that
+  test file directly. In Node projects an unambiguous authored `test:*` script
+  can supply that check. For supported uv workspaces, `manifest` identifies the
+  owner of the check and `sourceManifest` identifies the affected member when
+  they differ. Check `runner` before one execution attempt. The uv check uses
+  `--no-sync`; the separate locked `setup` command requires normal host and
+  user authorization. `lifecycle.select` is a read-only, strict lookup using the
+  original verified project root and an existing path. `lifecycle.review` means
+  there is no test suggestion from the current manifest evidence.
+- `graph.access` applies only if Graph evidence is needed. `host-read` requests
+  access to the existing binding and retries the same command. The
+  `canonical-workspace-selection` branch requires the indicated user-approved
+  workspace option and revalidates project membership. Continue with native
+  tools if access is declined. A completed `no-matches` search needs no retry.
+
+Honor repository instructions, `grounding.sourceMutation`, and applicable Goal
+evidence. Follow governed changes and workspace validation when required by
+policy or actual scope. CLI suggestions report `host` availability, permission
+and execution as `not-observed`. Use the host's actual tool and approval state
+and report verification from its real results.
+
+Route budgets include the exact JSON bytes and newline. The default is 8192
+UTF-8 bytes, with a 1024-byte minimum. For a budget or project selection refusal,
+read `recovery`. The route omits the original task text. Full context remains
+available when additional evidence is needed for the same task.
+
+### Resolve the target
 
 For a concrete project task, read the nearest repository instructions, then
 request task context **before source search or opening

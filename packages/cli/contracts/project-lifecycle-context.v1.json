@@ -96,6 +96,17 @@
         },
         "confidence": { "enum": ["high", "medium"] },
         "preflight": { "enum": ["executable-and-inputs", "executable"] },
+        "focus": { "type": "string", "minLength": 1 },
+        "ownerManifest": { "type": "string", "minLength": 1 },
+        "setup": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["executable", "args"],
+          "properties": {
+            "executable": { "type": "string", "minLength": 1 },
+            "args": { "type": "array", "items": { "type": "string" } }
+          }
+        },
         "argvSequence": {
           "type": "array",
           "items": {

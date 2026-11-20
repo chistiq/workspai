@@ -164,7 +164,7 @@ const COMMAND_SUMMARIES: Readonly<Record<string, string>> = {
   'agent bootstrap':
     'Validate host discovery, workspace membership, evidence freshness, live inputs, and active Goal bindings before broad source discovery; --view agent --json returns a budgeted consumer view without weakening claim limits.',
   'agent context':
-    'Prepare one read-only, byte-bounded packet for a user task by combining exact project binding, compact grounding, scoped Graph discovery, and nearest-manifest lifecycle checks; missing Workspai evidence does not block native project work.',
+    'Prepare one read-only, byte-bounded packet for a user task. Use --view route for scoped next actions derived from project binding, Graph, and lifecycle evidence.',
   'agent framework':
     'Inspect release-admitted agent framework runtimes and their governed project integration commands.',
   'agent framework list':
@@ -455,17 +455,16 @@ const COMMAND_DOCUMENTATION_OVERRIDES: Readonly<
       defaultFormat: 'human-or-json',
       modes: [
         {
-          selector: '--json [--path <relative-path>] [--max-bytes <bytes>]',
+          selector:
+            '--json [--project <path>] [--path <relative-path>] [--max-bytes <bytes>] [--strict]',
           format: 'json',
           mediaType: 'application/json',
         },
       ],
     },
     exitSemantics: {
-      default:
-        'Complete manifest-backed lifecycle context or no discovered units returns 0; unmapped paths and insufficient budgets return 2.',
-      strict:
-        'Not applicable; this command discovers lifecycle guidance but does not execute checks.',
+      default: 'Ready plans return 0. JSON refusals are structured results; inspect status.',
+      strict: 'Require an existing in-project path and return 2 unless a scoped plan is ready.',
       failure: 'Invalid options, project scanning errors or contract failures return 2.',
     },
   },
@@ -497,17 +496,15 @@ const COMMAND_DOCUMENTATION_OVERRIDES: Readonly<
       modes: [
         {
           selector:
-            '--task <request> [--project <path>] [--path <relative-path>] [--workspace <path> | --workspace-default]',
+            '--task <request> [--project <path>] [--path <relative-path>] [--workspace <path> | --workspace-default] [--view full|route]',
           format: 'json',
           mediaType: 'application/json',
         },
       ],
     },
     exitSemantics: {
-      default:
-        'Complete or explicitly partial context returns 0; an oversized packet is rejected without partial output and returns 2.',
-      strict:
-        'Not applicable; this read-only packet does not run verification or gate native project work.',
+      default: 'Ready, partial and actionable project-selection or budget refusals return 0.',
+      strict: 'Project-selection and budget refusals return 2.',
       failure: 'Invalid task, path, bounds or contract input returns 2.',
     },
   },

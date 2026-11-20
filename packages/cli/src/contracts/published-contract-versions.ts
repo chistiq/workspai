@@ -49,6 +49,7 @@ import { AGENT_BOOTSTRAP_VIEW_SCHEMA_VERSION } from '../agent-bootstrap-view.js'
 import { WORKSPACE_GRAPH_SEARCH_VIEW_SCHEMA_VERSION } from '../workspace-graph-search-view.js';
 import { PROJECT_LIFECYCLE_CONTEXT_SCHEMA_VERSION } from '../project-lifecycle-context.js';
 import { AGENT_TASK_CONTEXT_SCHEMA_VERSION } from '../agent-task-context.js';
+import { AGENT_TASK_ROUTE_CONTRACT, AGENT_TASK_ROUTE_SCHEMA_VERSION } from '../agent-task-route.js';
 import {
   MODEL_USAGE_EVENT_SCHEMA_VERSION,
   WORKSPACE_INTELLIGENCE_EVALUATION_COMPARISON_SCHEMA_VERSION,
@@ -140,6 +141,7 @@ export function getPublishedContractVersions() {
     agentBootstrapReceipt: AGENT_BOOTSTRAP_RECEIPT_SCHEMA_VERSION,
     agentBootstrapView: AGENT_BOOTSTRAP_VIEW_SCHEMA_VERSION,
     agentTaskContext: AGENT_TASK_CONTEXT_SCHEMA_VERSION,
+    agentTaskRoute: AGENT_TASK_ROUTE_SCHEMA_VERSION,
     projectLifecycleContext: PROJECT_LIFECYCLE_CONTEXT_SCHEMA_VERSION,
     doctorProjectEvidence: DOCTOR_PROJECT_EVIDENCE_SCHEMA,
     doctorWorkspaceEvidence: DOCTOR_WORKSPACE_EVIDENCE_SCHEMA,
@@ -279,6 +281,7 @@ export function getPublishedContractCatalog() {
     agentBootstrapReceipt: 'contracts/workspace-intelligence/agent-bootstrap-receipt.v1.json',
     agentBootstrapView: 'contracts/workspace-intelligence/agent-bootstrap-view.v1.json',
     agentTaskContext: 'contracts/workspace-intelligence/agent-task-context.v1.json',
+    agentTaskRoute: AGENT_TASK_ROUTE_CONTRACT,
     projectLifecycleContext: 'contracts/project-lifecycle-context.v1.json',
     doctorProjectEvidence: 'contracts/doctor-project-evidence.v1.json',
     doctorWorkspaceEvidence: 'contracts/doctor-workspace-evidence.v1.json',

@@ -27,7 +27,7 @@ inventory used to prevent the human map from drifting.
 ```bash
 npx workspai adopt .
 npx workspai agent context --project . --for-agent generic \
-  --task "Find the main entry points and available project checks"
+  --task "Find the main entry points and available project checks" --view route
 ```
 
 Adoption already seals initial intelligence. Inspect packet status and scope,
@@ -89,7 +89,7 @@ npx workspai create project agent.microsoft.dotnet <name> [--agent-name <name>] 
 npx workspai create project gateway.openrouter.typescript <name> [--skip-git] [--json]
 npx workspai create project gateway.openrouter.python <name> [--skip-git] [--json]
 npx workspai agent bootstrap [--project <path>] [--for-agent <host>] [--no-live-inputs] [--strict] [--json]
-npx workspai agent context --task <request> [--project <path>] [--path <relative-path>] [--workspace <canonical-root> | --workspace-default] [--for-agent <host>] [--limit <1–12>] [--max-bytes <8192–131072>] [--strict]
+npx workspai agent context --task <request> [--project <path>] [--path <relative-path>] [--workspace <canonical-root> | --workspace-default] [--for-agent <host>] [--view full|route] [--limit <1–12>] [--max-bytes <bytes>] [--strict]
 npx workspai agent framework list [--json]
 npx workspai agent framework plan --project <name> --runtime <python|dotnet|node> [--framework <id>] --name <agent> [--goal <goal-id>] [--workspace <path>] [--json]
 npx workspai agent framework attach --project <name> --runtime <python|dotnet|node> [--framework <id>] --name <agent> [-y] [--granted-by <identity>] [--workspace <path>] [--json]

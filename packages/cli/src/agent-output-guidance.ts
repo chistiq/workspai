@@ -1,23 +1,36 @@
 /** Presentation guidance shared by CLI-owned host renderers; authority stays with evidence. */
 /** Small always-loaded entry; detailed execution rules travel in the task packet. */
-export function buildAgentEntryGuidance(host = 'generic'): string {
-  return `Before source search or implementation/test reads, resolve the user-selected source root from the request or this instruction file's location. Run once:
+export function buildAgentEntryGuidance(host = 'generic', options?: { compact: boolean }): string {
+  const command = `workspai agent context --task "<user request>" --for-agent ${host} --project "<verified source root>" --view route`;
+  const bootstrap = `workspai agent bootstrap --for-agent ${host} --strict --json --view agent`;
+  if (options?.compact) {
+    return `Before source search or implementation/test reads, read the selected project's instructions and bind its root, even from a parent folder. Run once:
 
-\`workspai agent context --task "<user request>" --for-agent ${host} --project "<verified source root>"\`
+\`${command}\`
 
-Always bind \`--project\`; source reads do not change shell cwd. Reuse context only for the same task/project. Add \`--path\` only for known existing project-relative source or manifests.
+Pass the task as one argument. Include \`--path\` for a known relevant test file. Retry without \`--view\` only if unsupported. Check \`status\`, \`recovery\` and \`scope\`. Resolve \`execution.projectRoot.relativePath\` against the original absolute root and use each action's cwd explicitly. Substitute that bound root for \`<verified-source-root>\`.
 
-Check \`status\` first. For \`project-selection-required\` or \`insufficient-budget\`, follow structured \`recovery\` once; no packet exists. Execute argv from its declared cwd as data, never shell text. \`--limit\` counts matches (1–12); \`--max-bytes\` counts bytes. Before use, compare \`scope\` with the user target.
+Reuse candidates and applicable test actions. Use strict lifecycle lookup only if a new path needs a different check. Follow \`graph.access\` once if needed; after denial use scoped native tools. Resolve \`workspace:\` locators against the canonical workspace. Honor authored rules and mutation policy. Check prerequisites once and report checks actually run.
 
-Read \`graph.status\` independently: \`partial\` can contain usable \`graph.matches\` and \`graph.proofs\`. An IDE picker failure does not invalidate them. \`graph.retrieval.status=no-matches\` is a completed query. Do not repeat bootstrap, membership lookup or Graph retrieval.
+Without a task: \`${bootstrap}\`.`;
+  }
+  return `Before source search or implementation/test reads, read instructions at the user-selected project and bind its root, even from a parent folder. Run once:
 
-If Graph is needed, follow \`graph.userAction\`: \`request-filesystem-read\` means request host read access for the original choice or \`.workspai/workspace-link.local.json\` binding, then retry unchanged. \`request-project-graph-access\` means ask once for a workspace choice before \`--workspace-default\` or the exact user-provided \`--workspace\`. Never switch workspace to bypass denial. CLI flags do not grant host permissions. On decline/failure, use native tools and disclose missing evidence.
+\`${command}\`
 
-Use scoped proofs, the task Skill and manifest-backed checks. Set cwd explicitly and check runner prerequisites once. Preserve authored rules and live-source authority. Routine local edits use native tools; use Goal/Change only when policy or scope requires it, never merely for context retrieval. Review the final diff; report actual checks and unresolved work.
+Pass the task as one argument. If the CLI rejects \`--view\`, retry once without it. If unavailable, use scoped host or native tools. Include \`--path\` for a known relevant test file, or a known source path when the test is unknown.
+
+Check \`status\` first; follow \`recovery\` once on refusal. Compare \`scope\` with the user target. Keep the original absolute \`--project\` root. Resolve \`execution.projectRoot.relativePath\` against it. Substitute the bound root for \`<verified-source-root>\` and set every action's cwd explicitly, including retries. A logical \`scope.projectPath\` is not a local root.
+
+Reuse candidates and applicable test actions. Do not repeat bootstrap, membership lookup or Graph retrieval. Use \`project lifecycle plan --strict\` only if a new path needs a different check. Check prerequisites once. Run declared setup only with authorization. Reuse the approved workspace for expansion.
+
+If Graph is needed, follow \`graph.access\` in \`actions\` (or \`graph.userAction\` in the full view). Ask once for the indicated host read access or workspace choice. Retry unchanged after host permission; on decline use native tools.
+
+Preserve authored rules and live-source authority. Routine local edits use native tools; use Goal/Change when policy or scope requires it, never merely for context retrieval. Follow applicable Goal evidence and the returned mutation policy. Report checks actually run after the last edit.
 
 \`workspace:\` paths belong to the canonical workspace; resolve only when needed via \`workspai project workspace status --json\`. Keep local paths out of shared artifacts.
 
-Without a task: \`workspai agent bootstrap --for-agent ${host} --strict --json --view agent\`. Entry readiness does not prove host loading or model compliance.`;
+Without a task: \`${bootstrap}\`.`;
 }
 
 export const AGENT_ENTRY_GUIDANCE = buildAgentEntryGuidance();
@@ -38,6 +51,7 @@ export const AGENT_VERIFICATION_GUIDANCE =
   'Inspect the affected manifest and test prerequisites before running checks; command discovery is not proof that dependencies are installed. Check the declared runner, interpreter and required modules once from the stage cwd before executing tests. A missing prerequisite is a setup limitation, not a failing test; do not cycle through unrelated package managers or runners without manifest evidence. Lifecycle stage cwd is relative to the canonical project root. Source-tool reads do not change terminal cwd: set the working directory explicitly for every command, including retries. If a lifecycle unit names workspaceOwner, resolve setup from that root manifest rather than installing independently in the member. Inspect a package script before appending arguments; appended arguments do not replace hardcoded destinations. Reuse a running install/check instead of starting duplicates. While progress continues, wait using the host’s longer polling interval (up to 30 seconds) and give concise updates; silence alone is not failure. Diagnose stalled work before cancellation. For tests that create temporary Git repositories, inspect editor/signing prerequisites; if they block automation, use command-scoped Git overrides for those fixtures, preserve inherited overrides and never change the user’s global Git configuration or disable signing for real commits. Regenerate checked-in artifacts only when repository rules or an observed affected check establishes their dependency on the change. Report setup, test execution and test results separately. Cover actual caller types, input boundaries and resource limits with relevant regression checks.';
 
 export const AGENT_CONTEXT_GUIDANCE = [
+  'Prefer `agent context --view route` for a new task. Consume the suggested actions once from the verified project root. The following field guidance also applies when using the full context view for deeper evidence or CLI compatibility.',
   'For project work, start with the exact project and task. Read the nearest repository instructions, then run `workspai agent context --task "..." --project "<verified source root>"` once before source search or implementation/test reads; minimal path and instruction discovery is allowed. Always pass --project with the verified source root; reading a file does not select its directory for the shell. Add --path only when the project-relative source or manifest is known. The packet attempts to provide scoped grounding, Graph and lifecycle evidence: read each component status and do not repeat evidence that is present and current. Compare packet scope with the user target before using it. For `project-selection-required` or `insufficient-budget`, follow one structured recovery action; this valid refusal exits successfully by default. Use `--strict` only when automation requires a nonzero exit for that refusal. Use standalone `agent bootstrap --view agent --json` only for entry inspection without a task. If CLI execution is unavailable, use scoped Workspai tools actually exposed by the host, or disclose unavailable context and continue authorized native work. Use the packet’s project-scoped skill, cited source and the closest manifest-backed checks; consult additional Skills only for specialized guidance. In mixed repositories, the root runtime does not describe every package.',
   'A task context always targets one project. Keep source edits, project Doctor, lifecycle checks and Graph queries scoped to that project. Use workspace-wide Doctor, verify, Graph or intelligence refresh only when the user asks for cross-project/workspace work or the packet identifies a workspace-wide dependency; never widen scope just because a project operation failed.',
   'Read `scope.workspaceResolution` as the actual resolver result: resolution checks a marked parent, then validated local link, then registry. `managedDefault` identifies the central workspace without exposing its path. A blocked higher-priority route is not permission to fall through or adopt. Workspace names are identities, not paths; resolve `workspace:` locators only with the declared command.',

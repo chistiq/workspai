@@ -1,6 +1,10 @@
+import fs from 'node:fs';
 import path from 'path';
 
 import { buildPolyglotLifecyclePlan, type PolyglotRuntimeUnit } from './polyglot-lifecycle-plan.js';
+import { scopedProjectPath } from './utils/scoped-project-path.js';
+import { createUvVerificationResolver } from './project-uv-verification.js';
+import { detectNodePackageManager } from './utils/node-package-manager.js';
 
 export const PROJECT_LIFECYCLE_CONTEXT_SCHEMA_VERSION =
   'workspai.project-lifecycle-context.v1' as const;
@@ -12,7 +16,14 @@ type LifecycleUnit = Pick<
   'id' | 'runtime' | 'ecosystem' | 'role' | 'root' | 'manifest'
 > & {
   provenance: 'manifest-derived';
-  stages: Array<PolyglotRuntimeUnit['stages'][number] & { cwd: string }>;
+  stages: Array<
+    PolyglotRuntimeUnit['stages'][number] & {
+      cwd: string;
+      ownerManifest?: string;
+      setup?: { executable: string; args: string[] };
+      focus?: string;
+    }
+  >;
   workspaceOwner?: PolyglotRuntimeUnit['workspaceOwner'];
 };
 
@@ -90,20 +101,94 @@ function byteLength(value: unknown): number {
   return Buffer.byteLength(`${JSON.stringify(value)}\n`, 'utf8');
 }
 
+/** Prefer a named authored check for an explicitly selected test file. */
+function focusedNodeCheck(
+  root: string,
+  unit: PolyglotRuntimeUnit,
+  selected: string | null
+): LifecycleUnit['stages'][number] | undefined {
+  if (!selected || !/\.(?:test|spec)\.[cm]?[jt]sx?$/iu.test(selected)) return undefined;
+  const relative = path.posix.relative(unit.root, selected);
+  const manifest = scopedProjectPath(root, unit.manifest);
+  const testFile = scopedProjectPath(root, selected);
+  if (!manifest || !testFile) return undefined;
+  try {
+    if (!fs.statSync(testFile).isFile()) return undefined;
+    const document = JSON.parse(fs.readFileSync(manifest, 'utf8')) as {
+      scripts?: Record<string, unknown>;
+    };
+    const matches = Object.entries(document.scripts ?? {}).filter(([name, script]) => {
+      if (!/^test:[A-Za-z0-9_-][A-Za-z0-9:_-]*$/u.test(name) || name.endsWith(':')) return false;
+      if (typeof script !== 'string' || !/^(?:(?:node|tsx) --test|vitest run)\s+/u.test(script))
+        return false;
+      const target = script
+        .trim()
+        .replace(/^(?:(?:node|tsx) --test|vitest run)\s+/u, '')
+        .replace(/^\.\//u, '');
+      return target === relative && /^[\p{L}\p{N}_./-]+$/u.test(target);
+    });
+    if (matches.length !== 1) return undefined;
+    const managerRoot = scopedProjectPath(root, unit.workspaceOwner?.root ?? unit.root);
+    if (!managerRoot) return undefined;
+    const executable = detectNodePackageManager(managerRoot);
+    const args = ['run', matches[0][0]];
+    return {
+      stage: 'test',
+      command: [executable, ...args].join(' '),
+      confidence: 'high',
+      preflight: 'executable-and-inputs',
+      argvSequence: [{ executable, args }],
+      cwd: unit.root,
+      focus: selected,
+    };
+  } catch {
+    return undefined;
+  }
+}
+
 export function buildProjectLifecycleContext(
   projectPath: string,
-  options: { path?: string; maxBytes?: string | number } = {}
+  options: {
+    path?: string;
+    maxBytes?: string | number;
+    includeWorkspaceMembers?: boolean;
+    requireExistingPath?: boolean;
+  } = {}
 ): ProjectLifecycleContext | ProjectLifecycleContextFailure {
   const selectedPath = normalizeRelativeSelection(options.path);
   const mode = selectedPath === null ? 'all-units' : 'closest-unit';
   const selection = { path: selectedPath, mode } as const;
   const maxBytes = projectLifecycleContextByteBudget(options.maxBytes);
+  const verifiedPath =
+    options.requireExistingPath && selectedPath !== null
+      ? scopedProjectPath(projectPath, selectedPath)
+      : undefined;
+  if (options.requireExistingPath && !verifiedPath) {
+    return {
+      schemaVersion: PROJECT_LIFECYCLE_CONTEXT_SCHEMA_VERSION,
+      status: 'path-not-mapped',
+      project: '.',
+      selection,
+      message: 'The selected path is missing or outside the bound project.',
+      nextActions: [
+        'Use an absolute verified --project root and an existing path within that project.',
+      ],
+    };
+  }
   // Execution plans suppress members owned by a workspace runner to avoid
   // duplicate runs. A targeted read must still discover the closest package.
   const plan = buildPolyglotLifecyclePlan(projectPath, {
-    includeWorkspaceMembers: selectedPath !== null,
+    includeWorkspaceMembers: selectedPath !== null || options.includeWorkspaceMembers === true,
   });
-  const selected = selectUnits(plan.units, selectedPath);
+  const effectivePath = verifiedPath
+    ? path.relative(fs.realpathSync(projectPath), verifiedPath).split(path.sep).join('/') || '.'
+    : selectedPath;
+  const selected = selectUnits(plan.units, effectivePath).filter(
+    (unit) =>
+      !options.requireExistingPath ||
+      (scopedProjectPath(projectPath, unit.manifest) &&
+        (!unit.workspaceOwner || scopedProjectPath(projectPath, unit.workspaceOwner.manifest)))
+  );
   if (selectedPath !== null && selected.length === 0) {
     return {
       schemaVersion: PROJECT_LIFECYCLE_CONTEXT_SCHEMA_VERSION,
@@ -117,17 +202,32 @@ export function buildProjectLifecycleContext(
       ],
     };
   }
-  const units: LifecycleUnit[] = selected.map((unit) => ({
-    id: unit.id,
-    runtime: unit.runtime,
-    ecosystem: unit.ecosystem,
-    role: unit.role,
-    root: unit.root,
-    manifest: unit.manifest,
-    provenance: 'manifest-derived',
-    stages: unit.stages.map((stage) => ({ ...stage, cwd: unit.root })),
-    ...(unit.workspaceOwner ? { workspaceOwner: unit.workspaceOwner } : {}),
-  }));
+  const scoped = options.requireExistingPath || options.includeWorkspaceMembers;
+  const resolveUv = scoped ? createUvVerificationResolver(projectPath) : undefined;
+  const units: LifecycleUnit[] = selected.map((unit) => {
+    const uv = unit.runtime === 'python' ? resolveUv?.(unit, effectivePath) : undefined;
+    const focused =
+      scoped && (unit.runtime === 'node' || unit.runtime === 'bun')
+        ? focusedNodeCheck(projectPath, unit, effectivePath)
+        : undefined;
+    const scopedTest = uv?.test ?? focused;
+    const stages = unit.stages
+      .filter((stage) =>
+        stage.stage === 'init' ? !uv : stage.stage === 'test' ? !uv && !focused : true
+      )
+      .map((stage) => ({ ...stage, cwd: unit.root }));
+    return {
+      id: unit.id,
+      runtime: unit.runtime,
+      ecosystem: unit.ecosystem,
+      role: unit.role,
+      root: unit.root,
+      manifest: unit.manifest,
+      provenance: 'manifest-derived',
+      stages: scopedTest ? [...stages, scopedTest] : stages,
+      ...(unit.workspaceOwner ? { workspaceOwner: unit.workspaceOwner } : {}),
+    };
+  });
   const context: ProjectLifecycleContext = {
     schemaVersion: PROJECT_LIFECYCLE_CONTEXT_SCHEMA_VERSION,
     status: units.length > 0 ? 'ready' : 'no-lifecycle-units',

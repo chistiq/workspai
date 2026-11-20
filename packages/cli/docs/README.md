@@ -23,12 +23,12 @@ For a project task, request a bounded packet from that project's terminal:
 
 ```bash
 npx workspai agent context --project . --for-agent generic \
-  --task "Find the main entry points and available project checks"
+  --task "Find the main entry points and available project checks" --view route
 ```
 
 Check the returned status and project scope before using its evidence. The
-packet includes relevant Graph candidates, lifecycle commands and a compact
-project Skill. Your agent host must load the generated instructions; prepared
+route includes scoped source and lifecycle actions. The full packet includes
+detailed Graph evidence and a compact project skill. Your agent host must load the generated instructions; prepared
 context alone does not prove that a model consumed it or ran any checks.
 
 Starting a new project? Run `npx workspai create` for guided setup.
@@ -113,7 +113,7 @@ Looking for a specific feature, integration, or contract? Open the complete inde
 - Adopt an existing repo: [workspace-operations.md#import-and-adoption](./workspace-operations.md#import-and-adoption)
 - Scaffold a frontend app: [commands-reference.md](./commands-reference.md) (`create project nextjs <name>`)
 - Canonical intelligence gate: `workspace intelligence run --for-agent generic --strict --json`
-- Project task entry: `agent context --project . --task "<request>" --for-agent generic`
+- Project task entry: `agent context --project . --task "<request>" --for-agent generic --view route`
 - Standalone entry audit without a task: `agent bootstrap --for-agent <host> --json`
 - Governed agent runtime: `agent framework attach --project <name> --runtime <python|dotnet|node> --name <agent>`
 - Broader CI release gate: [commands-reference.md](./commands-reference.md) (`pipeline`, `readiness`)

@@ -8,6 +8,12 @@ import { isFilesystemReadDenied } from './utils/filesystem-read-errors.js';
 import { taskContextRetry } from './agent-task-recovery.js';
 import type { AgentTaskRecovery, AgentTaskRequest } from './agent-task-recovery.js';
 import {
+  buildAgentTaskRoute,
+  buildRouteRefusal,
+  DEFAULT_AGENT_TASK_ROUTE_MAX_BYTES,
+  type AgentTaskRouteResult,
+} from './agent-task-route.js';
+import {
   AGENT_CONTINUATION_GUIDANCE,
   AGENT_VERIFICATION_GUIDANCE,
 } from './agent-output-guidance.js';
@@ -34,6 +40,7 @@ import { assertJsonSchemaContract } from './utils/json-schema-contract.js';
 import { readWorkspaceKnowledgeGraphSnapshot } from './workspace-knowledge-graph-snapshot.js';
 import type { WorkspaceKnowledgeGraphSnapshotResult } from './workspace-knowledge-graph-snapshot.js';
 import type { WorkspaceGraphInputValidation } from './workspace-knowledge-graph.js';
+import type { WorkspaceKnowledgeGraph } from './contracts/workspace-knowledge-graph-contract.js';
 import {
   buildWorkspaceGraphSearchView,
   MAX_GRAPH_SEARCH_BYTES,
@@ -48,6 +55,7 @@ import type {
   ProjectLifecycleContextFailure,
 } from './project-lifecycle-context.js';
 import { buildTaskOperationalSkill } from './workspace-operational-skills.js';
+import { scopedProjectPath } from './utils/scoped-project-path.js';
 
 export const AGENT_TASK_CONTEXT_SCHEMA_VERSION = 'workspai.agent-task-context.v1' as const;
 export const DEFAULT_AGENT_TASK_CONTEXT_MAX_BYTES = 32 * 1024;
@@ -155,18 +163,24 @@ export type AgentTaskContextSelectionRequired = {
   recovery: AgentTaskRecovery[];
 };
 
-export function agentTaskContextByteBudget(value?: string | number): number {
-  if (value === undefined) return DEFAULT_AGENT_TASK_CONTEXT_MAX_BYTES;
+export function agentTaskContextByteBudget(
+  value?: string | number,
+  view: 'full' | 'route' = 'full'
+): number {
+  const minimum = view === 'route' ? 1024 : 8192;
+  if (value === undefined) {
+    return view === 'route'
+      ? DEFAULT_AGENT_TASK_ROUTE_MAX_BYTES
+      : DEFAULT_AGENT_TASK_CONTEXT_MAX_BYTES;
+  }
   if (typeof value === 'string' && !/^\d+$/u.test(value)) {
     throw new Error('--max-bytes must be an integer.');
   }
   const bytes = Number(value);
-  if (
-    !Number.isSafeInteger(bytes) ||
-    bytes < 8 * 1024 ||
-    bytes > MAX_AGENT_TASK_CONTEXT_MAX_BYTES
-  ) {
-    throw new Error(`--max-bytes must be between 8192 and ${MAX_AGENT_TASK_CONTEXT_MAX_BYTES}.`);
+  if (!Number.isSafeInteger(bytes) || bytes < minimum || bytes > MAX_AGENT_TASK_CONTEXT_MAX_BYTES) {
+    throw new Error(
+      `--max-bytes must be between ${minimum} and ${MAX_AGENT_TASK_CONTEXT_MAX_BYTES}.`
+    );
   }
   return bytes;
 }
@@ -360,7 +374,7 @@ function pathInsideProject(projectPath: string, selectedPath?: string): string |
  * scoped Graph evidence, and the closest manifest-derived lifecycle plan.
  * Missing Workspai metadata is disclosed and never blocks native project work.
  */
-export async function buildAgentTaskContext(input: {
+type AgentTaskContextInput = {
   projectPath: string;
   projectSelected?: boolean;
   task: string;
@@ -372,7 +386,23 @@ export async function buildAgentTaskContext(input: {
   managedDefaultWorkspace?: boolean;
   limit?: number;
   maxBytes?: string | number;
-}): Promise<AgentTaskContext | AgentTaskContextBudgetFailure | AgentTaskContextSelectionRequired> {
+};
+
+type FullResult =
+  AgentTaskContext | AgentTaskContextBudgetFailure | AgentTaskContextSelectionRequired;
+
+export function buildAgentTaskContext(
+  input: AgentTaskContextInput & { view: 'route' }
+): Promise<AgentTaskRouteResult>;
+export function buildAgentTaskContext(
+  input: AgentTaskContextInput & { view?: 'full' }
+): Promise<FullResult>;
+export function buildAgentTaskContext(
+  input: AgentTaskContextInput & { view?: 'full' | 'route' }
+): Promise<FullResult | AgentTaskRouteResult>;
+export async function buildAgentTaskContext(
+  input: AgentTaskContextInput & { view?: 'full' | 'route' }
+): Promise<FullResult | AgentTaskRouteResult> {
   const selectedProjectPath = fs.realpathSync(path.resolve(input.projectPath));
   if (!fs.statSync(selectedProjectPath).isDirectory()) {
     throw new Error('--project must select an existing directory.');
@@ -396,13 +426,14 @@ export async function buildAgentTaskContext(input: {
       'Supply either --workspace with an absolute canonical root or --workspace-default, not both.'
     );
   }
-  const limit = input.limit ?? 8;
+  const view = input.view ?? 'full';
+  const limit = input.limit ?? (view === 'route' ? 4 : 8);
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 12) {
     throw new Error(
       '--limit must be an integer between 1 and 12 (Graph matches, not bytes). Use --max-bytes for the UTF-8 byte budget.'
     );
   }
-  const maxBytes = agentTaskContextByteBudget(input.maxBytes);
+  const maxBytes = agentTaskContextByteBudget(input.maxBytes, view);
   const selectionSource =
     input.projectSelected === false ? 'working-directory' : 'explicit-project';
   const request: AgentTaskRequest = {
@@ -422,7 +453,25 @@ export async function buildAgentTaskContext(input: {
     reason: AgentTaskContextSelectionRequired['selection']['reason'],
     message: string,
     recovery: AgentTaskRecovery[]
-  ): AgentTaskContextSelectionRequired => {
+  ): AgentTaskContextSelectionRequired | AgentTaskRouteResult => {
+    if (view === 'route') {
+      return buildRouteRefusal({
+        status: 'project-selection-required',
+        reason,
+        recovery:
+          reason === 'nested-project-boundary'
+            ? [
+                {
+                  kind: 'select-project',
+                  requiredOption: '--project',
+                  message:
+                    'Confirm the nested project is the user target. Rerun with its verified root and a path relative to that root, preserving the approved workspace choice.',
+                },
+              ]
+            : recovery,
+        maxBytes,
+      });
+    }
     const failure: AgentTaskContextSelectionRequired = {
       schemaVersion: AGENT_TASK_CONTEXT_SCHEMA_VERSION,
       status: 'project-selection-required',
@@ -445,6 +494,7 @@ export async function buildAgentTaskContext(input: {
 
   let grounding: AgentTaskContext['grounding'];
   let graph: AgentTaskContext['graph'];
+  let validatedRouteGraph: WorkspaceKnowledgeGraph | undefined;
   let projectName = path.basename(selectedProjectPath);
   let projectRelativePathForContext = '.';
   let workspaceName: string | null = null;
@@ -553,6 +603,13 @@ export async function buildAgentTaskContext(input: {
       }
       boundary = path.dirname(boundary);
     }
+    if (view === 'route' && !scopedProjectPath(projectPath, projectRelativePath)) {
+      return selectionRequired(
+        'nested-project-boundary',
+        'The selected path crosses a project boundary.',
+        []
+      );
+    }
   }
   if (!resolution?.projectPath) {
     const blockedResolution = workspaceResolution.status === 'blocked';
@@ -629,6 +686,7 @@ export async function buildAgentTaskContext(input: {
           includeInputDiagnostics: true,
         }));
       if (snapshot.status === 'hit') {
+        if (view === 'route') validatedRouteGraph = snapshot.graph;
         graph = buildWorkspaceGraphSearchView(snapshot.graph, {
           query: task,
           projectId: receipt.project.name,
@@ -688,6 +746,8 @@ export async function buildAgentTaskContext(input: {
   try {
     lifecycle = buildProjectLifecycleContext(projectPath, {
       ...(projectRelativePath ? { path: projectRelativePath } : {}),
+      includeWorkspaceMembers: view === 'route',
+      requireExistingPath: view === 'route' && projectRelativePath !== undefined,
       maxBytes: MAX_PROJECT_LIFECYCLE_CONTEXT_MAX_BYTES,
     });
   } catch {
@@ -716,25 +776,54 @@ export async function buildAgentTaskContext(input: {
     (lifecycle.status === 'ready' || lifecycle.status === 'no-lifecycle-units')
       ? 'ready'
       : 'partial';
+  const scope: AgentTaskContext['scope'] = {
+    project: projectName,
+    projectPath: projectRelativePathForContext,
+    workspace: workspaceName,
+    binding,
+    workspaceResolution,
+  };
+  const selection: AgentTaskContext['selection'] = {
+    source: selectionSource,
+    verifiedBy: resolution?.projectPath
+      ? 'canonical-membership'
+      : hasRootEvidence
+        ? 'root-evidence'
+        : 'explicit-directory',
+  };
+  if (view === 'route') {
+    const artifactPrefix = resolution?.projectPath
+      ? isPathWithin(resolution.workspacePath, projectPath)
+        ? path.relative(resolution.workspacePath, projectPath).split(path.sep).join('/') ||
+          projectName
+        : `external/${projectName}`
+      : undefined;
+    return buildAgentTaskRoute({
+      status: packetStatus,
+      root: fs.realpathSync(projectPath),
+      rootRelativeToRequest:
+        path
+          .relative(selectedProjectPath, fs.realpathSync(projectPath))
+          .split(path.sep)
+          .join('/') || '.',
+      selectedPath: projectRelativePath,
+      artifactPrefix,
+      workspaceChoice: request.workspaceChoice,
+      scope,
+      selection,
+      validatedGraph: validatedRouteGraph,
+      grounding,
+      graph,
+      lifecycle,
+      maxBytes,
+    });
+  }
   const payload: AgentTaskContext = {
     schemaVersion: AGENT_TASK_CONTEXT_SCHEMA_VERSION,
     status: packetStatus,
     task: { text: task, use: 'retrieval-query' as const, authority: 'user-request' as const },
-    scope: {
-      project: projectName,
-      projectPath: projectRelativePathForContext,
-      workspace: workspaceName,
-      binding,
-      workspaceResolution,
-    },
-    selection: {
-      source: selectionSource,
-      verifiedBy: resolution?.projectPath
-        ? 'canonical-membership'
-        : hasRootEvidence
-          ? 'root-evidence'
-          : 'explicit-directory',
-    },
+    scope,
+    selection,
     grounding,
     graph,
     lifecycle,

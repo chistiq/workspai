@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `agent context --view route` gives coding agents up to three scoped actions
+  for source discovery, Graph access when necessary, and manifest-backed
+  verification. New and refreshed project instructions prefer this compact
+  entry point. Existing consumers retain the full context by default.
+- Preserve the selected project root in route follow-ups and use the same
+  first-contact flow in Copilot instructions. Recognize root-owned pytest
+  checks in uv workspaces and use corroborated local import and call edges
+  to prioritize shared source files.
+
 ## [0.81.1] - 2026-11-17
 
 Released November 17, 2026.

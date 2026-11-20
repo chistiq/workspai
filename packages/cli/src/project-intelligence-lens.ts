@@ -1880,15 +1880,7 @@ function projectAgentAdapterBody(input: {
   if (input.adapter.host === 'copilot') {
     return `# Workspai host binding · copilot
 
-Before source reads, resolve the user target from the request or this file's repository root. Run once:
-
-\`workspai agent context --task "<user request>" --for-agent copilot --project "<verified source root>"\`
-
-Always bind \`--project\` explicitly. Source reads do not change terminal cwd. Reuse a packet only for the same task and verified project.
-
-Check \`status\` first. Selection/budget refusals have no task packet: follow one structured \`recovery\` action. \`--limit\` counts matches (1–12), not bytes. For \`ready\` or \`partial\`, compare \`scope\` with the user target before using evidence. Follow remaining reads and package checks; disclose unavailable evidence. If CLI/tools are unavailable, continue authorized native work without Workspai claims. Preserve authored rules, approvals and shared AGENTS instructions. Context retrieval needs no Goal/Change.
-
-Entry readiness verifies generated artifacts; it does not prove host loading or model compliance.`;
+${buildAgentEntryGuidance('copilot', { compact: true })}`;
   }
   const imported = input.agentsAvailable
     ? input.adapter.importFromAgents

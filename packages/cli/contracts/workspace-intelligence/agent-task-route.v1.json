@@ -1,0 +1,630 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://workspai.dev/schemas/workspace-intelligence/agent-task-route.v1.json",
+  "title": "Workspai agent task route",
+  "description": "A bounded project route from Workspai evidence. Suggested actions do not grant permission or attest to execution.",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schemaVersion",
+        "status",
+        "scope",
+        "selection",
+        "cwdBase",
+        "host",
+        "grounding",
+        "graph",
+        "actions",
+        "budget",
+        "integrity",
+        "execution"
+      ],
+      "properties": {
+        "schemaVersion": {
+          "const": "workspai.agent-task-route.v1"
+        },
+        "status": {
+          "enum": ["ready", "partial"]
+        },
+        "scope": {
+          "$ref": "agent-task-context.v1.json#/oneOf/0/properties/scope"
+        },
+        "selection": {
+          "$ref": "agent-task-context.v1.json#/oneOf/0/properties/selection"
+        },
+        "cwdBase": {
+          "const": "canonical-project-root"
+        },
+        "host": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["availability", "permission", "execution"],
+          "properties": {
+            "availability": {
+              "const": "not-observed"
+            },
+            "permission": {
+              "const": "not-observed"
+            },
+            "execution": {
+              "const": "not-observed"
+            }
+          }
+        },
+        "grounding": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status", "sourceMutation", "findings"],
+          "properties": {
+            "status": {
+              "enum": ["ready", "degraded", "blocked", "unavailable", "insufficient-budget"]
+            },
+            "sourceMutation": {
+              "enum": ["governed-cli-transaction-only", "risk-and-project-policy-based", "unknown"]
+            },
+            "findings": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "uniqueItems": true
+            },
+            "goalEvidence": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "minItems": 1,
+              "maxItems": 2
+            }
+          }
+        },
+        "graph": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status"],
+          "properties": {
+            "status": {
+              "enum": ["candidates", "no-matches", "unavailable", "insufficient-budget"]
+            },
+            "reason": {
+              "type": "string",
+              "minLength": 1
+            },
+            "evidence": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["executable", "cwd", "args"],
+              "properties": {
+                "executable": {
+                  "const": "workspai"
+                },
+                "cwd": {
+                  "const": "."
+                },
+                "args": {
+                  "type": "array",
+                  "items": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        },
+        "actions": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/inspect"
+              },
+              {
+                "$ref": "#/$defs/search"
+              },
+              {
+                "$ref": "#/$defs/access"
+              },
+              {
+                "$ref": "#/$defs/test"
+              },
+              {
+                "$ref": "#/$defs/select"
+              },
+              {
+                "$ref": "#/$defs/review"
+              }
+            ]
+          },
+          "minItems": 2,
+          "maxItems": 3
+        },
+        "budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["maxBytes", "usedBytes", "accounting"],
+          "properties": {
+            "maxBytes": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 131072
+            },
+            "usedBytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "accounting": {
+              "const": "utf8-json-with-newline"
+            }
+          }
+        },
+        "integrity": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["algorithm", "payloadHash"],
+          "properties": {
+            "algorithm": {
+              "const": "sha256"
+            },
+            "payloadHash": {
+              "type": "string",
+              "pattern": "^[a-f0-9]{64}$"
+            }
+          }
+        },
+        "execution": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["projectRoot"],
+          "properties": {
+            "projectRoot": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["anchor", "relativePath"],
+              "properties": {
+                "anchor": {
+                  "const": "request-project-root"
+                },
+                "relativePath": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "status", "reason", "recovery", "budget"],
+      "properties": {
+        "schemaVersion": {
+          "const": "workspai.agent-task-route.v1"
+        },
+        "status": {
+          "const": "project-selection-required"
+        },
+        "reason": {
+          "enum": ["unverified-working-directory", "path-not-found", "nested-project-boundary"]
+        },
+        "recovery": {
+          "$ref": "#/$defs/recovery"
+        },
+        "budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["maxBytes", "usedBytes", "accounting"],
+          "properties": {
+            "maxBytes": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 131072
+            },
+            "usedBytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "accounting": {
+              "const": "utf8-json-with-newline"
+            }
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schemaVersion", "status", "reason", "recovery", "budget"],
+      "properties": {
+        "schemaVersion": {
+          "const": "workspai.agent-task-route.v1"
+        },
+        "status": {
+          "const": "insufficient-budget"
+        },
+        "reason": {
+          "const": "route-exceeds-budget"
+        },
+        "recovery": {
+          "$ref": "#/$defs/recovery"
+        },
+        "budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["maxBytes", "usedBytes", "accounting", "requiredBytes"],
+          "properties": {
+            "maxBytes": {
+              "type": "integer",
+              "minimum": 1024,
+              "maximum": 131072
+            },
+            "usedBytes": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "accounting": {
+              "const": "utf8-json-with-newline"
+            },
+            "requiredBytes": {
+              "type": "integer",
+              "minimum": 1025
+            }
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "inspect": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "scope", "effect", "files"],
+      "properties": {
+        "id": {
+          "const": "source.inspect"
+        },
+        "scope": {
+          "const": "project"
+        },
+        "effect": {
+          "const": "read"
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["path"],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "line": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "evidenceId": {
+                "type": "string",
+                "minLength": 1
+              },
+              "relation": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["id", "kind"],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "minLength": 1
+                  },
+                  "kind": {
+                    "enum": ["imports", "calls", "tests"]
+                  }
+                }
+              }
+            }
+          },
+          "minItems": 1,
+          "maxItems": 3
+        }
+      }
+    },
+    "search": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "scope", "effect", "cwd"],
+      "properties": {
+        "id": {
+          "const": "source.search"
+        },
+        "scope": {
+          "const": "project"
+        },
+        "effect": {
+          "const": "read"
+        },
+        "cwd": {
+          "const": "."
+        }
+      }
+    },
+    "access": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "scope", "effect", "when", "approval", "retry"],
+          "properties": {
+            "id": {
+              "const": "graph.access"
+            },
+            "scope": {
+              "const": "project"
+            },
+            "effect": {
+              "const": "read"
+            },
+            "when": {
+              "const": "graph-needed"
+            },
+            "approval": {
+              "const": "host-read"
+            },
+            "retry": {
+              "const": "same-command"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["id", "scope", "effect", "when", "approval", "retry", "options"],
+          "properties": {
+            "id": {
+              "const": "graph.access"
+            },
+            "scope": {
+              "const": "project"
+            },
+            "effect": {
+              "const": "read"
+            },
+            "when": {
+              "const": "graph-needed"
+            },
+            "approval": {
+              "const": "canonical-workspace-selection"
+            },
+            "retry": {
+              "const": "approved-workspace"
+            },
+            "options": {
+              "oneOf": [
+                {
+                  "const": ["--workspace"]
+                },
+                {
+                  "const": ["--workspace-default", "--workspace"]
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "test": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "scope",
+        "effect",
+        "when",
+        "cwd",
+        "manifest",
+        "command",
+        "preflight",
+        "confidence",
+        "provenance",
+        "selectedBy",
+        "runner"
+      ],
+      "properties": {
+        "id": {
+          "const": "lifecycle.test"
+        },
+        "scope": {
+          "const": "project"
+        },
+        "effect": {
+          "const": "execute-project-check"
+        },
+        "when": {
+          "const": "after-source-change"
+        },
+        "cwd": {
+          "type": "string",
+          "minLength": 1
+        },
+        "manifest": {
+          "type": "string",
+          "minLength": 1
+        },
+        "command": {
+          "type": "string",
+          "minLength": 1
+        },
+        "argvSequence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["executable", "args"],
+            "properties": {
+              "executable": {
+                "type": "string",
+                "minLength": 1
+              },
+              "args": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "minItems": 1
+        },
+        "preflight": {
+          "enum": ["executable-and-inputs", "executable"]
+        },
+        "confidence": {
+          "enum": ["high", "medium"]
+        },
+        "provenance": {
+          "const": "manifest-derived"
+        },
+        "workspaceOwner": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["root", "manifest"],
+          "properties": {
+            "root": {
+              "type": "string",
+              "minLength": 1
+            },
+            "manifest": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "selectedBy": {
+          "enum": ["exact-manifest", "source-runtime", "single-unit"]
+        },
+        "runner": {
+          "const": "inspect-once"
+        },
+        "sourceManifest": {
+          "type": "string",
+          "minLength": 1
+        },
+        "setup": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["executable", "args"],
+          "properties": {
+            "executable": {
+              "type": "string",
+              "minLength": 1
+            },
+            "args": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "focus": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "select": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "scope", "effect", "when", "cwd", "executable", "args"],
+      "properties": {
+        "id": {
+          "const": "lifecycle.select"
+        },
+        "scope": {
+          "const": "project"
+        },
+        "effect": {
+          "const": "read"
+        },
+        "when": {
+          "const": "source-path-known"
+        },
+        "cwd": {
+          "const": "."
+        },
+        "executable": {
+          "const": "workspai"
+        },
+        "args": {
+          "const": [
+            "project",
+            "lifecycle",
+            "plan",
+            "--project",
+            "<verified-source-root>",
+            "--path",
+            "<verified-source-path>",
+            "--strict",
+            "--json"
+          ]
+        }
+      }
+    },
+    "recovery": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "message"],
+        "properties": {
+          "kind": {
+            "enum": ["retry", "native", "select-project", "select-path", "select-workspace"]
+          },
+          "requiredOption": {
+            "enum": ["--project", "--path", "--workspace", "--workspace-default"]
+          },
+          "message": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "minItems": 1,
+      "maxItems": 3
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "scope", "effect", "when", "reason"],
+      "properties": {
+        "id": {
+          "const": "lifecycle.review"
+        },
+        "scope": {
+          "const": "project"
+        },
+        "effect": {
+          "const": "read"
+        },
+        "when": {
+          "const": "after-source-change"
+        },
+        "reason": {
+          "const": "no-suggested-test"
+        },
+        "manifest": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  }
+}

@@ -80,13 +80,13 @@ To inspect what Workspai prepares, run from the linked project:
 
 ```bash
 npx workspai agent context --project . --for-agent generic \
-  --task "Find the main entry points and available project checks"
+  --task "Find the main entry points and available project checks" --view route
 ```
 
-| The JSON packet contains                 | Why it matters                                       |
+| The JSON route contains                  | Why it matters                                       |
 | ---------------------------------------- | ---------------------------------------------------- |
 | Selected project and workspace identity  | Check that the context belongs to your target        |
-| Graph matches with source references     | Follow evidence to live code                         |
+| Targeted source candidates or search     | Follow evidence to live code                         |
 | Runtime boundaries and project checks    | Choose checks from the affected package's manifests  |
 | Scoped guidance and evidence limitations | See what is usable and what needs further inspection |
 
@@ -122,7 +122,7 @@ Use `npx workspai doctor workspace` for workspace-wide diagnostics.
 
 | You want to                   | Start with                                                             |
 | ----------------------------- | ---------------------------------------------------------------------- |
-| Prepare task context          | `npx workspai agent context --project . --task "Explain this project"` |
+| Prepare task context          | `npx workspai agent context --project . --task "Explain this project" --view route` |
 | Run a new-project wizard      | `npx workspai create`                                                  |
 | Inspect project membership    | `npx workspai project workspace status --json`                         |
 | Refresh generated entry files | `npx workspai workspace agent-sync --write --refresh-context --json`   |

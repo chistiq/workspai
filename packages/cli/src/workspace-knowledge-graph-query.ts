@@ -219,6 +219,93 @@ export function queryKnowledgeEvidence(
   };
 }
 
+export type ProjectRouteRelationHint = {
+  entityId: string;
+  proof: WorkspaceKnowledgeProof;
+  relationId: string;
+  kind: 'imports' | 'calls' | 'tests';
+};
+
+/** Use one hop of already indexed evidence, never an unbounded search or a foreign path. */
+export function projectRouteRelationHint(
+  graph: WorkspaceKnowledgeGraph,
+  project: string,
+  seeds: Array<{ id: string; artifact: string }>
+): ProjectRouteRelationHint | undefined {
+  const index = queryIndex(graph);
+  const seedPaths = new Set(seeds.map((seed) => seed.artifact));
+  const candidates = new Map<
+    string,
+    ProjectRouteRelationHint & { sources: Set<string>; call: boolean }
+  >();
+  for (const seed of seeds.slice(0, 4)) {
+    const file = index.entitiesByAlias
+      .get(normalized(seed.artifact))
+      ?.find(
+        (entity) =>
+          entity.projectId === project &&
+          entity.kind === 'file' &&
+          entity.attributes.artifact === seed.artifact
+      );
+    const anchor = file ?? index.entitiesById.get(seed.id);
+    if (anchor?.projectId !== project) continue;
+    const edges = index.adjacency.get(anchor.id) ?? [];
+    for (const edge of edges.slice(0, 96)) {
+      const { kind } = edge;
+      if (kind !== 'imports' && kind !== 'calls' && kind !== 'tests') continue;
+      if (kind !== 'tests' && edge.direction !== 'forward') continue;
+      const relation = index.relationsById.get(edge.relationId);
+      if (
+        !relation ||
+        relation.confidence === 'low' ||
+        relation.trust === 'ambiguous' ||
+        relation.derivation === 'inferred'
+      )
+        continue;
+      const proofOfEdge = edge.proofIds.some((id) => {
+        const proof = index.proofsById.get(id);
+        return (
+          proof?.freshness === 'fresh' && knowledgeProofMatchesProjectScope(graph, proof, project)
+        );
+      });
+      if (!proofOfEdge) continue;
+      const other = index.entitiesById.get(edge.direction === 'forward' ? edge.to : edge.from);
+      if (other?.projectId !== project || !['file', 'symbol', 'test-suite'].includes(other.kind))
+        continue;
+      const proof = other.proofIds
+        .map((id) => index.proofsById.get(id))
+        .find(
+          (entry) =>
+            entry?.freshness === 'fresh' && knowledgeProofMatchesProjectScope(graph, entry, project)
+        );
+      if (!proof || seedPaths.has(proof.artifact)) continue;
+      const previous = candidates.get(proof.artifact);
+      const sources = previous?.sources ?? new Set<string>();
+      sources.add(seed.artifact);
+      if (!previous || kind === 'calls' || kind === 'tests') {
+        candidates.set(proof.artifact, {
+          entityId: other.id,
+          proof,
+          relationId: relation.id,
+          kind,
+          sources,
+          call: kind === 'calls' || previous?.call === true,
+        });
+      }
+    }
+  }
+  // Two independent anchors or direct test evidence can displace a lexical
+  // result. A lone import is common infrastructure and supplies weak ranking.
+  return [...candidates.values()]
+    .filter((candidate) => candidate.sources.size >= 2 || candidate.kind === 'tests')
+    .sort(
+      (a, b) =>
+        b.sources.size - a.sources.size ||
+        Number(b.call) - Number(a.call) ||
+        a.proof.artifact.localeCompare(b.proof.artifact)
+    )[0];
+}
+
 export type WorkspaceKnowledgePathHop = {
   from: string;
   to: string;
