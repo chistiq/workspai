@@ -1,0 +1,1262 @@
+{
+  "schemaVersion": "rapidkit-module-catalog.v1",
+  "coreVersion": "0.6.3",
+  "requiresPython": ">=3.11,<4.0",
+  "minimumPython": "3.11",
+  "sourceSchemaVersion": 1,
+  "catalogDigest": "sha256:529334cd0b57ed629ced6889a0d0332552fd3661078f8df0eb7c18ffaf13e75d",
+  "moduleCount": 52,
+  "modules": [
+    {
+      "id": "free/ai/agent_runtime",
+      "name": "Agent Runtime",
+      "category": "ai",
+      "description": "Agent runtime scaffolding for tools, memory, execution state, retries, and observable AI workflows",
+      "longDescription": "Agent runtime scaffolding for tools, memory, execution state, retries, and observable AI workflows Capabilities: agent_execution, execution_state, health_checks, memory_hooks, retry_policy, tool_invocation.",
+      "keywords": [
+        "agents",
+        "ai",
+        "memory",
+        "tools",
+        "workflow"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/ai/llm_gateway",
+        "free/tasks/workflow_engine",
+        "free/cache/redis",
+        "free/observability/core"
+      ],
+      "useCases": [
+        "agent_execution",
+        "execution_state",
+        "health_checks",
+        "memory_hooks",
+        "retry_policy",
+        "tool_invocation"
+      ]
+    },
+    {
+      "id": "free/ai/ai_assistant",
+      "name": "Ai Assistant",
+      "category": "ai",
+      "description": "Provider-agnostic...",
+      "longDescription": "Provider-agnostic... Capabilities: health_checks, override_support, runtime_scaffolding.",
+      "keywords": [
+        "ai",
+        "core"
+      ],
+      "framework": "both",
+      "dependencies": [],
+      "useCases": [
+        "health_checks",
+        "override_support",
+        "runtime_scaffolding"
+      ]
+    },
+    {
+      "id": "free/ai/ai_guardrails",
+      "name": "Ai Guardrails",
+      "category": "ai",
+      "description": "AI input/output safety policy, PII redaction hooks, and model boundary checks",
+      "longDescription": "AI input/output safety policy, PII redaction hooks, and model boundary checks Capabilities: blocked_term_policy, health_checks, input_output_safety_checks, pii_detection, pii_redaction, secret_detection.",
+      "keywords": [
+        "ai",
+        "guardrails",
+        "pii",
+        "policy",
+        "safety"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/ai/llm_gateway",
+        "free/ai/tool_registry",
+        "free/security/audit_policy",
+        "free/observability/core"
+      ],
+      "useCases": [
+        "blocked_term_policy",
+        "health_checks",
+        "input_output_safety_checks",
+        "pii_detection",
+        "pii_redaction",
+        "secret_detection"
+      ]
+    },
+    {
+      "id": "free/ai/llm_gateway",
+      "name": "Llm Gateway",
+      "category": "ai",
+      "description": "Provider-neutral LLM gateway with routing, fallback, budgets, and usage telemetry for AI products",
+      "longDescription": "Provider-neutral LLM gateway with routing, fallback, budgets, and usage telemetry for AI products Capabilities: budget_controls, health_checks, model_fallback, override_support, provider_routing, usage_telemetry.",
+      "keywords": [
+        "ai",
+        "gateway",
+        "llm",
+        "routing",
+        "telemetry"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/essentials/settings",
+        "free/essentials/logging",
+        "free/observability/core"
+      ],
+      "useCases": [
+        "budget_controls",
+        "health_checks",
+        "model_fallback",
+        "override_support",
+        "provider_routing",
+        "usage_telemetry"
+      ]
+    },
+    {
+      "id": "free/ai/prompt_ops",
+      "name": "Prompt Ops",
+      "category": "ai",
+      "description": "Prompt versioning, rollout, evaluation, rollback, and audit operations for AI products",
+      "longDescription": "Prompt versioning, rollout, evaluation, rollback, and audit operations for AI products Capabilities: health_checks, prompt_audit, prompt_evaluations, prompt_publish_approval, prompt_rollback, prompt_versioning.",
+      "keywords": [
+        "ai",
+        "audit",
+        "evaluations",
+        "prompts",
+        "rollback"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/ai/llm_gateway",
+        "free/security/audit_policy",
+        "free/observability/core"
+      ],
+      "useCases": [
+        "health_checks",
+        "prompt_audit",
+        "prompt_evaluations",
+        "prompt_publish_approval",
+        "prompt_rollback",
+        "prompt_versioning"
+      ]
+    },
+    {
+      "id": "free/ai/rag_pipeline",
+      "name": "Rag Pipeline",
+      "category": "ai",
+      "description": "RAG pipeline scaffolding for ingestion, embeddings, retrieval, citations, and evaluation-ready AI search",
+      "longDescription": "RAG pipeline scaffolding for ingestion, embeddings, retrieval, citations, and evaluation-ready AI search Capabilities: citations, document_ingestion, embedding_jobs, evaluation_hooks, health_checks, retrieval.",
+      "keywords": [
+        "ai",
+        "documents",
+        "embeddings",
+        "rag",
+        "retrieval"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/ai/llm_gateway",
+        "free/ai/vector_store",
+        "free/business/storage",
+        "free/tasks/celery"
+      ],
+      "useCases": [
+        "citations",
+        "document_ingestion",
+        "embedding_jobs",
+        "evaluation_hooks",
+        "health_checks",
+        "retrieval"
+      ]
+    },
+    {
+      "id": "free/ai/tool_registry",
+      "name": "Tool Registry",
+      "category": "ai",
+      "description": "Tool registry, schemas, permissions, and audit-safe invocation policy for AI products",
+      "longDescription": "Tool registry, schemas, permissions, and audit-safe invocation policy for AI products Capabilities: health_checks, high_risk_tool_gates, invocation_audit, tool_permission_policy, tool_schema_registry.",
+      "keywords": [
+        "ai",
+        "audit",
+        "permissions",
+        "schemas",
+        "tools"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/security/audit_policy",
+        "free/observability/core"
+      ],
+      "useCases": [
+        "health_checks",
+        "high_risk_tool_gates",
+        "invocation_audit",
+        "tool_permission_policy",
+        "tool_schema_registry"
+      ]
+    },
+    {
+      "id": "free/ai/vector_store",
+      "name": "Vector Store",
+      "category": "ai",
+      "description": "Vector store abstraction for pgvector/Qdrant-style indexes, similarity search, and embedding metadata",
+      "longDescription": "Vector store abstraction for pgvector/Qdrant-style indexes, similarity search, and embedding metadata Capabilities: embedding_storage, health_checks, metadata_filters, similarity_search, vector_indexing.",
+      "keywords": [
+        "ai",
+        "embeddings",
+        "pgvector",
+        "search",
+        "vectors"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/database/db_postgres",
+        "free/essentials/settings"
+      ],
+      "useCases": [
+        "embedding_storage",
+        "health_checks",
+        "metadata_filters",
+        "similarity_search",
+        "vector_indexing"
+      ]
+    },
+    {
+      "id": "free/auth/api_keys",
+      "name": "API Keys",
+      "category": "auth",
+      "description": "Deterministic API key issuance, verification, and auditing",
+      "longDescription": "Deterministic API key issuance, verification, and auditing Capabilities: audit_trail, deterministic_token_issuance, fastapi_router, health_reporting, nestjs_provider, scope_enforcement.",
+      "keywords": [
+        "api-keys",
+        "auditing",
+        "auth",
+        "security"
+      ],
+      "framework": "both",
+      "dependencies": [],
+      "useCases": [
+        "audit_trail",
+        "deterministic_token_issuance",
+        "fastapi_router",
+        "health_reporting",
+        "nestjs_provider",
+        "scope_enforcement"
+      ]
+    },
+    {
+      "id": "free/auth/core",
+      "name": "Authentication Core",
+      "category": "auth",
+      "description": "Opinionated password hashing, token signing, and runtime helpers that provide consistent authentication primitives across RapidKit applications.",
+      "longDescription": "Opinionated password hashing, token signing, and runtime helpers that provide consistent authentication primitives across RapidKit applications. Capabilities: dependency_injection, health_checks, password_hashing, token_signing.",
+      "keywords": [
+        "auth",
+        "passwords",
+        "security",
+        "tokens"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/essentials/settings"
+      ],
+      "useCases": [
+        "dependency_injection",
+        "health_checks",
+        "password_hashing",
+        "token_signing"
+      ]
+    },
+    {
+      "id": "free/auth/oauth",
+      "name": "OAuth Providers",
+      "category": "auth",
+      "description": "Lightweight OAuth 2.0 scaffolding with provider registry, state tracking, and callback helpers for RapidKit applications.",
+      "longDescription": "Lightweight OAuth 2.0 scaffolding with provider registry, state tracking, and callback helpers for RapidKit applications. Capabilities: oauth_provider_registry, oauth_router_scaffold, oauth_token_exchange_helpers.",
+      "keywords": [
+        "auth"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/essentials/settings"
+      ],
+      "useCases": [
+        "oauth_provider_registry",
+        "oauth_router_scaffold",
+        "oauth_token_exchange_helpers"
+      ]
+    },
+    {
+      "id": "free/auth/passwordless",
+      "name": "Passwordless Authentication",
+      "category": "auth",
+      "description": "Magic link and one-time code authentication helpers for frictionless login experiences across web and mobile clients.",
+      "longDescription": "Magic link and one-time code authentication helpers for frictionless login experiences across web and mobile clients. Capabilities: passwordless_delivery_hooks, passwordless_router_scaffold, passwordless_token_runtime.",
+      "keywords": [
+        "auth"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/essentials/settings"
+      ],
+      "useCases": [
+        "passwordless_delivery_hooks",
+        "passwordless_router_scaffold",
+        "passwordless_token_runtime"
+      ]
+    },
+    {
+      "id": "free/auth/session",
+      "name": "Session Management",
+      "category": "auth",
+      "description": "Opinionated session management utilities offering signed session tokens, cookie helpers, and pluggable storage for RapidKit applications.",
+      "longDescription": "Opinionated session management utilities offering signed session tokens, cookie helpers, and pluggable storage for RapidKit applications. Capabilities: session_cookie_helpers, session_router_scaffold, session_token_runtime.",
+      "keywords": [
+        "auth"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/essentials/settings"
+      ],
+      "useCases": [
+        "session_cookie_helpers",
+        "session_router_scaffold",
+        "session_token_runtime"
+      ]
+    },
+    {
+      "id": "free/billing/cart",
+      "name": "Cart",
+      "category": "billing",
+      "description": "Shopping cart service for checkout flows",
+      "longDescription": "Shopping cart service for checkout flows Capabilities: cart_management, discount_engine, health_checks, pricing_rules, tax_calculation.",
+      "keywords": [
+        "billing",
+        "cart"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/essentials/settings",
+        "free/users/users_core"
+      ],
+      "useCases": [
+        "cart_management",
+        "discount_engine",
+        "health_checks",
+        "pricing_rules",
+        "tax_calculation"
+      ]
+    },
+    {
+      "id": "free/billing/inventory",
+      "name": "Inventory",
+      "category": "billing",
+      "description": "Inventory and pricing service backing Cart + Stripe",
+      "longDescription": "Inventory and pricing service backing Cart + Stripe Capabilities: activity-metrics, reservations, stock-management.",
+      "keywords": [
+        "billing",
+        "inventory"
+      ],
+      "framework": "both",
+      "dependencies": [],
+      "useCases": [
+        "activity-metrics",
+        "reservations",
+        "stock-management"
+      ]
+    },
+    {
+      "id": "free/billing/stripe_payment",
+      "name": "Stripe Payment",
+      "category": "billing",
+      "description": "Stripe payments and subscriptions",
+      "longDescription": "Stripe payments and subscriptions",
+      "keywords": [
+        "billing",
+        "stripe-payment"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/database/db_postgres",
+        "free/essentials/settings",
+        "free/users/users_core"
+      ],
+      "useCases": []
+    },
+    {
+      "id": "free/billing/usage_billing",
+      "name": "Usage Billing",
+      "category": "billing",
+      "description": "Usage metering, quota enforcement, plan limits, and overage scaffolding for SaaS products",
+      "longDescription": "Usage metering, quota enforcement, plan limits, and overage scaffolding for SaaS products Capabilities: entitlement_gates, overage_hooks, plan_limits, quota_enforcement, usage_metering.",
+      "keywords": [
+        "billing",
+        "metering",
+        "plans",
+        "quota",
+        "usage"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/billing/stripe_payment",
+        "free/billing/inventory",
+        "free/business/multi_tenancy"
+      ],
+      "useCases": [
+        "entitlement_gates",
+        "overage_hooks",
+        "plan_limits",
+        "quota_enforcement",
+        "usage_metering"
+      ]
+    },
+    {
+      "id": "free/business/admin_console",
+      "name": "Admin Console",
+      "category": "business",
+      "description": "Reusable admin console foundation with action registry, permission checks, audit context, and operational summaries",
+      "longDescription": "Reusable admin console foundation with action registry, permission checks, audit context, and operational summaries Capabilities: admin_action_registry, health_checks, operational_summary, permission_checks, required_reasons, run_history.",
+      "keywords": [
+        "admin",
+        "audit",
+        "business",
+        "operations"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/business/approval_engine",
+        "free/security/audit_policy",
+        "free/observability/core"
+      ],
+      "useCases": [
+        "admin_action_registry",
+        "health_checks",
+        "operational_summary",
+        "permission_checks",
+        "required_reasons",
+        "run_history"
+      ]
+    },
+    {
+      "id": "free/business/approval_engine",
+      "name": "Approval Engine",
+      "category": "business",
+      "description": "Approval workflow engine with policies, required reasons, reviewer decisions, escalation, and immutable audit trails",
+      "longDescription": "Approval workflow engine with policies, required reasons, reviewer decisions, escalation, and immutable audit trails Capabilities: approval_policies, escalation, health_checks, immutable_audit, required_reasons, reviewer_decisions, tenant_scoped_approvals.",
+      "keywords": [
+        "admin",
+        "approvals",
+        "audit",
+        "business",
+        "workflow"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/security/audit_policy",
+        "free/observability/core",
+        "free/tasks/workflow_engine"
+      ],
+      "useCases": [
+        "approval_policies",
+        "escalation",
+        "health_checks",
+        "immutable_audit",
+        "required_reasons",
+        "reviewer_decisions",
+        "tenant_scoped_approvals"
+      ]
+    },
+    {
+      "id": "free/business/connector_hub",
+      "name": "Connector Hub",
+      "category": "business",
+      "description": "Integration connector hub scaffolding for external apps, credentials, sync jobs, and provider adapters",
+      "longDescription": "Integration connector hub scaffolding for external apps, credentials, sync jobs, and provider adapters Capabilities: audit_hooks, connector_health, credential_profiles, provider_adapters, sync_jobs.",
+      "keywords": [
+        "adapters",
+        "connectors",
+        "integrations",
+        "oauth",
+        "sync"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/auth/oauth",
+        "free/tasks/workflow_engine",
+        "free/security/audit_policy"
+      ],
+      "useCases": [
+        "audit_hooks",
+        "connector_health",
+        "credential_profiles",
+        "provider_adapters",
+        "sync_jobs"
+      ]
+    },
+    {
+      "id": "free/business/connector_pack_library",
+      "name": "Connector Pack Library",
+      "category": "business",
+      "description": "Connector pack registry for provider catalogs, scopes, install state, health, and credential rotation workflows",
+      "longDescription": "Connector pack registry for provider catalogs, scopes, install state, health, and credential rotation workflows Capabilities: connector_catalog, connector_health, credential_rotation, health_checks, install_state, scope_registry.",
+      "keywords": [
+        "business",
+        "catalog",
+        "connectors",
+        "integrations"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/business/connector_hub",
+        "free/security/audit_policy",
+        "free/observability/core"
+      ],
+      "useCases": [
+        "connector_catalog",
+        "connector_health",
+        "credential_rotation",
+        "health_checks",
+        "install_state",
+        "scope_registry"
+      ]
+    },
+    {
+      "id": "free/business/document_pipeline",
+      "name": "Document Pipeline",
+      "category": "business",
+      "description": "Document ingestion, extraction, chunking, classification, and audit-safe processing pipeline for AI/workflow products",
+      "longDescription": "Document ingestion, extraction, chunking, classification, and audit-safe processing pipeline for AI/workflow products Capabilities: chunking, classification, document_ingestion, health_checks, processing_audit, text_extraction.",
+      "keywords": [
+        "business",
+        "chunking",
+        "classification",
+        "documents",
+        "extraction",
+        "ingestion"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/business/storage",
+        "free/security/audit_policy",
+        "free/observability/core"
+      ],
+      "useCases": [
+        "chunking",
+        "classification",
+        "document_ingestion",
+        "health_checks",
+        "processing_audit",
+        "text_extraction"
+      ]
+    },
+    {
+      "id": "free/business/feature_flags",
+      "name": "Feature Flags",
+      "category": "business",
+      "description": "Feature flag scaffolding for staged rollout, entitlement-aware gates, experiments, and kill switches",
+      "longDescription": "Feature flag scaffolding for staged rollout, entitlement-aware gates, experiments, and kill switches Capabilities: audit_hooks, entitlement_gates, flag_evaluation, kill_switches, percentage_rollout.",
+      "keywords": [
+        "experiments",
+        "feature-flags",
+        "kill-switches",
+        "rollout"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/essentials/settings",
+        "free/cache/redis"
+      ],
+      "useCases": [
+        "audit_hooks",
+        "entitlement_gates",
+        "flag_evaluation",
+        "kill_switches",
+        "percentage_rollout"
+      ]
+    },
+    {
+      "id": "free/business/forms_engine",
+      "name": "Forms Engine",
+      "category": "business",
+      "description": "Schema-driven forms engine with validation, submissions, workflow hooks, and audit-ready exports",
+      "longDescription": "Schema-driven forms engine with validation, submissions, workflow hooks, and audit-ready exports Capabilities: csv_export, health_checks, schema_forms, submission_validation, tenant_scoped_forms, workflow_hooks.",
+      "keywords": [
+        "business",
+        "forms",
+        "submissions",
+        "validation",
+        "workflow"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/security/audit_policy",
+        "free/observability/core",
+        "free/tasks/workflow_engine"
+      ],
+      "useCases": [
+        "csv_export",
+        "health_checks",
+        "schema_forms",
+        "submission_validation",
+        "tenant_scoped_forms",
+        "workflow_hooks"
+      ]
+    },
+    {
+      "id": "free/business/media_pipeline",
+      "name": "Media Pipeline",
+      "category": "business",
+      "description": "Media ingestion and transformation pipeline with checksum, variant generation, and moderation hooks",
+      "longDescription": "Media ingestion and transformation pipeline with checksum, variant generation, and moderation hooks Capabilities: checksum_verification, health_checks, media_ingestion, moderation_hooks, tenant_scoped_assets, variant_generation.",
+      "keywords": [
+        "assets",
+        "business",
+        "media",
+        "moderation",
+        "variants"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/business/storage",
+        "free/security/audit_policy",
+        "free/observability/core"
+      ],
+      "useCases": [
+        "checksum_verification",
+        "health_checks",
+        "media_ingestion",
+        "moderation_hooks",
+        "tenant_scoped_assets",
+        "variant_generation"
+      ]
+    },
+    {
+      "id": "free/business/multi_tenancy",
+      "name": "Multi Tenancy",
+      "category": "business",
+      "description": "Organization, team, tenant isolation, membership, and tenant-aware request context scaffolding",
+      "longDescription": "Organization, team, tenant isolation, membership, and tenant-aware request context scaffolding Capabilities: admin_scopes, organization_model, team_membership, tenant_context, tenant_isolation.",
+      "keywords": [
+        "isolation",
+        "organizations",
+        "saas",
+        "teams",
+        "tenancy"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/auth/core",
+        "free/users/users_core",
+        "free/database/db_postgres"
+      ],
+      "useCases": [
+        "admin_scopes",
+        "organization_model",
+        "team_membership",
+        "tenant_context",
+        "tenant_isolation"
+      ]
+    },
+    {
+      "id": "free/business/org_admin_console",
+      "name": "Org Admin Console",
+      "category": "business",
+      "description": "Organization admin console for tenant settings, memberships, invitations, roles, and governance workflows",
+      "longDescription": "Organization admin console for tenant settings, memberships, invitations, roles, and governance workflows Capabilities: health_checks, invitations, membership_admin, organization_settings, role_governance, tenant_audit.",
+      "keywords": [
+        "admin",
+        "business",
+        "organizations",
+        "tenancy"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/business/multi_tenancy",
+        "free/business/admin_console",
+        "free/security/audit_policy"
+      ],
+      "useCases": [
+        "health_checks",
+        "invitations",
+        "membership_admin",
+        "organization_settings",
+        "role_governance",
+        "tenant_audit"
+      ]
+    },
+    {
+      "id": "free/business/storage",
+      "name": "Storage",
+      "category": "business",
+      "description": "File Storage & Media Management Module - Upload, store, and manage files with support for local and S3/GCS backends",
+      "longDescription": "File Storage & Media Management Module - Upload, store, and manage files with support for local and S3/GCS backends Capabilities: checksum_verification, file_storage, file_upload, gcs_support, health_checks, image_processing, malware_scan_hook, media_management, s3_support, signed_download_tokens.",
+      "keywords": [
+        "business",
+        "file-upload",
+        "gcs",
+        "media-management",
+        "s3",
+        "storage"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/essentials/logging",
+        "free/essentials/settings"
+      ],
+      "useCases": [
+        "checksum_verification",
+        "file_storage",
+        "file_upload",
+        "gcs_support",
+        "health_checks",
+        "image_processing",
+        "malware_scan_hook",
+        "media_management",
+        "s3_support",
+        "signed_download_tokens"
+      ]
+    },
+    {
+      "id": "free/business/support_center",
+      "name": "Support Center",
+      "category": "business",
+      "description": "Support center foundation with tickets, SLA state, customer notes, assignments, and audit-ready support workflows",
+      "longDescription": "Support center foundation with tickets, SLA state, customer notes, assignments, and audit-ready support workflows Capabilities: assignments, audit_trail, customer_operations, health_checks, sla_breach_detection, support_notes, ticket_lifecycle.",
+      "keywords": [
+        "audit",
+        "business",
+        "sla",
+        "support",
+        "tickets"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/security/audit_policy",
+        "free/observability/core",
+        "free/communication/notifications",
+        "free/communication/email"
+      ],
+      "useCases": [
+        "assignments",
+        "audit_trail",
+        "customer_operations",
+        "health_checks",
+        "sla_breach_detection",
+        "support_notes",
+        "ticket_lifecycle"
+      ]
+    },
+    {
+      "id": "free/cache/redis",
+      "name": "Redis Cache",
+      "category": "cache",
+      "description": "Production-ready Redis runtime with async and sync clients, FastAPI dependencies, NestJS configuration helpers, and health probes built on resilient retry logic.",
+      "longDescription": "Production-ready Redis runtime with async and sync clients, FastAPI dependencies, NestJS configuration helpers, and health probes built on resilient retry logic. Capabilities: cache.",
+      "keywords": [
+        "cache",
+        "datastore",
+        "redis"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/essentials/settings"
+      ],
+      "useCases": [
+        "cache"
+      ]
+    },
+    {
+      "id": "free/communication/email",
+      "name": "Email",
+      "category": "communication",
+      "description": "Email module for RapidKit projects.",
+      "longDescription": "Email module for RapidKit projects. Capabilities: bounce_tracking, communication, delivery_log, email, fastapi, nestjs, retry_policy, templated_delivery.",
+      "keywords": [
+        "communication",
+        "email",
+        "marketing",
+        "transactional"
+      ],
+      "framework": "both",
+      "dependencies": [],
+      "useCases": [
+        "bounce_tracking",
+        "communication",
+        "delivery_log",
+        "email",
+        "fastapi",
+        "nestjs",
+        "retry_policy",
+        "templated_delivery"
+      ]
+    },
+    {
+      "id": "free/communication/notifications",
+      "name": "Unified Notifications",
+      "category": "communication",
+      "description": "Email-first notifications runtime offering SMTP delivery, template rendering, provider registry, and health instrumentation for RapidKit applications.",
+      "longDescription": "Email-first notifications runtime offering SMTP delivery, template rendering, provider registry, and health instrumentation for RapidKit applications. Capabilities: audit_metadata, delivery_log, email_push_sms_channels, notification_provider_registry, provider_health.",
+      "keywords": [
+        "communication",
+        "email",
+        "notifications"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/essentials/settings"
+      ],
+      "useCases": [
+        "audit_metadata",
+        "delivery_log",
+        "email_push_sms_channels",
+        "notification_provider_registry",
+        "provider_health"
+      ]
+    },
+    {
+      "id": "free/communication/webhook_platform",
+      "name": "Webhook Platform",
+      "category": "communication",
+      "description": "Inbound and outbound webhook scaffolding with signatures, delivery attempts, replay, and event history",
+      "longDescription": "Inbound and outbound webhook scaffolding with signatures, delivery attempts, replay, and event history Capabilities: delivery_attempts, inbound_webhooks, outbound_delivery, replay, signature_verification.",
+      "keywords": [
+        "events",
+        "integrations",
+        "replay",
+        "signatures",
+        "webhooks"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/auth/api_keys",
+        "free/tasks/celery",
+        "free/database/db_postgres"
+      ],
+      "useCases": [
+        "delivery_attempts",
+        "inbound_webhooks",
+        "outbound_delivery",
+        "replay",
+        "signature_verification"
+      ]
+    },
+    {
+      "id": "free/database/db_mongo",
+      "name": "Db Mongo",
+      "category": "database",
+      "description": "MongoDB integration with async driver support, health diagnostics, configuration scaffolding, and multi-framework adapters",
+      "longDescription": "MongoDB integration with async driver support, health diagnostics, configuration scaffolding, and multi-framework adapters Capabilities: database, fastapi, mongo, nestjs.",
+      "keywords": [
+        "database",
+        "db-mongo"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/essentials/settings"
+      ],
+      "useCases": [
+        "database",
+        "fastapi",
+        "mongo",
+        "nestjs"
+      ]
+    },
+    {
+      "id": "free/database/db_postgres",
+      "name": "PostgreSQL",
+      "category": "database",
+      "description": "SQLAlchemy async+sync Postgres with clean DI, healthchecks, and pool config",
+      "longDescription": "SQLAlchemy async+sync Postgres with clean DI, healthchecks, and pool config Capabilities: async_engine, connection_pooling, dependency_injection, health_checks, sync_engine, transaction_management.",
+      "keywords": [
+        "asyncpg",
+        "connection-pool",
+        "database",
+        "postgresql",
+        "sqlalchemy"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/essentials/settings"
+      ],
+      "useCases": [
+        "async_engine",
+        "connection_pooling",
+        "dependency_injection",
+        "health_checks",
+        "sync_engine",
+        "transaction_management"
+      ]
+    },
+    {
+      "id": "free/database/db_sqlite",
+      "name": "Db Sqlite",
+      "category": "database",
+      "description": "SQLite database integration for development",
+      "longDescription": "SQLite database integration for development Capabilities: database, fastapi, nestjs, sqlite.",
+      "keywords": [
+        "database",
+        "db-sqlite"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/essentials/settings"
+      ],
+      "useCases": [
+        "database",
+        "fastapi",
+        "nestjs",
+        "sqlite"
+      ]
+    },
+    {
+      "id": "free/essentials/deployment",
+      "name": "Deployment Toolkit",
+      "category": "essentials",
+      "description": "Portable Docker, Compose, Makefile, and CI assets for RapidKit projects.",
+      "longDescription": "Portable Docker, Compose, Makefile, and CI assets for RapidKit projects.",
+      "keywords": [
+        "deployment",
+        "devops",
+        "essentials"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/essentials/logging",
+        "free/essentials/settings"
+      ],
+      "useCases": []
+    },
+    {
+      "id": "free/essentials/logging",
+      "name": "Structured Logging & Observability",
+      "category": "essentials",
+      "description": "Structured logging runtime with correlation IDs, multi-sink transport, async queue handling, redaction filters, sampling, and framework-ready bridges for metrics and OpenTelemetry.",
+      "longDescription": "Structured logging runtime with correlation IDs, multi-sink transport, async queue handling, redaction filters, sampling, and framework-ready bridges for metrics and OpenTelemetry.",
+      "keywords": [
+        "logging",
+        "observability",
+        "tracing"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/essentials/settings"
+      ],
+      "useCases": []
+    },
+    {
+      "id": "free/essentials/middleware",
+      "name": "Middleware",
+      "category": "essentials",
+      "description": "HTTP middleware pipeline with FastAPI and NestJS support.",
+      "longDescription": "HTTP middleware pipeline with FastAPI and NestJS support.",
+      "keywords": [
+        "essentials",
+        "http",
+        "middleware"
+      ],
+      "framework": "both",
+      "dependencies": [],
+      "useCases": []
+    },
+    {
+      "id": "free/essentials/settings",
+      "name": "Application Settings",
+      "category": "essentials",
+      "description": "Centralized, modular configuration management using Pydantic Settings with support for dynamic extensions, multi-source loading, and standard-grade security.",
+      "longDescription": "Centralized, modular configuration management using Pydantic Settings with support for dynamic extensions, multi-source loading, and standard-grade security.",
+      "keywords": [
+        "config",
+        "env",
+        "settings"
+      ],
+      "framework": "both",
+      "dependencies": [],
+      "useCases": []
+    },
+    {
+      "id": "free/observability/analytics_dashboard",
+      "name": "Analytics Dashboard",
+      "category": "observability",
+      "description": "Analytics dashboard foundation with metrics, widgets, dashboard snapshots, drilldowns, and audit-ready reporting",
+      "longDescription": "Analytics dashboard foundation with metrics, widgets, dashboard snapshots, drilldowns, and audit-ready reporting Capabilities: dashboard_snapshots, dashboard_widgets, filtered_drilldowns, health_checks, metric_points, product_reporting.",
+      "keywords": [
+        "analytics",
+        "dashboards",
+        "metrics",
+        "observability"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/observability/core",
+        "free/essentials/logging"
+      ],
+      "useCases": [
+        "dashboard_snapshots",
+        "dashboard_widgets",
+        "filtered_drilldowns",
+        "health_checks",
+        "metric_points",
+        "product_reporting"
+      ]
+    },
+    {
+      "id": "free/observability/core",
+      "name": "Observability Core",
+      "category": "observability",
+      "description": "Cohesive metrics, tracing, and structured logging foundation for RapidKit services.",
+      "longDescription": "Cohesive metrics, tracing, and structured logging foundation for RapidKit services. Capabilities: fastapi_adapter, metrics_export, nestjs_provider, structured_logging, telemetry_events, tracing_spans.",
+      "keywords": [
+        "logging",
+        "metrics",
+        "observability",
+        "telemetry",
+        "tracing"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/essentials/logging",
+        "free/essentials/settings"
+      ],
+      "useCases": [
+        "fastapi_adapter",
+        "metrics_export",
+        "nestjs_provider",
+        "structured_logging",
+        "telemetry_events",
+        "tracing_spans"
+      ]
+    },
+    {
+      "id": "free/security/audit_policy",
+      "name": "Audit Policy",
+      "category": "security",
+      "description": "Immutable audit event, admin policy, reason capture, and compliance export scaffolding",
+      "longDescription": "Immutable audit event, admin policy, reason capture, and compliance export scaffolding Capabilities: admin_policy, compliance_export, immutable_audit_events, reason_capture, tamper_evidence.",
+      "keywords": [
+        "admin",
+        "audit",
+        "compliance",
+        "policy",
+        "security"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/essentials/logging",
+        "free/database/db_postgres",
+        "free/users/users_core"
+      ],
+      "useCases": [
+        "admin_policy",
+        "compliance_export",
+        "immutable_audit_events",
+        "reason_capture",
+        "tamper_evidence"
+      ]
+    },
+    {
+      "id": "free/security/cors",
+      "name": "Cors",
+      "category": "security",
+      "description": "Cross-Origin Resource Sharing security module",
+      "longDescription": "Cross-Origin Resource Sharing security module",
+      "keywords": [
+        "security"
+      ],
+      "framework": "both",
+      "dependencies": [],
+      "useCases": []
+    },
+    {
+      "id": "free/security/rate_limiting",
+      "name": "Rate Limiting",
+      "category": "security",
+      "description": "Production-grade request throttling with configurable rules, FastAPI middleware, NestJS guard helpers, and optional Redis-backed quota storage.",
+      "longDescription": "Production-grade request throttling with configurable rules, FastAPI middleware, NestJS guard helpers, and optional Redis-backed quota storage. Capabilities: rate-limiting, security.",
+      "keywords": [
+        "rate-limiting",
+        "security",
+        "throttling"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/essentials/settings"
+      ],
+      "useCases": [
+        "rate-limiting",
+        "security"
+      ]
+    },
+    {
+      "id": "free/security/security_headers",
+      "name": "Security Headers",
+      "category": "security",
+      "description": "Harden HTTP responses with industry-standard security headers, FastAPI middleware, and NestJS providers including health telemetry and diagnostics.",
+      "longDescription": "Harden HTTP responses with industry-standard security headers, FastAPI middleware, and NestJS providers including health telemetry and diagnostics. Capabilities: health-reporting, http-middleware, security-hardening.",
+      "keywords": [
+        "security",
+        "security-headers"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/essentials/settings"
+      ],
+      "useCases": [
+        "health-reporting",
+        "http-middleware",
+        "security-hardening"
+      ]
+    },
+    {
+      "id": "free/tasks/celery",
+      "name": "Celery",
+      "category": "tasks",
+      "description": "Production-ready Celery task orchestration for asynchronous workloads",
+      "longDescription": "Production-ready Celery task orchestration for asynchronous workloads Capabilities: async, beat_schedule, queue, retry_policy, task_metadata, tasks, worker_profile.",
+      "keywords": [
+        "async",
+        "queue",
+        "tasks"
+      ],
+      "framework": "both",
+      "dependencies": [],
+      "useCases": [
+        "async",
+        "beat_schedule",
+        "queue",
+        "retry_policy",
+        "task_metadata",
+        "tasks",
+        "worker_profile"
+      ]
+    },
+    {
+      "id": "free/tasks/event_bus",
+      "name": "Event Bus",
+      "category": "tasks",
+      "description": "In-process event bus with subscriptions, durable-style event records, replay, and dead-letter semantics",
+      "longDescription": "In-process event bus with subscriptions, durable-style event records, replay, and dead-letter semantics Capabilities: dead_letter, event_publish, event_subscribe, health_checks, replay, tenant_scoped_events.",
+      "keywords": [
+        "dead-letter",
+        "events",
+        "pubsub",
+        "replay",
+        "tasks"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/observability/core",
+        "free/security/audit_policy"
+      ],
+      "useCases": [
+        "dead_letter",
+        "event_publish",
+        "event_subscribe",
+        "health_checks",
+        "replay",
+        "tenant_scoped_events"
+      ]
+    },
+    {
+      "id": "free/tasks/queue_platform",
+      "name": "Queue Platform",
+      "category": "tasks",
+      "description": "Tenant-aware durable queue abstraction with retry, delay, dead-letter, and worker leasing",
+      "longDescription": "Tenant-aware durable queue abstraction with retry, delay, dead-letter, and worker leasing Capabilities: dead_letter_queue, delayed_jobs, durable_queue, health_checks, retry_policy, tenant_scoped_messages, worker_leasing.",
+      "keywords": [
+        "dead-letter",
+        "queue",
+        "retry",
+        "tasks",
+        "workers"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/observability/core",
+        "free/security/audit_policy"
+      ],
+      "useCases": [
+        "dead_letter_queue",
+        "delayed_jobs",
+        "durable_queue",
+        "health_checks",
+        "retry_policy",
+        "tenant_scoped_messages",
+        "worker_leasing"
+      ]
+    },
+    {
+      "id": "free/tasks/workflow_engine",
+      "name": "Workflow Engine",
+      "category": "tasks",
+      "description": "Workflow engine scaffolding for triggers, actions, conditions, approvals, schedules, and durable runs",
+      "longDescription": "Workflow engine scaffolding for triggers, actions, conditions, approvals, schedules, and durable runs Capabilities: actions, approvals, conditions, scheduled_execution, triggers, workflow_runs.",
+      "keywords": [
+        "approvals",
+        "automation",
+        "scheduler",
+        "triggers",
+        "workflow"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/tasks/celery",
+        "free/cache/redis",
+        "free/database/db_postgres"
+      ],
+      "useCases": [
+        "actions",
+        "approvals",
+        "conditions",
+        "scheduled_execution",
+        "triggers",
+        "workflow_runs"
+      ]
+    },
+    {
+      "id": "free/users/users_core",
+      "name": "Users Core",
+      "category": "users",
+      "description": "Opinionated user management backbone that ships immutable domain models, orchestration services, and framework adapters ready for production-grade RapidKit projects.",
+      "longDescription": "Opinionated user management backbone that ships immutable domain models, orchestration services, and framework adapters ready for production-grade RapidKit projects. Capabilities: cross_framework, http_apis, user_directory, user_lifecycle.",
+      "keywords": [
+        "application",
+        "domain",
+        "users"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/database/db_postgres",
+        "free/essentials/settings",
+        "free/security/security_headers"
+      ],
+      "useCases": [
+        "cross_framework",
+        "http_apis",
+        "user_directory",
+        "user_lifecycle"
+      ]
+    },
+    {
+      "id": "free/users/users_profiles",
+      "name": "Users Profiles",
+      "category": "users",
+      "description": "Extends the Users Core module with rich profile modelling, marketing preferences, and privacy-aware APIs for FastAPI and NestJS applications.",
+      "longDescription": "Extends the Users Core module with rich profile modelling, marketing preferences, and privacy-aware APIs for FastAPI and NestJS applications. Capabilities: cross_framework, http_apis, personalization, user_profiles.",
+      "keywords": [
+        "personalization",
+        "user_profiles",
+        "users"
+      ],
+      "framework": "both",
+      "dependencies": [
+        "free/users/users_core",
+        "free/essentials/settings"
+      ],
+      "useCases": [
+        "cross_framework",
+        "http_apis",
+        "personalization",
+        "user_profiles"
+      ]
+    }
+  ]
+}

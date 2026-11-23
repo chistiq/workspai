@@ -39,6 +39,16 @@ describe('Demo Kit Generator', () => {
   });
 
   describe('generateDemoKit', () => {
+    it.each(['fastapi.standard', 'fastapi.ddd'])(
+      'renders the Core Python requirement for offline %s',
+      async (kit_name) => {
+        await generateDemoKit(testDir, { project_name: 'demo', kit_name, skipGit: true });
+        const manifest = await fs.readFile(path.join(testDir, 'pyproject.toml'), 'utf8');
+        expect(manifest).toContain('python = "^3.11"');
+        expect(manifest).toContain('python_version = "3.11"');
+      }
+    );
+
     it('should generate demo project with basic variables', async () => {
       const projectPath = path.join(testDir, 'test-project');
       const variables = {

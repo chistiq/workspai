@@ -33,10 +33,21 @@ Cosine similarity + dependency metadata
 Ranked suggestions
 ```
 
-The catalog is loaded from the published package when available. Development and
-refresh workflows can obtain current module metadata through the validated
-Python Core bridge. A bounded fallback catalog keeps discovery available when
-Core is absent.
+The package includes a generated offline snapshot of the validated RapidKit
+Core module inventory. In the current Core sync, that snapshot contains 52
+modules, including their canonical IDs, framework profiles, declared
+dependencies, capabilities, and descriptions. When a compatible Core runtime is
+available, the recommender can read its current catalog; otherwise it uses the
+bundled snapshot. Maintainers refresh both the copied kit templates and this
+snapshot with `npm run sync-core` from the CLI package, or
+`npm --workspace workspai run sync-core` from the monorepo root.
+
+The legacy embedding file may not contain entries for every current Core module
+ID. When a live embedding provider is configured, missing or content-stale
+module embeddings are generated in one batch and cached for the process. The
+offline snapshot keeps catalog discovery available without Core; semantic
+recommendation still follows the configured provider or deterministic mock
+mode.
 
 ## Interpreting a result
 

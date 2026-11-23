@@ -667,9 +667,16 @@ async function main(): Promise<void> {
       const validation = adapter.validate(renderInput);
       assertCondition(validation.status === 'passed', 'Structural adapter validation failed.');
       if (runtime === 'python') {
+        const pythonVersion = MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE.minimumPython ?? '3.10.21';
         await run(
           'uv',
-          ['sync', '--python', '3.10.21', '--project', path.dirname(context.dependencyManifest)],
+          [
+            'sync',
+            '--python',
+            pythonVersion,
+            '--project',
+            path.dirname(context.dependencyManifest),
+          ],
           generatedRoot
         );
         const version = await run(

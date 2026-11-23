@@ -1,3 +1,5 @@
+import { RAPIDKIT_CORE_MINIMUM_PYTHON } from './core-bridge/core-runtime-compatibility.js';
+
 /**
  * Custom error classes for rapidkit
  */
@@ -232,7 +234,7 @@ export class RapidKitNotAvailableError extends RapidKitError {
     super(
       'RapidKit Python package is not yet available on PyPI',
       'RAPIDKIT_NOT_AVAILABLE',
-      'Available options:\n  1. Install Python 3.10+ and retry the same command\n  2. Use the core workflow: npx workspai create workspace <name>\n  3. Offline fallback (limited): npx workspai create project fastapi.standard <name> --output .\n\nLegacy: set RAPIDKIT_SHOW_LEGACY=1 to reveal template-mode flags in help.'
+      `Available options:\n  1. Install Python ${RAPIDKIT_CORE_MINIMUM_PYTHON}+ and retry the same command\n  2. Use the core workflow: npx workspai create workspace <name>\n  3. Offline fallback (limited): npx workspai create project fastapi.standard <name> --output .\n\nLegacy: set RAPIDKIT_SHOW_LEGACY=1 to reveal template-mode flags in help.`
     );
   }
 }

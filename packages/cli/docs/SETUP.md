@@ -80,7 +80,7 @@ Details: [DEVELOPMENT.md](./DEVELOPMENT.md).
 Bridge + Core integration:
 
 - `WORKSPAI_DEV_PATH` — local RapidKit Core checkout (`RAPIDKIT_DEV_PATH` fallback)
-- `RAPIDKIT_CORE_PYTHON_PACKAGE` — override Core install target
+- `RAPIDKIT_CORE_PYTHON_PACKAGE` — override the default pinned Core install target (`rapidkit-core==0.6.3`) for development or CI
 - `RAPIDKIT_BRIDGE_FORCE_VENV=1` — force cached bridge venv
 - `RAPIDKIT_BRIDGE_UPGRADE_PIP=1` — upgrade pip in bridge venv
 - `RAPIDKIT_BRIDGE_LOCK_TIMEOUT_MS` — maximum wait for another process that is

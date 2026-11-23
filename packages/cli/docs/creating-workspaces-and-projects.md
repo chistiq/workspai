@@ -371,7 +371,9 @@ npx workspai create frontend nextjs dashboard
 | `rust.axum`           | Rust    | Workspai npm CLI     | No                   |
 
 NestJS runs on Node.js, but its current scaffold is provided through the
-RapidKit Core bridge.
+RapidKit Core bridge. The current Core bridge and Core-backed FastAPI kits
+require Python 3.11 or newer, including when the generated application runtime
+is Node.js. Other Workspai generators do not require the Python Core runtime.
 
 ## Supported frontend generators
 
@@ -435,8 +437,8 @@ independent proof for this scaffold. See
 
 | Kit                             | Runtime | SDK baseline                                                            | Layout                                                                                                                |
 | ------------------------------- | ------- | ----------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
-| `gateway.openrouter.typescript` | Node.js | `@openrouter/sdk` `1.5.13`, TypeScript `5.9.3`, `@types/node` `22.20.3` | Server-owned OpenRouter Client SDK starter with `gateway.policy.json`, credentialless `node:test`, and `.env.example` |
-| `gateway.openrouter.python`     | Python  | `openrouter` `1.3.86`                                                   | Server-owned OpenRouter Client SDK starter with `gateway.policy.json`, credentialless `unittest`, and `.env.example`  |
+| `gateway.openrouter.typescript` | Node.js | `@openrouter/sdk` `1.5.131`, TypeScript `5.9.3`, `@types/node` `22.20.3` | Server-owned OpenRouter Client SDK starter with `gateway.policy.json`, credentialless `node:test`, and `.env.example` |
+| `gateway.openrouter.python`     | Python  | `openrouter` `1.3.206`                                                  | Server-owned OpenRouter Client SDK starter with `gateway.policy.json`, credentialless `unittest`, and `.env.example`  |
 
 These are proposed SDK pins; three-OS qualification is required before they
 can be described as qualified or release-admitted.

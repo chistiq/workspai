@@ -5,6 +5,52 @@
 > `rapidkit` commands and `.rapidkit` paths. Use the [CLI README](./README.md) and
 > [Command Reference](./docs/commands-reference.md) for current usage.
 
+## v0.83.0 (November 23, 2026)
+
+**Publication status: Published November 23, 2026.**
+
+Workspai CLI 0.83.0 aligns its Python bridge, backend kit templates, and module
+catalog with RapidKit Core 0.6.3.
+
+### Core-backed projects and modules
+
+- The default engine install selects Core 0.6.3 and requires Python
+  `>=3.11,<4.0`. NestJS applications run on Node.js and use the Core bridge
+  for scaffolding and Core module operations.
+- FastAPI Standard, FastAPI DDD, and NestJS Standard templates are synced
+  with Core. The bundled catalog covers all 52 validated free modules from
+  the installed Core 0.6.3 catalog.
+- Versioned module listings produce valid JSON on stdout. Offline FastAPI
+  scaffolding renders the supported Python version. The module recommender
+  regenerates missing or stale embeddings on demand when a provider is configured.
+
+### Local validation
+
+On Linux with Node 24.20.0, 3,320 CLI tests passed and 12 were skipped. The
+installed CLI created all three kits and installed selected modules. The
+generated FastAPI projects passed their tests. The NestJS project passed its
+Jest suites and build. The published Core's `modules summary` command still
+returns an empty list. Use `modules list --json-schema 1` for the catalog.
+
+### Gateways and Agent Framework discovery
+
+- OpenRouter source-ready starters use `@openrouter/sdk` `1.5.131` and
+  `openrouter` `1.3.206`. Generated-project and lifecycle checks passed on Linux.
+- Agent Framework discovery preserves its report on upstream failures and
+  emits separate version proposals. The six reviewed SDK candidates still
+  require the complete admission matrix before replacing the bundled pins.
+
+### Install or upgrade
+
+```bash
+npm install -g workspai@0.83.0
+workspai --version
+```
+
+The optional alias is `wspai@0.83.0`. See the
+[full v0.83.0 release notes](https://github.com/chistiq/workspai/blob/v0.83.0/packages/cli/releases/RELEASE_NOTES_v0.83.0.md)
+for upgrade guidance, the verification matrix, and known issues.
+
 ## v0.82.0 (November 20, 2026)
 
 **Publication status: Published November 20, 2026.**

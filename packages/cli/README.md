@@ -239,7 +239,9 @@ uses the same CLI and workspace artifacts.
 [Security](docs/SECURITY.md)
 
 Built by [Chistiq](https://chistiq.com/), the team behind RapidKit and Workspai.
-RapidKit Core supports Python/Core-dependent kits and modules.
+RapidKit Core supports Python/Core-dependent kits and modules. The current
+RapidKit Core release requires Python 3.11 or newer; Workspai workflows that do
+not use RapidKit Core remain Python-free.
 
 ## License
 

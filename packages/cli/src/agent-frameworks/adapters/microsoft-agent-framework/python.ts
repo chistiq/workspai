@@ -20,6 +20,7 @@ import { WORKSPAI_CONTEXT_SCHEMA_VERSION } from '../../context-loaders/typescrip
 import { MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE, packageVersion } from '../../version-policy.js';
 
 const FRAMEWORK_VERSION = MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE.frameworkVersion;
+const MINIMUM_PYTHON = MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE.minimumPython ?? '3.10';
 const FOUNDRY_PACKAGE_VERSION = packageVersion(
   MICROSOFT_AGENT_FRAMEWORK_PYTHON_BASELINE,
   'agent-framework-foundry'
@@ -222,7 +223,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "${target.slug}"
 version = "0.1.0"
-requires-python = ">=3.10"
+requires-python = ">=${MINIMUM_PYTHON}"
 dependencies = [
   "agent-framework-core==${FRAMEWORK_VERSION}",
   "agent-framework-foundry==${FOUNDRY_PACKAGE_VERSION}",
@@ -489,7 +490,7 @@ FOUNDRY_MODEL=
 
 This Microsoft Agent Framework Python entrypoint consumes bounded Workspai context. Run these commands from the project root.
 
-Pinned baseline: \`agent-framework-core==${FRAMEWORK_VERSION}\` with \`agent-framework-foundry==${FOUNDRY_PACKAGE_VERSION}\` and \`azure-identity==${AZURE_IDENTITY_VERSION}\` on Python 3.10 or newer. The official hello-world pattern is \`Agent(client=FoundryChatClient(...))\`. Typed tools are ordinary callables with docstrings, which Agent Framework 1.x wraps for the model.
+Pinned baseline: \`agent-framework-core==${FRAMEWORK_VERSION}\` with \`agent-framework-foundry==${FOUNDRY_PACKAGE_VERSION}\` and \`azure-identity==${AZURE_IDENTITY_VERSION}\` on Python ${MINIMUM_PYTHON} or newer. The official hello-world pattern is \`Agent(client=FoundryChatClient(...))\`. Typed tools are ordinary callables with docstrings, which Agent Framework 1.x wraps for the model.
 
 The generated loader locates the Workspai project as the directory that owns \`agents/<instance>/\`. It does not use the process working directory, does not search unbounded ancestors, and does not copy context into the agent package. \`${python} ${target.entrypoint}\` therefore still reads \`.workspai/reports/project-context-agent.json\` from that project root.
 
@@ -591,7 +592,7 @@ export const microsoftAgentFrameworkPythonAdapter: AgentFrameworkAdapter = {
     return {
       adapterId: microsoftAgentFrameworkPythonManifest.adapter.id,
       frameworkId: microsoftAgentFrameworkPythonManifest.framework.id,
-      runtime: 'python>=3.10',
+      runtime: `python>=${MINIMUM_PYTHON}`,
       entrypoint: target.entrypoint,
       dependencyManifest: target.dependencyManifest,
       requiredEnvironment: ['FOUNDRY_PROJECT_ENDPOINT', 'FOUNDRY_MODEL'],
@@ -610,6 +611,6 @@ export const microsoftAgentFrameworkPythonAdapter: AgentFrameworkAdapter = {
     return validateAdapterRender(microsoftAgentFrameworkPythonAdapter, input);
   },
   resolveRuntime(availableRuntimes) {
-    return resolveDeclaredRuntime('python', '>=3.10', availableRuntimes);
+    return resolveDeclaredRuntime('python', `>=${MINIMUM_PYTHON}`, availableRuntimes);
   },
 };

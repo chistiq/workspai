@@ -56,7 +56,7 @@ Example:
 module.exports = {
   workspace: {
     defaultAuthor: 'Platform Team',
-    pythonVersion: '3.10',
+    pythonVersion: '3.11',
     installMethod: 'poetry',
   },
   projects: {
@@ -66,9 +66,11 @@ module.exports = {
 };
 ```
 
-Python-backed workflows require Python 3.10 or newer. `pythonVersion` selects a
-project target; it does not make Python a dependency for Node-only or other
-Python-free Workspai workflows.
+RapidKit Core-backed workflows currently require Python 3.11 or newer.
+`pythonVersion` selects a project target; Workspai normalizes Core-backed
+installations to the Core minimum when a lower version is configured. It does
+not make Python a dependency for Node-only or other Python-free Workspai
+workflows.
 
 ## Command coverage
 

@@ -1,6 +1,6 @@
 {
   "name": "workspai",
-  "version": "0.82.0",
+  "version": "0.83.0",
   "type": "module",
   "description": "Open-source workspace intelligence CLI for software systems: create, adopt, govern, verify, and align polyglot workspaces for humans, CI, IDEs, and AI agents.",
   "keywords": [
@@ -72,6 +72,8 @@
     "check:package-manager": "node scripts/enforce-package-manager.cjs",
     "sync-kits": "bash scripts/sync-kits.sh",
     "sync:kits": "corepack npm run sync-kits",
+    "sync-core-catalog": "node scripts/sync-core-module-catalog.mjs",
+    "sync-core": "node scripts/sync-core-module-catalog.mjs --with-kits",
     "build": "tsup",
     "build:watch": "tsup --watch",
     "dev": "tsup --watch",

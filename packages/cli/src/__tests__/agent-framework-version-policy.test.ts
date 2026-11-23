@@ -14,7 +14,10 @@ import {
   selectLatestRegistryVersion,
   type AgentFrameworkVersionBaseline,
 } from '../agent-frameworks/version-policy.js';
-import { discoverAgentFrameworkVersions } from '../agent-frameworks/version-discovery.js';
+import {
+  discoverAgentFrameworkVersions,
+  formatAgentFrameworkVersionDiscoverySummary,
+} from '../agent-frameworks/version-discovery.js';
 import { buildAgentFrameworkVersionPromotion } from '../agent-frameworks/version-promotion.js';
 
 function pythonDiscoveryFixture(): AgentFrameworkVersionBaseline {
@@ -70,8 +73,12 @@ describe('agent framework version policy', () => {
     expect(formatAgentFrameworkVersionPolicy(OPENAI_AGENTS_TYPESCRIPT_BASELINE)).toBe(
       `${OPENAI_AGENTS_TYPESCRIPT_BASELINE.frameworkVersion} · stable upstream candidate · Workspai admission required`
     );
-    expect(packageVersion(OPENAI_AGENTS_PYTHON_BASELINE, 'openai-agents')).toBe('0.24.0');
-    expect(packageVersion(OPENAI_AGENTS_TYPESCRIPT_BASELINE, '@openai/agents')).toBe('0.21.0');
+    expect(packageVersion(OPENAI_AGENTS_PYTHON_BASELINE, 'openai-agents')).toBe(
+      OPENAI_AGENTS_PYTHON_BASELINE.frameworkVersion
+    );
+    expect(packageVersion(OPENAI_AGENTS_TYPESCRIPT_BASELINE, '@openai/agents')).toBe(
+      OPENAI_AGENTS_TYPESCRIPT_BASELINE.frameworkVersion
+    );
     expect(packageVersion(OPENAI_AGENTS_TYPESCRIPT_BASELINE, 'zod')).toBe('4.6.7');
     expect(formatAgentFrameworkVersionPolicy(GOOGLE_ADK_PYTHON_BASELINE)).toBe(
       `${GOOGLE_ADK_PYTHON_BASELINE.frameworkVersion} · stable upstream candidate · Workspai admission required`
@@ -157,7 +164,13 @@ describe('agent framework version policy', () => {
   });
 
   it('discovers npm registry versions without treating prereleases as stable', async () => {
-    const baseline = structuredClone(OPENAI_AGENTS_TYPESCRIPT_BASELINE);
+    const baseline: AgentFrameworkVersionBaseline = {
+      ...OPENAI_AGENTS_TYPESCRIPT_BASELINE,
+      frameworkVersion: '0.21.0',
+      packages: OPENAI_AGENTS_TYPESCRIPT_BASELINE.packages.map((dependency) =>
+        dependency.role === 'framework-core' ? { ...dependency, version: '0.21.0' } : dependency
+      ),
+    };
     const report = await discoverAgentFrameworkVersions({
       baselines: [baseline],
       generatedAt: '2026-09-17T00:00:00.000Z',
@@ -284,5 +297,50 @@ describe('agent framework version policy', () => {
       status: 'blocked',
       github: { required: true, status: 'disagreement' },
     });
+    expect(formatAgentFrameworkVersionDiscoverySummary(report)).toContain(
+      'Registry 9.9.9 disagrees with GitHub v8.0.0'
+    );
+    expect(() => buildAgentFrameworkVersionPromotion([baseline], report)).toThrow(
+      'blocked by upstream discovery'
+    );
+  });
+
+  it('reports a registry outage without discarding other adapters', async () => {
+    const baselines = [pythonDiscoveryFixture(), structuredClone(OPENAI_AGENTS_PYTHON_BASELINE)];
+    const report = await discoverAgentFrameworkVersions({
+      baselines,
+      fetcher: async (url) => {
+        const dependency = baselines
+          .flatMap((baseline) => baseline.packages)
+          .find((candidate) => candidate.registryUrl === url);
+        if (!dependency) throw new Error('Unexpected registry URL.');
+        if (dependency.name === 'agent-framework-core') {
+          return {
+            ok: false,
+            status: 503,
+            async json() {
+              return {};
+            },
+          };
+        }
+        return {
+          ok: true,
+          status: 200,
+          async json() {
+            return { releases: { [dependency.version]: [{ yanked: false }] } };
+          },
+        };
+      },
+    });
+    expect(report.summary).toMatchObject({ blocked: 1, current: 1 });
+    expect(report.adapters[0]?.packages[0]).toMatchObject({
+      status: 'unavailable',
+      latestRegistryVersion: null,
+      detail: 'Registry returned HTTP 503.',
+    });
+    expect(formatAgentFrameworkVersionDiscoverySummary(report)).toContain('HTTP 503');
+    expect(() => buildAgentFrameworkVersionPromotion(baselines, report)).toThrow(
+      'blocked by upstream discovery'
+    );
   });
 });

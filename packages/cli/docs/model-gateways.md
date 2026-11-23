@@ -25,8 +25,8 @@ classification, not a Workspai release gate.
 
 | Kit                             | Runtime         | Official Client SDK        | Reviewed   |
 | ------------------------------- | --------------- | -------------------------- | ---------- |
-| `gateway.openrouter.typescript` | Node.js `>=20`  | `@openrouter/sdk` `1.5.13` | 2026-10-27 |
-| `gateway.openrouter.python`     | Python `>=3.10` | `openrouter` `1.3.86`      | 2026-10-27 |
+| `gateway.openrouter.typescript` | Node.js `>=20`  | `@openrouter/sdk` `1.5.131` | 2026-11-23 |
+| `gateway.openrouter.python`     | Python `>=3.10` | `openrouter` `1.3.206`     | 2026-11-23 |
 
 Aliases: `openrouter.typescript`, `gateway.openrouter.ts`, `openrouter-typescript`,
 and the matching Python aliases. Bare `openrouter` is not an alias.
@@ -78,9 +78,9 @@ same commit before a Workspai release can present these kits as qualified.
 ## Intentionally unsupported languages
 
 The official Go SDK (`github.com/OpenRouterTeam/go-sdk`) was evaluated on
-2026-09-28. The upstream README classifies the current `0.x` line as beta and
+2026-11-23. The upstream README classifies the current `0.x` line as beta and
 warns that breaking changes may ship in minor releases. proxy.golang.org
-reported `v0.8.32`. Go is excluded from the stable Create surface until
+reported `v0.9.130`. Go is excluded from the stable Create surface until
 upstream classifies a release line as stable.
 
 The OpenRouter Agent SDK (`@openrouter/agent`) belongs to the agent-runtime
@@ -175,9 +175,8 @@ SDK `cancel()`. A cleanup failure does not replace the primary error or convert
 a successful completion into an error.
 
 The TypeScript starter forwards `AbortSignal` through `chat.send` options,
-including an already-aborted signal. Pinned `@openrouter/sdk` `1.5.13`
-`EventStream` extends `ReadableStream` and does not expose a dedicated `close()`.
-Cancellation is `ReadableStream` async-iterator `return()` → `cancel()`. If the
+including an already-aborted signal. For a `ReadableStream` without a dedicated
+`close()` method, cancellation uses async-iterator `return()` or `cancel()`. If the
 stream has already errored, `cancel()` may be a no-op; the gateway still drops
 its own reference and remains usable for a later request. The Python starter
 closes the SDK iterator first (`EventStream.generator.close()`), which is the

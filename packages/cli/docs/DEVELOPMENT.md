@@ -39,6 +39,24 @@ npx workspai my-workspace
 
 `RAPIDKIT_DEV_PATH` remains supported as a legacy fallback.
 
+### Synchronize Core kits and module catalog
+
+The checked-in FastAPI/NestJS templates and offline AI module catalog are
+generated from a local RapidKit Core checkout. Before changing this projection,
+sync from the Core source tree and review the resulting diff:
+
+```bash
+# From the Workspai monorepo root; Core defaults to ../core.
+npm --workspace workspai run sync-core
+
+# Or set the Core checkout explicitly.
+RAPIDKIT_CORE_ROOT=/path/to/core npm --workspace workspai run sync-core
+```
+
+The sync fails if Core is missing, its module inventory is invalid, or a
+manifest does not match the inventory. Commit the generated snapshot and
+template changes together with the corresponding CLI changes.
+
 ## CLI workflows
 
 ```bash

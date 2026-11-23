@@ -1,7 +1,10 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 
-import { discoverAgentFrameworkVersions } from '../src/agent-frameworks/version-discovery.js';
+import {
+  discoverAgentFrameworkVersions,
+  formatAgentFrameworkVersionDiscoverySummary,
+} from '../src/agent-frameworks/version-discovery.js';
 
 function argument(name: string): string | undefined {
   const index = process.argv.indexOf(name);
@@ -9,7 +12,7 @@ function argument(name: string): string | undefined {
 }
 
 async function main(): Promise<void> {
-  const report = await discoverAgentFrameworkVersions();
+  const report = await discoverAgentFrameworkVersions({ githubToken: process.env.GITHUB_TOKEN });
   const output = argument('--output');
   if (output) {
     const target = path.resolve(output);
@@ -17,16 +20,7 @@ async function main(): Promise<void> {
     await fs.writeFile(target, `${JSON.stringify(report, null, 2)}\n`, { flag: 'wx' });
     process.stdout.write(`WROTE ${target}\n`);
   }
-  for (const adapter of report.adapters) {
-    process.stdout.write(
-      `${adapter.status === 'current' ? 'PASS' : adapter.status === 'candidate-available' ? 'CANDIDATE' : 'BLOCKED'} ${adapter.adapterId} · ${adapter.releaseChannel} · ${adapter.admittedFrameworkVersion}\n`
-    );
-    for (const dependency of adapter.packages.filter((item) => item.status !== 'current')) {
-      process.stdout.write(
-        `  ${dependency.name}: ${dependency.admittedVersion} -> ${dependency.latestRegistryVersion} (${dependency.status})\n`
-      );
-    }
-  }
+  process.stdout.write(formatAgentFrameworkVersionDiscoverySummary(report));
   process.stdout.write(
     `Discovery only: ${report.summary.candidateAvailable} candidate(s); no baseline was changed.\n`
   );

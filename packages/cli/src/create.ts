@@ -31,7 +31,6 @@ import {
   getDefaultPythonCommand,
   getWorkspaceRegistryDirectory,
   getWorkspaceRegistryFileCandidates,
-  getPythonCommandCandidates,
   getPythonVersionProbeCandidates,
   getUserLocalBinCandidates,
   getVenvPythonPath,
@@ -56,6 +55,13 @@ import {
   WORKSPAI_WORKSPACE_MARKER,
 } from './utils/workspace-paths.js';
 import { isPythonFreeWorkspaceProfile } from './workspace-profile-compatibility.js';
+import {
+  coreInstallTarget,
+  RAPIDKIT_CORE_MINIMUM_PYTHON,
+  RAPIDKIT_CORE_REQUIRES_PYTHON,
+  RAPIDKIT_CORE_VERSION,
+} from './core-bridge/core-runtime-compatibility.js';
+import { evaluatePythonVersionConstraint } from './utils/python-version-constraint.js';
 
 const WORKSPACE_LIFECYCLE_JOURNAL_DIRECTORY = 'transactions';
 
@@ -331,8 +337,8 @@ async function writePyprojectStub(workspacePath: string, workspaceName: string):
       `authors = []\n` +
       `package-mode = false\n\n` +
       `[tool.poetry.dependencies]\n` +
-      `python = "^3.10"\n` +
-      `rapidkit-core = "*"\n\n` +
+      `python = "${RAPIDKIT_CORE_REQUIRES_PYTHON}"\n` +
+      `rapidkit-core = "${RAPIDKIT_CORE_VERSION}"\n\n` +
       `[build-system]\n` +
       `requires = ["poetry-core"]\n` +
       `build-backend = "poetry.core.masonry.api"\n`,
@@ -662,8 +668,8 @@ export function resolvePythonFreeFallbackProfile(profile: string): string {
   return current;
 }
 
-const MIN_SUPPORTED_PYTHON = '3.10';
-const BASELINE_SUPPORTED_PYTHON_VERSIONS = ['3.10', '3.11', '3.12'] as const;
+const MIN_SUPPORTED_PYTHON = RAPIDKIT_CORE_MINIMUM_PYTHON;
+const BASELINE_SUPPORTED_PYTHON_VERSIONS = ['3.11', '3.12'] as const;
 
 type InstallMethodAvailability = {
   poetry: boolean;
@@ -830,18 +836,28 @@ function isPythonAtLeast(version: string, minVersion: string): boolean {
   return comparePythonMajorMinor(version, minVersion) >= 0;
 }
 
+function isSupportedCorePython(version: string): boolean {
+  return evaluatePythonVersionConstraint(version, RAPIDKIT_CORE_REQUIRES_PYTHON).satisfied === true;
+}
+
+function resolveCorePythonVersion(preferredVersion?: string): string {
+  const normalized = preferredVersion ? normalizePythonMajorMinor(preferredVersion) : null;
+  return normalized && isSupportedCorePython(normalized) ? normalized : MIN_SUPPORTED_PYTHON;
+}
+
 async function detectPythonVersionPromptModel(preferredVersion?: string): Promise<{
   choices: Array<{ name: string; value: string }>;
   defaultValue: string;
 }> {
   const detectedVersions = new Set<string>();
-  const probes = getPythonVersionProbeCandidates(14, 10);
+  const minimumPythonMinor = Number(MIN_SUPPORTED_PYTHON.split('.')[1]);
+  const probes = getPythonVersionProbeCandidates(14, minimumPythonMinor);
 
   for (const probe of probes) {
     try {
       const res = await execa(probe.command, probe.args, { timeout: 2500 });
       const parsed = parsePythonMajorMinorFromOutput(`${res.stdout || ''}\n${res.stderr || ''}`);
-      if (parsed && isPythonAtLeast(parsed, MIN_SUPPORTED_PYTHON)) {
+      if (parsed && isSupportedCorePython(parsed)) {
         detectedVersions.add(parsed);
       }
     } catch {
@@ -855,7 +871,7 @@ async function detectPythonVersionPromptModel(preferredVersion?: string): Promis
     const parsed = parsePythonMajorMinorFromOutput(
       `${current.stdout || ''}\n${current.stderr || ''}`
     );
-    if (parsed && isPythonAtLeast(parsed, MIN_SUPPORTED_PYTHON)) {
+    if (parsed && isSupportedCorePython(parsed)) {
       currentSystemPython = parsed;
       detectedVersions.add(parsed);
     }
@@ -863,9 +879,7 @@ async function detectPythonVersionPromptModel(preferredVersion?: string): Promis
     // Ignore current-python detection failures.
   }
 
-  const baseline = BASELINE_SUPPORTED_PYTHON_VERSIONS.filter((v) =>
-    isPythonAtLeast(v, MIN_SUPPORTED_PYTHON)
-  );
+  const baseline = BASELINE_SUPPORTED_PYTHON_VERSIONS.filter((v) => isSupportedCorePython(v));
   const allCandidateVersions = new Set<string>([...baseline, ...detectedVersions]);
 
   const sortedCandidates = Array.from(allCandidateVersions).sort((a, b) =>
@@ -874,7 +888,7 @@ async function detectPythonVersionPromptModel(preferredVersion?: string): Promis
 
   const preferredNormalized = preferredVersion ? normalizePythonMajorMinor(preferredVersion) : null;
   const defaultValue =
-    preferredNormalized && isPythonAtLeast(preferredNormalized, MIN_SUPPORTED_PYTHON)
+    preferredNormalized && isSupportedCorePython(preferredNormalized)
       ? preferredNormalized
       : currentSystemPython || sortedCandidates[0] || MIN_SUPPORTED_PYTHON;
 
@@ -1069,7 +1083,7 @@ fi
   fi
 fi
 
-for RAPIDKIT_CORE in "$HOME/.local/bin/rapidkit" "$HOME/Library/Python/3.14/bin/rapidkit" "$HOME/Library/Python/3.13/bin/rapidkit" "$HOME/Library/Python/3.12/bin/rapidkit" "$HOME/Library/Python/3.11/bin/rapidkit" "$HOME/Library/Python/3.10/bin/rapidkit"; do
+for RAPIDKIT_CORE in "$HOME/.local/bin/rapidkit" "$HOME/Library/Python/3.14/bin/rapidkit" "$HOME/Library/Python/3.13/bin/rapidkit" "$HOME/Library/Python/3.12/bin/rapidkit" "$HOME/Library/Python/${RAPIDKIT_CORE_MINIMUM_PYTHON}/bin/rapidkit"; do
   if [ -x "$RAPIDKIT_CORE" ]; then
     exec "$RAPIDKIT_CORE" "$@"
   fi
@@ -1228,7 +1242,7 @@ export async function createProject(
       const defaultProfile = profile || (yes ? 'minimal' : undefined);
       const defaultInstallMethod =
         providedInstallMethod || userConfig.defaultInstallMethod || 'poetry';
-      const defaultPythonVersion = userConfig.pythonVersion || '3.10';
+      const defaultPythonVersion = resolveCorePythonVersion(userConfig.pythonVersion);
       await showDryRun(
         projectPath,
         name,
@@ -1406,7 +1420,7 @@ export async function createProject(
       : await (async () => {
           if (pythonEngineMode === 'skip') {
             return {
-              pythonVersion: userConfig.pythonVersion || '3.10',
+              pythonVersion: resolveCorePythonVersion(userConfig.pythonVersion),
               installMethod: 'venv' as InstallMethod,
             };
           }
@@ -1425,11 +1439,12 @@ export async function createProject(
               }
             })());
           return {
-            pythonVersion: userConfig.pythonVersion || '3.10',
+            pythonVersion: resolveCorePythonVersion(userConfig.pythonVersion),
             installMethod: resolvedMethod,
           };
         })();
 
+  pythonAnswers.pythonVersion = resolveCorePythonVersion(pythonAnswers.pythonVersion);
   finishCreateSetup();
 
   // ── Lite workspace fast path ─────────────────────────────────────────────────
@@ -1550,28 +1565,16 @@ export async function createProject(
   // needing Python at all. Only python-only / polyglot / enterprise reach here.
   // Smart fallback: if Python is not found, offer options instead of hard failure.
   {
-    const pythonCmd = getPythonCommand();
-    let pythonAvailable = false;
-    try {
-      await execa(pythonCmd, ['--version'], { timeout: 5000 });
-      pythonAvailable = true;
-    } catch {
-      try {
-        await execa('python', ['--version'], { timeout: 5000 });
-        pythonAvailable = true;
-      } catch {
-        pythonAvailable = false;
-      }
-    }
-
-    if (!pythonAvailable) {
+    if (!(await findCorePythonExecutable(pythonAnswers.pythonVersion))) {
       const originalProfile = resolvedProfile;
       const fallback = resolvePythonFreeFallbackProfile(resolvedProfile);
       const isInteractive = needsPythonPrompts && !yes; // User was prompted before
 
       if (isInteractive) {
         // Interactive mode: ask user what to do
-        console.log(chalk.yellow(`\n⚠️  Python 3.10+ is not detected on this system.\n`));
+        console.log(
+          chalk.yellow(`\n⚠️  Python ${MIN_SUPPORTED_PYTHON}+ is not detected on this system.\n`)
+        );
         console.log(chalk.cyan('You have 3 options:\n'));
 
         const { pythonAction } = (await prompt([
@@ -1598,8 +1601,12 @@ export async function createProject(
 
         if (pythonAction === 'cancel') {
           console.log(chalk.cyan('\n💡 How to install Python:\n'));
-          console.log(chalk.white('   Ubuntu / Debian:  sudo apt install python3.10'));
-          console.log(chalk.white('   macOS (Homebrew): brew install python@3.10'));
+          console.log(
+            chalk.white(`   Ubuntu / Debian:  sudo apt install python${MIN_SUPPORTED_PYTHON}`)
+          );
+          console.log(
+            chalk.white(`   macOS (Homebrew): brew install python@${MIN_SUPPORTED_PYTHON}`)
+          );
           console.log(chalk.white('   Windows:          https://python.org/downloads\n'));
           console.log(chalk.gray(`   After installing Python, run:  npx workspai ${name}\n`));
           process.exit(1);
@@ -1610,10 +1617,12 @@ export async function createProject(
           const osType = process.platform;
           if (osType === 'linux') {
             console.log(
-              chalk.white('   sudo apt update && sudo apt install python3.10 python3.10-venv\n')
+              chalk.white(
+                `   sudo apt update && sudo apt install python${MIN_SUPPORTED_PYTHON} python${MIN_SUPPORTED_PYTHON}-venv\n`
+              )
             );
           } else if (osType === 'darwin') {
-            console.log(chalk.white('   brew install python@3.10\n'));
+            console.log(chalk.white(`   brew install python@${MIN_SUPPORTED_PYTHON}\n`));
           } else if (osType === 'win32') {
             console.log(chalk.white('   Download: https://python.org/downloads\n'));
             console.log(chalk.white('   Run the installer and check "Add Python to PATH"\n'));
@@ -1782,7 +1791,7 @@ export async function createProject(
     // Detect actual Python version before installation
     spinner.start('Detecting Python version');
     let actualPythonVersion: string | null = null;
-    const realPython = await findRealPython(pythonAnswers.pythonVersion);
+    const realPython = await findCorePythonExecutable(pythonAnswers.pythonVersion);
     if (realPython) {
       actualPythonVersion = await detectActualPythonVersion(realPython);
       if (actualPythonVersion) {
@@ -1924,7 +1933,7 @@ export async function createProject(
 }
 
 // Find real Python executable (bypass pyenv shims that might fail)
-async function findRealPython(pythonVersion: string): Promise<string | null> {
+export async function findCorePythonExecutable(pythonVersion: string): Promise<string | null> {
   // Try multiple strategies to find a working Python
   const candidates: string[] = [];
 
@@ -1940,29 +1949,30 @@ async function findRealPython(pythonVersion: string): Promise<string | null> {
     }
   }
 
-  // 2. Try utility-driven cross-platform commands
   const preferredMinor = Number(pythonVersion.split('.')[1]);
-  const probeCommands = getPythonVersionProbeCandidates(preferredMinor, 10)
-    .map((probe) => probe.command)
-    .filter(Boolean);
-  candidates.push(`python${pythonVersion}`, ...probeCommands, ...getPythonCommandCandidates());
+  const probes = [
+    ...candidates.map((command) => ({ command, args: [] })),
+    ...getPythonVersionProbeCandidates(
+      Math.max(14, preferredMinor),
+      Number(MIN_SUPPORTED_PYTHON.split('.')[1])
+    ).map(({ command, args }) => ({ command, args: args.slice(0, -1) })),
+  ];
 
-  const uniqueCandidates = [...new Set(candidates)];
-
-  // Test each candidate
-  for (const candidate of uniqueCandidates) {
+  for (const probe of probes) {
     try {
-      const versionArgs = candidate === 'py' ? ['-3', '--version'] : ['--version'];
-      const probeArgs =
-        candidate === 'py'
-          ? ['-3', '-c', 'import sys; sys.exit(0)']
-          : ['-c', 'import sys; sys.exit(0)'];
-      const { stdout } = await execa(candidate, versionArgs, { timeout: 2000 });
-      const version = stdout.match(/Python (\d+\.\d+)/)?.[1];
-      if (version && isPythonAtLeast(version, pythonVersion)) {
-        // Verify this Python actually works (not a broken shim)
-        await execa(candidate, probeArgs, { timeout: 2000 });
-        return candidate;
+      const { stdout } = await execa(
+        probe.command,
+        [...probe.args, '-c', 'import sys; print(sys.executable); print(sys.version.split()[0])'],
+        { timeout: 2000 }
+      );
+      const [executable, version] = stdout.trim().split(/\r?\n/);
+      if (
+        executable &&
+        version &&
+        isSupportedCorePython(version) &&
+        isPythonAtLeast(version, pythonVersion)
+      ) {
+        return executable;
       }
     } catch {
       continue;
@@ -1985,13 +1995,10 @@ async function installWithPoetry(
 
   // Find a working Python before initializing Poetry
   spinner.start('Finding Python interpreter');
-  const realPython = await findRealPython(pythonVersion);
-  if (realPython) {
-    logger.debug(`Found working Python: ${realPython}`);
-    spinner.succeed('Python found');
-  } else {
-    spinner.warn('Could not verify Python path, proceeding with default');
-  }
+  const realPython = await findCorePythonExecutable(pythonVersion);
+  if (!realPython) throw new PythonNotFoundError(pythonVersion);
+  logger.debug(`Found working Python: ${realPython}`);
+  spinner.succeed('Python found');
 
   spinner.start('Initializing Poetry project');
 
@@ -2105,7 +2112,7 @@ async function installWithPoetry(
       ? await fsExtra.pathExists(localRapidKitPath)
       : false;
     const installTarget: string =
-      hasLocalRapidKitPath && localRapidKitPath ? localRapidKitPath : 'rapidkit-core';
+      hasLocalRapidKitPath && localRapidKitPath ? localRapidKitPath : coreInstallTarget();
 
     if (localRapidKitPath && !hasLocalRapidKitPath) {
       logger.warn(
@@ -2223,7 +2230,7 @@ async function installWithPoetry(
             attempt,
             maxAttempts: 3,
           });
-          await execa('poetry', ['add', 'rapidkit-core'], {
+          await execa('poetry', ['add', coreInstallTarget()], {
             cwd: projectPath,
             timeout: 60000 * attempt, // 60s, 120s, 180s
           });
@@ -2286,7 +2293,7 @@ async function installWithPoetry(
       const pipx = await ensurePipxAvailable(spinner, true);
       try {
         spinner.start('Installing RapidKit globally with pipx for CLI access');
-        await execaPipx(pipx, ['install', 'rapidkit-core']);
+        await execaPipx(pipx, ['install', coreInstallTarget()]);
         spinner.succeed('RapidKit installed globally');
       } catch (pipxError) {
         // Not fatal - project virtualenv has it
@@ -2312,22 +2319,9 @@ async function installWithVenv(
 ) {
   spinner.start(`Checking Python ${pythonVersion}`);
 
-  const pythonCmd = getPythonCommand();
-  try {
-    const { stdout } = await execa(pythonCmd, ['--version']);
-    const version = stdout.match(/Python (\d+\.\d+)/)?.[1];
-
-    if (version && !isPythonAtLeast(version, pythonVersion)) {
-      throw new PythonNotFoundError(pythonVersion, version);
-    }
-
-    spinner.succeed(`Python ${version} found`);
-  } catch (_error) {
-    if (_error instanceof PythonNotFoundError) {
-      throw _error;
-    }
-    throw new PythonNotFoundError(pythonVersion);
-  }
+  const pythonCmd = await findCorePythonExecutable(pythonVersion);
+  if (!pythonCmd) throw new PythonNotFoundError(pythonVersion);
+  spinner.succeed(`Compatible Python found at ${pythonCmd}`);
 
   spinner.start('Creating virtual environment');
   try {
@@ -2399,7 +2393,7 @@ async function installWithVenv(
           attempt,
           maxAttempts: 3,
         });
-        await execa(venvPython, ['-m', 'pip', 'install', 'rapidkit-core'], {
+        await execa(venvPython, ['-m', 'pip', 'install', coreInstallTarget()], {
           cwd: projectPath,
           timeout: 60000 * attempt, // 60s, 120s, 180s
         });
@@ -2460,7 +2454,7 @@ async function installWithVenv(
       const pipx = await ensurePipxAvailable(spinner, true);
       try {
         spinner.start('Installing RapidKit globally with pipx for CLI access');
-        await execaPipx(pipx, ['install', 'rapidkit-core']);
+        await execaPipx(pipx, ['install', coreInstallTarget()]);
         spinner.succeed('RapidKit installed globally');
       } catch (pipxError) {
         // Not fatal - project virtualenv has it
@@ -2544,30 +2538,17 @@ async function installWithPipx(
       message: 'Installing RapidKit from PyPI',
       installMethod: 'pipx',
     });
+    const python = await findCorePythonExecutable(MIN_SUPPORTED_PYTHON);
+    if (!python) throw new PythonNotFoundError(MIN_SUPPORTED_PYTHON);
     try {
-      await execaPipx(pipx, ['install', 'rapidkit-core']);
+      await execaPipx(pipx, ['install', '--force', '--python', python, coreInstallTarget()]);
       emitCliInstallProgress({
         status: 'succeeded',
         message: 'RapidKit installed from PyPI',
         installMethod: 'pipx',
       });
-    } catch (installError) {
-      // If already installed, upgrade to ensure expected version/range compatibility.
-      try {
-        spinner.text = 'RapidKit already installed globally, upgrading to match expected version';
-        await execaPipx(pipx, ['upgrade', 'rapidkit-core']);
-        emitCliInstallProgress({
-          status: 'succeeded',
-          message: 'RapidKit upgraded from PyPI',
-          installMethod: 'pipx',
-        });
-      } catch (_upgradeError) {
-        logger.debug(
-          `pipx install/upgrade failed: install=${installError}, upgrade=${_upgradeError}`
-        );
-        // pipx failed to install/upgrade - could be network, PyPI availability, etc.
-        throw new RapidKitNotAvailableError();
-      }
+    } catch (error) {
+      throw new InstallationError('RapidKit pipx installation', error as Error);
     }
   }
   spinner.succeed('RapidKit installed globally');
@@ -2609,8 +2590,11 @@ export async function registerWorkspaceAtPath(
     userConfig = {},
     yes = false,
     installMethod,
-    pythonVersion = '3.10',
+    pythonVersion = MIN_SUPPORTED_PYTHON,
   } = options || {};
+  const selectedPythonVersion = installPythonEngine
+    ? resolveCorePythonVersion(pythonVersion)
+    : pythonVersion;
 
   let resolvedMethod: InstallMethod = 'venv';
   if (installPythonEngine) {
@@ -2659,7 +2643,7 @@ export async function registerWorkspaceAtPath(
       workspacePath,
       workspaceName,
       resolvedMethod,
-      installPythonEngine ? pythonVersion : undefined,
+      installPythonEngine ? selectedPythonVersion : undefined,
       bootstrapMeta
     );
     await writeWorkspaceGitignore(workspacePath);
@@ -2667,7 +2651,7 @@ export async function registerWorkspaceAtPath(
       workspacePath,
       workspaceName,
       resolvedMethod,
-      installPythonEngine ? pythonVersion : undefined,
+      installPythonEngine ? selectedPythonVersion : undefined,
       options?.profile ?? 'minimal',
       bootstrapMeta
     );
@@ -2679,9 +2663,16 @@ export async function registerWorkspaceAtPath(
     } else if (resolvedMethod === 'poetry') {
       // Write pyproject.toml stub so installWithPoetry can skip poetry init + poetry add.
       await writePyprojectStub(workspacePath, workspaceName);
-      await installWithPoetry(workspacePath, pythonVersion, spinner, testMode, userConfig, yes);
+      await installWithPoetry(
+        workspacePath,
+        selectedPythonVersion,
+        spinner,
+        testMode,
+        userConfig,
+        yes
+      );
     } else if (resolvedMethod === 'venv') {
-      await installWithVenv(workspacePath, pythonVersion, spinner, testMode, userConfig);
+      await installWithVenv(workspacePath, selectedPythonVersion, spinner, testMode, userConfig);
     } else {
       await installWithPipx(workspacePath, spinner, testMode, userConfig, yes);
     }
@@ -2959,7 +2950,7 @@ readme = "README.md"
 package-mode = false
 
 [tool.poetry.dependencies]
-python = "^3.10"
+python = "^${MIN_SUPPORTED_PYTHON}"
 fastapi = "^0.128.0"
 uvicorn = {extras = ["standard"], version = "^0.40.0"}
 pydantic = "^2.12.5"
@@ -3338,7 +3329,7 @@ async function showDryRun(
   } else {
     const profile = profileArg || 'minimal';
     const installMethod = installMethodArg || userConfig.defaultInstallMethod || 'poetry';
-    const pythonVersion = pythonVersionArg || userConfig.pythonVersion || '3.10';
+    const pythonVersion = resolveCorePythonVersion(pythonVersionArg || userConfig.pythonVersion);
 
     const PYTHON_PROFILES = new Set(['python-only', 'polyglot', 'enterprise']);
     const isPythonProfile = PYTHON_PROFILES.has(profile);

@@ -15,9 +15,10 @@ export type AgentFrameworkPackageDiscovery = {
   name: string;
   channel: AgentFrameworkPackageBaseline['channel'];
   admittedVersion: string;
-  latestRegistryVersion: string;
-  status: 'current' | 'update-available' | 'registry-regression';
+  latestRegistryVersion: string | null;
+  status: 'current' | 'update-available' | 'registry-regression' | 'unavailable';
   registryUrl: string;
+  detail?: string;
 };
 
 export type AgentFrameworkGithubAgreement = {
@@ -127,8 +128,9 @@ function latestGithubStable(
 
 async function discoverGithubAgreement(
   baseline: AgentFrameworkVersionBaseline,
-  registryCoreVersion: string,
-  fetcher: FetchLike
+  registryCoreVersion: string | null,
+  fetcher: FetchLike,
+  githubToken?: string
 ): Promise<AgentFrameworkGithubAgreement> {
   const upstream = baseline.upstream;
   if (!upstream) {
@@ -141,10 +143,24 @@ async function discoverGithubAgreement(
       detail: 'This adapter does not require GitHub release agreement.',
     };
   }
+  if (registryCoreVersion === null) {
+    return {
+      required: true,
+      repository: upstream.githubRepository,
+      latestStableVersion: null,
+      matchingTag: null,
+      status: 'unavailable',
+      detail: 'The framework core registry version is unavailable for comparison.',
+    };
+  }
   const url = `https://api.github.com/repos/${upstream.githubRepository}/releases?per_page=30`;
   try {
     const response = await fetcher(url, {
-      headers: { accept: 'application/json', 'user-agent': 'workspai-version-discovery' },
+      headers: {
+        accept: 'application/json',
+        'user-agent': 'workspai-version-discovery',
+        ...(githubToken ? { authorization: `Bearer ${githubToken}` } : {}),
+      },
       signal: AbortSignal.timeout(15_000),
     });
     if (!response.ok) {
@@ -198,37 +214,48 @@ async function discoverPackage(
   dependency: AgentFrameworkPackageBaseline,
   fetcher: FetchLike
 ): Promise<AgentFrameworkPackageDiscovery> {
-  const response = await fetcher(dependency.registryUrl, {
-    headers: { accept: 'application/json', 'user-agent': 'workspai-version-discovery' },
-    signal: AbortSignal.timeout(15_000),
-  });
-  if (!response.ok) {
-    throw new Error(`Registry lookup failed for ${dependency.name} with HTTP ${response.status}.`);
-  }
-  const latest = selectLatestRegistryVersion(
-    registryVersions(await response.json(), dependency),
-    dependency.channel
-  );
-  if (!latest) {
-    throw new Error(`Registry has no ${dependency.channel} release for ${dependency.name}.`);
-  }
-  const comparison = compareRegistryVersions(latest, dependency.version);
-  return {
+  const identity = {
     ecosystem: dependency.ecosystem,
     name: dependency.name,
     channel: dependency.channel,
     admittedVersion: dependency.version,
-    latestRegistryVersion: latest,
-    status:
-      comparison > 0 ? 'update-available' : comparison === 0 ? 'current' : 'registry-regression',
     registryUrl: dependency.registryUrl,
   };
+  try {
+    const response = await fetcher(dependency.registryUrl, {
+      headers: { accept: 'application/json', 'user-agent': 'workspai-version-discovery' },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!response.ok) {
+      throw new Error(`Registry returned HTTP ${response.status}.`);
+    }
+    const latest = selectLatestRegistryVersion(
+      registryVersions(await response.json(), dependency),
+      dependency.channel
+    );
+    if (!latest) throw new Error(`Registry has no eligible ${dependency.channel} version.`);
+    const comparison = compareRegistryVersions(latest, dependency.version);
+    return {
+      ...identity,
+      latestRegistryVersion: latest,
+      status:
+        comparison > 0 ? 'update-available' : comparison === 0 ? 'current' : 'registry-regression',
+    };
+  } catch (error) {
+    return {
+      ...identity,
+      latestRegistryVersion: null,
+      status: 'unavailable',
+      detail: error instanceof Error ? error.message : String(error),
+    };
+  }
 }
 
 export async function discoverAgentFrameworkVersions(input?: {
   baselines?: readonly AgentFrameworkVersionBaseline[];
   fetcher?: FetchLike;
   generatedAt?: string;
+  githubToken?: string;
 }): Promise<AgentFrameworkVersionDiscovery> {
   const baselines = input?.baselines ?? BUILTIN_AGENT_FRAMEWORK_VERSION_BASELINES;
   const fetcher = input?.fetcher ?? (fetch as FetchLike);
@@ -240,11 +267,15 @@ export async function discoverAgentFrameworkVersions(input?: {
       const core = packages.find((_, index) => baseline.packages[index]?.role === 'framework-core');
       const github = await discoverGithubAgreement(
         baseline,
-        core?.latestRegistryVersion ?? baseline.frameworkVersion,
-        fetcher
+        core?.latestRegistryVersion ?? null,
+        fetcher,
+        input?.githubToken
       );
       const status =
-        packages.some((dependency) => dependency.status === 'registry-regression') ||
+        packages.some(
+          (dependency) =>
+            dependency.status === 'registry-regression' || dependency.status === 'unavailable'
+        ) ||
         github.status === 'disagreement' ||
         github.status === 'unavailable'
           ? ('blocked' as const)
@@ -277,4 +308,23 @@ export async function discoverAgentFrameworkVersions(input?: {
       blocked: adapters.filter((adapter) => adapter.status === 'blocked').length,
     },
   };
+}
+
+export function formatAgentFrameworkVersionDiscoverySummary(
+  discovery: AgentFrameworkVersionDiscovery
+): string {
+  const lines = [
+    `${discovery.summary.current} current, ${discovery.summary.candidateAvailable} candidate, ${discovery.summary.blocked} blocked.`,
+  ];
+  for (const adapter of discovery.adapters) {
+    lines.push(`${adapter.adapterId}: ${adapter.status}`);
+    if (adapter.github.required) lines.push(`  GitHub: ${adapter.github.detail}`);
+    for (const dependency of adapter.packages) {
+      if (dependency.status === 'current') continue;
+      lines.push(
+        `  ${dependency.name}: ${dependency.admittedVersion} -> ${dependency.latestRegistryVersion ?? 'n/a'} (${dependency.status})${dependency.detail ? `: ${dependency.detail}` : ''}`
+      );
+    }
+  }
+  return `${lines.join('\n')}\n`;
 }

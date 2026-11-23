@@ -76,7 +76,7 @@ claim an existing issue and the intent is clear.
 - Node.js `>=20.19.0`
 - npm through the repository-declared package manager
 - Git
-- Python 3.10+ only for Python/Core-dependent tests
+- Python 3.11+ only for RapidKit Core-dependent tests
 - Go, Java, or .NET only for tests that exercise those runtimes
 
 See the [Package Manager Policy](docs/PACKAGE_MANAGER_POLICY.md).

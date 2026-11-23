@@ -201,7 +201,7 @@ describe('Error classes', () => {
 
     it('should suggest alternatives', () => {
       const error = new RapidKitNotAvailableError();
-      expect(error.details).toContain('Python 3.10+');
+      expect(error.details).toContain('Python 3.11+');
       expect(error.details).toContain('RAPIDKIT_SHOW_LEGACY');
     });
   });

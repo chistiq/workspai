@@ -361,7 +361,7 @@ describe('AI Module Catalog', () => {
         keywords: ['pay'],
         dependencies: ['auth'],
         useCases: ['checkout'],
-        longDescription: '',
+        longDescription: 'Pay',
       });
       expect(catalog[1]).toMatchObject({ id: 'Mail', framework: 'nestjs', useCases: ['notify'] });
       expect(catalog[2]).toMatchObject({ id: 'metrics', category: 'analytics', framework: 'both' });

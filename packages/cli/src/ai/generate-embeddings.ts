@@ -5,6 +5,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 import chalk from 'chalk';
 import ora from 'ora';
+import { moduleEmbeddingText, moduleEmbeddingInputHash } from './module-embedding-input.js';
 import { getModuleCatalog } from './module-catalog.js';
 import { initOpenAI, generateEmbeddings } from './openai-client.js';
 
@@ -19,7 +20,7 @@ async function generateModuleEmbeddings(apiKey: string) {
   console.log(chalk.blue.bold('\n🤖 Generating AI embeddings for Workspai modules...\n'));
 
   // Initialize OpenAI
-  initOpenAI(apiKey);
+  await initOpenAI(apiKey);
 
   // Fetch modules dynamically from Python Core
   console.log(chalk.gray('📡 Fetching modules from RapidKit Python Core...'));
@@ -29,9 +30,7 @@ async function generateModuleEmbeddings(apiKey: string) {
 
   // Prepare texts for embedding
   // Combine all relevant information for better embeddings
-  const texts = MODULE_CATALOG.map((module) => {
-    return `${module.name}. ${module.description}. ${module.longDescription}. Keywords: ${module.keywords.join(', ')}. Use cases: ${module.useCases.join(', ')}.`;
-  });
+  const texts = MODULE_CATALOG.map(moduleEmbeddingText);
 
   const spinner = ora(`Generating embeddings for ${MODULE_CATALOG.length} modules...`).start();
 
@@ -50,6 +49,7 @@ async function generateModuleEmbeddings(apiKey: string) {
         id: module.id,
         name: module.name,
         embedding: embeddings[index],
+        inputHash: moduleEmbeddingInputHash(texts[index]),
       })),
     };
 

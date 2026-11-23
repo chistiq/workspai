@@ -24,9 +24,12 @@ Map of GitHub Actions workflows in this repository. Use this when editing CI to 
 
 ## Agent Framework workflows
 
-Weekly `agent-framework-version-discovery` checks PyPI, NuGet, and npm, then stops at
-a report and artifact. It does not commit, open a pull request, regenerate
-Create contracts, or write `release-admissions.v2.json`. A human pin update
+Weekly `agent-framework-version-discovery` checks PyPI, NuGet, npm, and required
+GitHub release agreement. It always saves the registry and GitHub results when
+discovery reaches the upstream checks. A blocked package or adapter is shown
+in the uploaded report and run summary. An unblocked update produces a separate
+`proposed.json`; the scheduled job does not write the source baseline or admit
+a version. A reviewed pin update
 still has to pass the manual `full` mode of `agent-framework-conformance` on
 Linux, macOS, and Windows for every built-in adapter runtime. Pull requests run
 the faster Linux gate only for the affected Microsoft, OpenAI, or Google family;
@@ -145,7 +148,7 @@ Validate or preview the current CLI announcement locally:
 npm --workspace workspai run check:release-announcement
 npm --workspace workspai run release:announcement -- \
   --product workspai-cli \
-  --tag v0.82.0 \
+  --tag v0.83.0 \
   --markdown-output /tmp/workspai-discord-announcement.md
 ```
 

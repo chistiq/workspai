@@ -34,45 +34,49 @@ jobs:
         run: npm ci
 
       - name: Discover upstream version candidates
+        id: discover
         working-directory: packages/cli
-        run: >-
-          npm exec tsx -- scripts/propose-agent-framework-version-update.ts
-          --baseline src/agent-frameworks/version-baselines.v1.json
-          --report test-results/agent-framework-version-discovery/report.json
-
-      - name: Detect candidate changes
-        id: candidate
         shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
-          if git diff --quiet -- packages/cli/src/agent-frameworks/version-baselines.v1.json; then
-            echo "available=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "available=true" >> "$GITHUB_OUTPUT"
-          fi
+          set -o pipefail
+          mkdir -p test-results/agent-framework-version-discovery
+          npm exec tsx -- scripts/propose-agent-framework-version-update.ts \
+            --baseline src/agent-frameworks/version-baselines.v1.json \
+            --report test-results/agent-framework-version-discovery/report.json \
+            | tee test-results/agent-framework-version-discovery/summary.txt
 
       - name: Upload reviewable candidates
-        if: always()
+        if: always() && steps.discover.outcome != '' && steps.discover.outcome != 'skipped'
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: agent-framework-version-discovery-${{ github.sha }}
-          path: packages/cli/test-results/agent-framework-version-discovery/report.json
+          path: |
+            packages/cli/test-results/agent-framework-version-discovery/report.json
+            packages/cli/test-results/agent-framework-version-discovery/proposed.json
           if-no-files-found: error
           retention-days: 30
 
       - name: Publish run summary
         if: always()
         shell: bash
-        env:
-          CANDIDATE_AVAILABLE: ${{ steps.candidate.outputs.available }}
         run: |
-          if [ "$CANDIDATE_AVAILABLE" = "true" ]; then
-            echo "### Agent framework version candidates" >> "$GITHUB_STEP_SUMMARY"
-            echo "Discovery found newer registry versions. This workflow does not commit, open a pull request, regenerate contracts, or admit a baseline." >> "$GITHUB_STEP_SUMMARY"
-            echo "" >> "$GITHUB_STEP_SUMMARY"
-            echo '```diff' >> "$GITHUB_STEP_SUMMARY"
-            git diff -- packages/cli/src/agent-frameworks/version-baselines.v1.json >> "$GITHUB_STEP_SUMMARY"
-            echo '```' >> "$GITHUB_STEP_SUMMARY"
-          else
-            echo "### Agent framework baselines are current" >> "$GITHUB_STEP_SUMMARY"
-            echo "No admitted release-channel candidate was found." >> "$GITHUB_STEP_SUMMARY"
-          fi
+          DIR=packages/cli/test-results/agent-framework-version-discovery
+          BASELINE=packages/cli/src/agent-frameworks/version-baselines.v1.json
+          {
+            echo "### Agent framework version discovery"
+            echo "Candidates require a successful admission matrix before release."
+            echo
+            if [ -s "$DIR/summary.txt" ]; then
+              sed 's/^/    /' "$DIR/summary.txt"
+            else
+              echo "Discovery did not produce a summary. Check the failed step."
+            fi
+            if [ -f "$DIR/proposed.json" ]; then
+              echo
+              echo '```diff'
+              diff -u "$BASELINE" "$DIR/proposed.json" || [ "$?" -eq 1 ]
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

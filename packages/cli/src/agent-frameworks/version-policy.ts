@@ -28,6 +28,7 @@ export type AgentFrameworkVersionBaseline = {
   policy: 'latest-admitted';
   releaseChannel: AgentFrameworkReleaseChannel;
   frameworkVersion: string;
+  minimumPython?: string;
   packages: readonly AgentFrameworkPackageBaseline[];
   automaticUpgrade: false;
   admissionRequired: true;
@@ -68,6 +69,10 @@ function assertBaselineDocument(
       baseline.policy !== 'latest-admitted' ||
       (baseline.releaseChannel !== 'stable' && baseline.releaseChannel !== 'preview') ||
       !VERSION_PATTERN.test(baseline.frameworkVersion) ||
+      (baseline.minimumPython !== undefined &&
+        (baseline.runtime !== 'python' ||
+          typeof baseline.minimumPython !== 'string' ||
+          !/^3\.\d+$/.test(baseline.minimumPython))) ||
       baseline.automaticUpgrade !== false ||
       baseline.admissionRequired !== true ||
       !Array.isArray(baseline.packages) ||

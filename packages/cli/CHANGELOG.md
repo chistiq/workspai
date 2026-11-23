@@ -7,6 +7,38 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.83.0] - 2026-11-23
+
+Released November 23, 2026.
+
+### Changed
+
+- Install and validate RapidKit Core 0.6.3 by default. The Core engine now
+  requires Python `>=3.11,<4.0`. This applies to Core-backed scaffolding and
+  module installation, including NestJS scaffolding through the bridge.
+- Synchronize the FastAPI Standard, FastAPI DDD, and NestJS Standard
+  templates with Core 0.6.3. Bundle the 52 validated free modules with their
+  canonical IDs, capabilities, framework support, and declared dependencies.
+- Update the source-ready OpenRouter gateway pins to TypeScript `1.5.131`
+  and Python `1.3.206`.
+
+### Added
+
+- Add `npm --workspace workspai run sync-core` to refresh the kit templates
+  and offline module catalog from a local Core checkout.
+
+### Fixed
+
+- Render a valid Python version constraint in offline FastAPI projects.
+- Keep stdout valid JSON for `workspai modules list --json-schema 1`.
+- Check the Python interpreter and Core version before accepting a bridge
+  runner. Support the published Core console entry point.
+- Generate module embeddings on demand when a cached vector is missing or its
+  input no longer matches the current catalog.
+- Save Agent Framework discovery reports even when registry or GitHub
+  evidence blocks promotion. Keep reviewed proposals separate from the
+  bundled baseline and validate the final admission after promotion.
+
 ## [0.82.0] - 2026-11-20
 
 Released November 20, 2026.

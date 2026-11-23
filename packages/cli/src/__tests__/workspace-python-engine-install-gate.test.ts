@@ -185,6 +185,7 @@ describe('workspace Python engine install gate', () => {
         `#!/usr/bin/env node\n` +
           `const fs = require('fs');\n` +
           `const path = require('path');\n` +
+          `if (process.argv[2] === '--version') { console.log('Python 3.11.18'); process.exit(0); }\n` +
           `fs.appendFileSync(path.join(process.cwd(), 'pip-commands.log'), process.argv.slice(2).join(' ') + '\\n');\n`,
         { encoding: 'utf-8', mode: 0o755 }
       );

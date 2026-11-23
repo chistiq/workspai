@@ -130,7 +130,7 @@ export class PythonNotFoundError extends RapidKitError {
     super(
       'Python not found',
       'PYTHON_NOT_FOUND',
-      'Python 3.10+ is required but not found in PATH.\n\n' +
+      'Python 3.11+ is required by the current RapidKit Core bridge but was not found in PATH.\n\n' +
       '💡 Quick fixes:\n' +
       '  • macOS: brew install python@3.11\n' +
       '  • Ubuntu/Debian: sudo apt install python3.11\n' +

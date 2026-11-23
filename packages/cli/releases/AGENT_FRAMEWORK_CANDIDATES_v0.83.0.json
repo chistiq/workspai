@@ -1,0 +1,230 @@
+{
+  "schemaVersion": "workspai.agent-framework-version-baselines.v1",
+  "baselines": [
+    {
+      "adapterId": "microsoft-agent-framework-python",
+      "frameworkId": "microsoft-agent-framework",
+      "runtime": "python",
+      "policy": "latest-admitted",
+      "releaseChannel": "stable",
+      "frameworkVersion": "1.26.0",
+      "minimumPython": "3.11",
+      "packages": [
+        {
+          "ecosystem": "pypi",
+          "name": "agent-framework-core",
+          "version": "1.26.0",
+          "channel": "stable",
+          "role": "framework-core",
+          "registryUrl": "https://pypi.org/pypi/agent-framework-core/json"
+        },
+        {
+          "ecosystem": "pypi",
+          "name": "agent-framework-foundry",
+          "version": "1.16.2",
+          "channel": "stable",
+          "role": "framework-integration",
+          "registryUrl": "https://pypi.org/pypi/agent-framework-foundry/json"
+        },
+        {
+          "ecosystem": "pypi",
+          "name": "azure-identity",
+          "version": "1.27.0",
+          "channel": "stable",
+          "role": "runtime-support",
+          "registryUrl": "https://pypi.org/pypi/azure-identity/json"
+        }
+      ],
+      "automaticUpgrade": false,
+      "admissionRequired": true
+    },
+    {
+      "adapterId": "microsoft-agent-framework-dotnet",
+      "frameworkId": "microsoft-agent-framework",
+      "runtime": "dotnet",
+      "policy": "latest-admitted",
+      "releaseChannel": "preview",
+      "frameworkVersion": "1.28.0",
+      "packages": [
+        {
+          "ecosystem": "nuget",
+          "name": "Microsoft.Agents.AI",
+          "version": "1.28.0",
+          "channel": "stable",
+          "role": "framework-core",
+          "registryUrl": "https://api.nuget.org/v3-flatcontainer/microsoft.agents.ai/index.json"
+        },
+        {
+          "ecosystem": "nuget",
+          "name": "Microsoft.Agents.AI.Foundry",
+          "version": "1.28.0-preview.261106.1",
+          "channel": "preview",
+          "role": "framework-integration",
+          "registryUrl": "https://api.nuget.org/v3-flatcontainer/microsoft.agents.ai.foundry/index.json"
+        },
+        {
+          "ecosystem": "nuget",
+          "name": "Azure.Identity",
+          "version": "1.21.0",
+          "channel": "stable",
+          "role": "runtime-support",
+          "registryUrl": "https://api.nuget.org/v3-flatcontainer/azure.identity/index.json"
+        },
+        {
+          "ecosystem": "nuget",
+          "name": "Microsoft.NET.Test.Sdk",
+          "version": "18.12.0",
+          "channel": "stable",
+          "role": "runtime-support",
+          "registryUrl": "https://api.nuget.org/v3-flatcontainer/microsoft.net.test.sdk/index.json"
+        },
+        {
+          "ecosystem": "nuget",
+          "name": "xunit.v3.mtp-v2",
+          "version": "4.0.3",
+          "channel": "stable",
+          "role": "runtime-support",
+          "registryUrl": "https://api.nuget.org/v3-flatcontainer/xunit.v3.mtp-v2/index.json"
+        }
+      ],
+      "automaticUpgrade": false,
+      "admissionRequired": true
+    },
+    {
+      "adapterId": "openai-agents-python",
+      "frameworkId": "openai-agents",
+      "runtime": "python",
+      "policy": "latest-admitted",
+      "releaseChannel": "stable",
+      "frameworkVersion": "0.25.0",
+      "packages": [
+        {
+          "ecosystem": "pypi",
+          "name": "openai-agents",
+          "version": "0.25.0",
+          "channel": "stable",
+          "role": "framework-core",
+          "registryUrl": "https://pypi.org/pypi/openai-agents/json"
+        }
+      ],
+      "automaticUpgrade": false,
+      "admissionRequired": true
+    },
+    {
+      "adapterId": "openai-agents-typescript",
+      "frameworkId": "openai-agents",
+      "runtime": "node",
+      "policy": "latest-admitted",
+      "releaseChannel": "stable",
+      "frameworkVersion": "0.22.0",
+      "packages": [
+        {
+          "ecosystem": "npm",
+          "name": "@openai/agents",
+          "version": "0.22.0",
+          "channel": "stable",
+          "role": "framework-core",
+          "registryUrl": "https://registry.npmjs.org/@openai/agents"
+        },
+        {
+          "ecosystem": "npm",
+          "name": "zod",
+          "version": "4.6.7",
+          "channel": "stable",
+          "role": "runtime-support",
+          "registryUrl": "https://registry.npmjs.org/zod"
+        },
+        {
+          "ecosystem": "npm",
+          "name": "typescript",
+          "version": "7.0.2",
+          "channel": "stable",
+          "role": "runtime-support",
+          "registryUrl": "https://registry.npmjs.org/typescript"
+        },
+        {
+          "ecosystem": "npm",
+          "name": "@types/node",
+          "version": "26.6.6",
+          "channel": "stable",
+          "role": "runtime-support",
+          "registryUrl": "https://registry.npmjs.org/@types/node"
+        }
+      ],
+      "automaticUpgrade": false,
+      "admissionRequired": true
+    },
+    {
+      "adapterId": "google-adk-python",
+      "frameworkId": "google-adk",
+      "runtime": "python",
+      "policy": "latest-admitted",
+      "releaseChannel": "stable",
+      "frameworkVersion": "2.15.0",
+      "packages": [
+        {
+          "ecosystem": "pypi",
+          "name": "google-adk",
+          "version": "2.15.0",
+          "channel": "stable",
+          "role": "framework-core",
+          "registryUrl": "https://pypi.org/pypi/google-adk/json"
+        }
+      ],
+      "automaticUpgrade": false,
+      "admissionRequired": true,
+      "upstream": {
+        "githubRepository": "google/adk-python",
+        "releaseTagPrefixes": ["v"]
+      }
+    },
+    {
+      "adapterId": "google-adk-typescript",
+      "frameworkId": "google-adk",
+      "runtime": "node",
+      "policy": "latest-admitted",
+      "releaseChannel": "stable",
+      "frameworkVersion": "2.5.0",
+      "packages": [
+        {
+          "ecosystem": "npm",
+          "name": "@google/adk",
+          "version": "2.5.0",
+          "channel": "stable",
+          "role": "framework-core",
+          "registryUrl": "https://registry.npmjs.org/@google/adk"
+        },
+        {
+          "ecosystem": "npm",
+          "name": "zod",
+          "version": "4.6.7",
+          "channel": "stable",
+          "role": "runtime-support",
+          "registryUrl": "https://registry.npmjs.org/zod"
+        },
+        {
+          "ecosystem": "npm",
+          "name": "typescript",
+          "version": "7.0.2",
+          "channel": "stable",
+          "role": "runtime-support",
+          "registryUrl": "https://registry.npmjs.org/typescript"
+        },
+        {
+          "ecosystem": "npm",
+          "name": "@types/node",
+          "version": "26.6.6",
+          "channel": "stable",
+          "role": "runtime-support",
+          "registryUrl": "https://registry.npmjs.org/@types/node"
+        }
+      ],
+      "automaticUpgrade": false,
+      "admissionRequired": true,
+      "upstream": {
+        "githubRepository": "google/adk-js",
+        "releaseTagPrefixes": ["adk-v", "main-v"]
+      }
+    }
+  ]
+}

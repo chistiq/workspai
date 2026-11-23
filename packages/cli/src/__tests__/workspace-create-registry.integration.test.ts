@@ -338,7 +338,10 @@ describe('workspace create registry integration', () => {
     await fsExtra.outputFile(manifestPath, manifestPreimage);
     await fsExtra.outputFile(unrelatedPath, Buffer.from([9, 8, 7]));
 
-    vi.mocked(execa).mockImplementation(async (_cmd: any, args?: any, options?: any) => {
+    vi.mocked(execa).mockImplementation(async (cmd: any, args?: any, options?: any) => {
+      if (args?.some((arg: string) => arg.includes('print(sys.executable)'))) {
+        return { stdout: `${cmd}\n3.11.18`, stderr: '', exitCode: 0 } as any;
+      }
       if (Array.isArray(args) && args.includes('venv') && options?.cwd) {
         await fs.mkdir(path.join(options.cwd, '.venv'), { recursive: true });
         await fs.writeFile(path.join(options.cwd, '.venv', 'created-by-test'), 'generated');

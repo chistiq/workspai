@@ -7,6 +7,11 @@ import {
 } from '../../../contracts/agent-framework-contract.js';
 import { WORKSPACE_INTELLIGENCE_ARTIFACTS } from '../../../contracts/workspace-intelligence-runtime-registry.js';
 import { PROJECT_CONTEXT_AGENT_REPORT_RELATIVE_PATH } from '../../../utils/workspace-paths.js';
+import {
+  OPENAI_AGENTS_PYTHON_BASELINE,
+  OPENAI_AGENTS_TYPESCRIPT_BASELINE,
+  packageVersion,
+} from '../../version-policy.js';
 
 const NATIVE_CAPABILITIES = new Set<AgentFrameworkCapabilityId>([
   'single-agent',
@@ -19,15 +24,19 @@ const CONDITIONAL_CAPABILITIES = new Set<AgentFrameworkCapabilityId>([
   'provider-neutral-models',
 ]);
 
+const PYTHON_SDK_VERSION = OPENAI_AGENTS_PYTHON_BASELINE.frameworkVersion;
+const TYPESCRIPT_SDK_VERSION = OPENAI_AGENTS_TYPESCRIPT_BASELINE.frameworkVersion;
+const ZOD_VERSION = packageVersion(OPENAI_AGENTS_TYPESCRIPT_BASELINE, 'zod');
+
 const LANGUAGE_LIMITATIONS: Record<'python' | 'typescript', string[]> = {
   python: [
-    'Generated projects pin openai-agents 0.24.0 and require Python >=3.10.',
-    'Tracing defaults off. openai-agents 0.24.0 DefaultTraceProvider treats OPENAI_AGENTS_DISABLE_TRACING=1|true as disabled until set_tracing_disabled is called; the starter therefore never calls set_tracing_disabled(False) when that env is set.',
+    `Generated projects pin openai-agents ${PYTHON_SDK_VERSION} and require Python >=3.10.`,
+    `Tracing defaults off. openai-agents ${PYTHON_SDK_VERSION} DefaultTraceProvider treats OPENAI_AGENTS_DISABLE_TRACING=1|true as disabled until set_tracing_disabled is called; the starter therefore never calls set_tracing_disabled(False) when that env is set.`,
     'Cancellation uses Runner.max_turns and ModelSettings.timeout from this SDK version. ModelSettings.timeout is per model request, not a host-owned deadline for the whole run.',
     'Context containment uses lstat, realpath, O_NOFOLLOW open when available, and a capped fd read. That is not an atomic path walk and does not prove a TOCTOU-free open against a concurrent replacement of a hop.',
   ],
   typescript: [
-    'Generated projects pin @openai/agents 0.21.0, require Node.js >=22, and declare zod 4.6.7 as the SDK peer.',
+    `Generated projects pin @openai/agents ${TYPESCRIPT_SDK_VERSION}, require Node.js >=22, and declare zod ${ZOD_VERSION} as the SDK peer.`,
     'Tracing defaults off. The starter passes Runner({ tracingDisabled }) from WORKSPAI_AGENT_TRACING and OPENAI_AGENTS_DISABLE_TRACING; the disable env wins.',
     'Cancellation uses run maxTurns plus AbortSignal from this SDK version. AbortSignal.timeout(30000) is the SDK run signal for that call, not a separate Workspai timeout service.',
     'Context containment uses lstat, realpath, O_NOFOLLOW open when available, and a capped fd read. That is not an atomic path walk and does not prove a TOCTOU-free open against a concurrent replacement of a hop.',
@@ -63,7 +72,7 @@ export function openaiAgentsCapabilities(
             id === 'telemetry'
               ? language === 'python'
                 ? [
-                    'Opt in with WORKSPAI_AGENT_TRACING=1. OPENAI_AGENTS_DISABLE_TRACING=1|true keeps tracing off even if that opt-in is set. openai-agents 0.24.0 reads OPENAI_AGENTS_DISABLE_TRACING on first trace unless set_tracing_disabled was already called.',
+                    `Opt in with WORKSPAI_AGENT_TRACING=1. OPENAI_AGENTS_DISABLE_TRACING=1|true keeps tracing off even if that opt-in is set. openai-agents ${PYTHON_SDK_VERSION} reads OPENAI_AGENTS_DISABLE_TRACING on first trace unless set_tracing_disabled was already called.`,
                   ]
                 : [
                     'Opt in with WORKSPAI_AGENT_TRACING=1. OPENAI_AGENTS_DISABLE_TRACING=1|true keeps tracing off even if that opt-in is set. Credentialless runs set the disable env and pass Runner({ tracingDisabled: true }).',
@@ -71,10 +80,10 @@ export function openaiAgentsCapabilities(
               : id === 'provider-neutral-models'
                 ? language === 'python'
                   ? [
-                      'Install and configure a documented non-OpenAI model integration for openai-agents 0.24.0. The starter only reads OPENAI_MODEL or OPENAI_DEFAULT_MODEL.',
+                      `Install and configure a documented non-OpenAI model integration for openai-agents ${PYTHON_SDK_VERSION}. The starter only reads OPENAI_MODEL or OPENAI_DEFAULT_MODEL.`,
                     ]
                   : [
-                      'Supply a documented non-OpenAI model implementation for @openai/agents 0.21.0. The starter only reads OPENAI_MODEL or OPENAI_DEFAULT_MODEL.',
+                      `Supply a documented non-OpenAI model implementation for @openai/agents ${TYPESCRIPT_SDK_VERSION}. The starter only reads OPENAI_MODEL or OPENAI_DEFAULT_MODEL.`,
                     ]
                 : [],
           limitations:

@@ -17,24 +17,24 @@ help = "src.cli:help_cmd"
 
 [tool.poetry.dependencies]
 python = "^{{ python_version }}"
-fastapi = "^0.139.0"
-uvicorn = { extras = ["standard"], version = "^0.50.2" }
-pydantic = "^2.12.5"
+fastapi = "^0.165.0"
+uvicorn = { extras = ["standard"], version = "^0.54.0" }
+pydantic = "^2.14.4"
 {% if has_settings -%}
-pydantic-settings = { version = "^2.14.2", extras = ["yaml"] }
+pydantic-settings = { version = "^2.16.3", extras = ["yaml"] }
 {% endif %}
 # <<<inject:poetry-dependencies>>>
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^9.0.3"
-pytest-asyncio = "^1.3.0"
-pytest-cov = "^7.0.0"
+pytest = "^9.2.0"
+pytest-asyncio = "^1.5.0"
+pytest-cov = "^7.1.0"
 httpx = "^0.28.1"
-ruff = "^0.14.10"
-black = "^26.3.1"
+ruff = "^0.14.14"
+black = "^26.10.1"
 isort = "^7.0.0"
-mypy = "^1.19.1"
-build = "^1.3.0"
+mypy = "^1.20.2"
+build = "^1.6.1"
 
 # <<<inject:poetry-dev-dependencies>>>
 

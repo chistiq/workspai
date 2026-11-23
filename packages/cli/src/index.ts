@@ -37,6 +37,7 @@ import { detectRapidkitProject } from './core-bridge/pythonRapidkit.js';
 import {
   getCachedCoreTopLevelCommands,
   resolveRapidkitPython,
+  hasCoreCompatiblePython,
   runCoreRapidkit,
   runCoreRapidkitCapture,
   runCoreRapidkitStreamed,
@@ -126,6 +127,10 @@ import {
   WORKSPACE_INTELLIGENCE_SUBCOMMANDS,
   WORKSPACE_SUBCOMMANDS,
 } from './utils/workspace-command-surface.js';
+import {
+  coreInstallTarget,
+  RAPIDKIT_CORE_MINIMUM_PYTHON,
+} from './core-bridge/core-runtime-compatibility.js';
 import {
   createCliSpinner,
   emitWorkspacePhase,
@@ -1584,7 +1589,7 @@ export async function runCreateFallback(
   if (hasJson) {
     process.stderr.write(
       'Workspai CLI offline fallback does not support --json for `create` commands.\n' +
-        'Install Python 3.10+ and retry the same command.\n'
+        `Install Python ${RAPIDKIT_CORE_MINIMUM_PYTHON}+ and retry the same command.\n`
     );
     return 1;
   }
@@ -1596,7 +1601,7 @@ export async function runCreateFallback(
     process.stderr.write(
       'Workspai CLI could not run the Python core engine for `create`.\n' +
         `Reason: ${reasonCode}.\n` +
-        'Install Python 3.10+ to use the interactive wizard and full kit catalog.\n'
+        `Install Python ${RAPIDKIT_CORE_MINIMUM_PYTHON}+ to use the interactive wizard and full kit catalog.\n`
     );
     return 1;
   }
@@ -1618,7 +1623,7 @@ export async function runCreateFallback(
         `Reason: ${reasonCode}.\n` +
         `Requested kit: ${kit}\n` +
         'Offline fallback only supports: fastapi.standard, nestjs.standard (and their shorthands).\n' +
-        'Install Python 3.10+ to access all kits.\n'
+        `Install Python ${RAPIDKIT_CORE_MINIMUM_PYTHON}+ to access all kits.\n`
     );
     return 1;
   }
@@ -4291,15 +4296,37 @@ export async function installWorkspaceDependencies(workspacePath: string): Promi
 
   const installRapidKitCoreWithVenv = async (): Promise<number> => {
     const venvBin = workspaceVenvPythonBin(workspacePath);
-    const venvCode = await ensureWorkspaceVenvHasPip(workspacePath);
-    if (venvCode !== 0) return venvCode;
+    const exists = await fsExtra.pathExists(venvBin);
+    if (exists && !(await hasCoreCompatiblePython(venvBin))) {
+      process.stderr.write(
+        `The workspace virtual environment requires Python ${RAPIDKIT_CORE_MINIMUM_PYTHON}+ for RapidKit Core. Recreate it with a compatible interpreter, then retry.\n`
+      );
+      return 1;
+    }
+
+    const { findCorePythonExecutable } = await import('./create.js');
+    const hasPip =
+      exists && (await runCommandInCwd(venvBin, ['-m', 'pip', '--version'], workspacePath)) === 0;
+    if (!hasPip) {
+      const compatiblePython = await findCorePythonExecutable(RAPIDKIT_CORE_MINIMUM_PYTHON);
+      if (!compatiblePython) {
+        process.stderr.write(
+          `Install Python ${RAPIDKIT_CORE_MINIMUM_PYTHON}+ to initialize the RapidKit Core engine.\n`
+        );
+        return 1;
+      }
+      const venvCode = await ensureWorkspaceVenvHasPip(workspacePath, {
+        pythonCandidates: [compatiblePython],
+      });
+      if (venvCode !== 0) return venvCode;
+    }
 
     const testLocalPath = readWorkspaiEnv('DEV_PATH');
     const hasLocalRapidKitPath = testLocalPath ? await fsExtra.pathExists(testLocalPath) : false;
     const pipArgs =
       hasLocalRapidKitPath && testLocalPath
         ? ['-m', 'pip', 'install', testLocalPath, '--quiet', '--disable-pip-version-check']
-        : ['-m', 'pip', 'install', 'rapidkit-core', '--quiet', '--disable-pip-version-check'];
+        : ['-m', 'pip', 'install', coreInstallTarget(), '--quiet', '--disable-pip-version-check'];
 
     return await runCommandInCwd(venvBin, pipArgs, workspacePath, {
       timeoutMs: dependencyTimeoutMs,
@@ -4333,7 +4360,7 @@ export async function installWorkspaceDependencies(workspacePath: string): Promi
       if (installCode !== 0) return installCode;
 
       // Also add rapidkit-core explicitly if it isn't already installed.
-      const addCode = await runCommandInCwd('poetry', ['add', 'rapidkit-core'], workspacePath, {
+      const addCode = await runCommandInCwd('poetry', ['add', coreInstallTarget()], workspacePath, {
         timeoutMs: dependencyTimeoutMs,
       });
       if (addCode !== 0) return addCode;

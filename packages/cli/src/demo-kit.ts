@@ -8,6 +8,7 @@ import { execa } from 'execa';
 import { getVersion } from './update-checker.js';
 import { buildCleanGitEnv, isInsideExistingGitWorktree } from './utils/git-worktree.js';
 import crypto from 'crypto';
+import { RAPIDKIT_CORE_MINIMUM_PYTHON } from './core-bridge/core-runtime-compatibility.js';
 
 // Get the directory of the current module
 const __filename = fileURLToPath(import.meta.url);
@@ -91,6 +92,7 @@ export async function generateDemoKit(projectPath: string, variables: KitVariabl
           : 'NestJS application generated with Workspai'),
       app_version: variables.app_version || '0.1.0',
       license: variables.license || 'MIT',
+      python_version: RAPIDKIT_CORE_MINIMUM_PYTHON,
       package_manager: variables.package_manager || 'npm',
       node_version: variables.node_version || '20.0.0',
       database_type: variables.database_type || 'postgresql',
@@ -401,7 +403,7 @@ coverage/
     // Fallback mode warning
     console.log(`
 ${chalk.yellow('⚠️  Limited offline mode:')} This project was created using basic templates.
-${chalk.gray('For full kit features, install Python 3.10+ and rapidkit-core:')}
+${chalk.gray(`For full kit features, install Python ${RAPIDKIT_CORE_MINIMUM_PYTHON}+ and rapidkit-core:`)}
 ${chalk.cyan('  sudo apt install python3 python3-pip python3-venv')}
 ${chalk.cyan('  pip install rapidkit-core')}
 `);

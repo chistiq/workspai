@@ -22,6 +22,7 @@ vi.mock('fs-extra', async () => {
     readJson: vi.fn(),
     writeJson: vi.fn(),
     ensureDir: vi.fn(),
+    remove: vi.fn(),
   };
 });
 
@@ -29,7 +30,19 @@ vi.mock('child_process', () => ({
   spawn: spawnMock,
 }));
 
+afterEach(() => vi.unstubAllEnvs());
+
 const mockExeca = execa as unknown as Mock;
+const coreVersion = { exitCode: 0, stdout: '{"schema_version":1,"version":"0.6.3"}', stderr: '' };
+const pythonVersion = { exitCode: 0, stdout: 'Python 3.11.18', stderr: '' };
+
+function mockWorkingCore() {
+  mockExeca.mockImplementation(async (_cmd: string, args: string[] = []) => {
+    if (args.at(-1) === '--version') return pythonVersion;
+    if (args.includes('rapidkit') || args.includes('--json')) return coreVersion;
+    return { exitCode: 0, stdout: '', stderr: '' };
+  });
+}
 const mockFs = fsExtra as unknown as {
   pathExists: Mock;
   readJson: Mock;
@@ -42,7 +55,7 @@ describe('bridge internals', () => {
 
   beforeEach(async () => {
     vi.resetModules();
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     bridge = await import('../core-bridge/pythonRapidkitExec');
   });
 
@@ -131,7 +144,7 @@ rapidkit deploy
 
   describe('pickSystemPython', () => {
     it('returns the first available Python candidate', async () => {
-      mockExeca.mockResolvedValueOnce({ exitCode: 0 });
+      mockExeca.mockResolvedValueOnce(pythonVersion);
       const res = await bridge.__test__.pickSystemPython();
       expect(res).toBe(bridge.__test__.pythonCommandCandidates()[0]);
     });
@@ -139,7 +152,7 @@ rapidkit deploy
     it('falls back to the next Python candidate', async () => {
       mockExeca
         .mockRejectedValueOnce(new Error('first candidate unavailable'))
-        .mockResolvedValueOnce({ exitCode: 0 });
+        .mockResolvedValueOnce(pythonVersion);
       const res = await bridge.__test__.pickSystemPython();
       expect(res).toBe(bridge.__test__.pythonCommandCandidates()[1]);
     });
@@ -172,22 +185,22 @@ rapidkit deploy
   });
 
   describe('tryRapidkit', () => {
-    it('returns true if import probe succeeds', async () => {
-      // 1️⃣ interpreter-specific script probe
-      mockExeca.mockResolvedValueOnce({
-        stdout: '',
-        exitCode: 0,
-      });
-
-      // 2️⃣ importlib.find_spec probe
-      mockExeca.mockResolvedValueOnce({
-        stdout: '1',
-        exitCode: 0,
-      });
-
-      const ok = await bridge.__test__.tryRapidkit('python3');
-      expect(ok).toBe(true);
+    it('accepts the pinned version with the Core schema', async () => {
+      mockExeca.mockResolvedValueOnce(coreVersion);
+      expect(await bridge.__test__.tryRapidkit('python3')).toBe(true);
     });
+
+    it.each(['0.6.2', '0.6.4', '0.6.3rc1'])(
+      'rejects other default versions (%s)',
+      async (version) => {
+        mockFs.pathExists.mockResolvedValue(false);
+        mockExeca.mockResolvedValueOnce({
+          exitCode: 0,
+          stdout: JSON.stringify({ schema_version: 1, version }),
+        });
+        expect(await bridge.__test__.tryRapidkit('python3')).toBe(false);
+      }
+    );
 
     it('returns false if all probes fail', async () => {
       mockExeca.mockResolvedValue({
@@ -206,7 +219,7 @@ rapidkit deploy
       mockFs.pathExists.mockResolvedValue(true);
       mockExeca.mockResolvedValueOnce({
         exitCode: 0,
-        stdout: JSON.stringify({ schema_version: 1, version: '0.6.0' }),
+        stdout: JSON.stringify({ schema_version: 1, version: '0.6.3' }),
         stderr: '',
       });
 
@@ -217,13 +230,13 @@ rapidkit deploy
       expect(mockExeca.mock.calls[0][1]).toEqual(['--version', '--json']);
     });
 
-    it('falls back to module execution for older Core distributions', async () => {
+    it('falls back to module execution when the console script fails', async () => {
       mockFs.pathExists.mockResolvedValue(true);
       mockExeca
         .mockResolvedValueOnce({ exitCode: 1, stdout: '', stderr: 'broken entrypoint' })
         .mockResolvedValueOnce({
           exitCode: 0,
-          stdout: JSON.stringify({ schema_version: 1, version: '0.5.0' }),
+          stdout: JSON.stringify({ schema_version: 1, version: '0.6.3' }),
           stderr: '',
         });
 
@@ -237,11 +250,13 @@ rapidkit deploy
       // Mock that venv python already exists
       mockFs.pathExists.mockResolvedValue(true);
       // Mock probe check: rapidkit is installed in venv
-      mockExeca.mockResolvedValueOnce({
-        exitCode: 0,
-        stdout: JSON.stringify({ schema_version: 1, version: '0.6.0' }),
-        stderr: '',
-      } as any);
+      mockExeca
+        .mockResolvedValueOnce({
+          exitCode: 0,
+          stdout: JSON.stringify({ schema_version: 1, version: '0.6.3' }),
+          stderr: '',
+        } as any)
+        .mockResolvedValueOnce(pythonVersion);
 
       const py = await bridge.__test__.ensureBridgeVenv('python3');
       expect(py).toContain('python');
@@ -275,7 +290,7 @@ rapidkit deploy
         // candidate 1 venv creation fails (e.g. missing ensurepip/python3-venv)
         .mockResolvedValueOnce({ exitCode: 1, stdout: '', stderr: 'ensurepip missing' })
         // candidate 2 exists
-        .mockResolvedValueOnce({ exitCode: 0, stdout: 'Python 3.10', stderr: '' })
+        .mockResolvedValueOnce({ exitCode: 0, stdout: 'Python 3.11', stderr: '' })
         // candidate 2 venv creation succeeds
         .mockResolvedValueOnce({ exitCode: 0, stdout: '', stderr: '' })
         // pip check succeeds
@@ -285,7 +300,7 @@ rapidkit deploy
         // installed Core passes the executable health contract
         .mockResolvedValueOnce({
           exitCode: 0,
-          stdout: JSON.stringify({ schema_version: 1, version: '0.6.0' }),
+          stdout: JSON.stringify({ schema_version: 1, version: '0.6.3' }),
           stderr: '',
         });
 
@@ -311,7 +326,7 @@ rapidkit deploy
         .mockResolvedValueOnce({ exitCode: 0, stdout: '', stderr: '' })
         .mockResolvedValueOnce({
           exitCode: 0,
-          stdout: JSON.stringify({ schema_version: 1, version: '0.6.0' }),
+          stdout: JSON.stringify({ schema_version: 1, version: '0.6.3' }),
           stderr: '',
         });
 
@@ -350,16 +365,13 @@ describe('public API', () => {
 
   beforeEach(async () => {
     vi.resetModules();
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     bridge = await import('../core-bridge/pythonRapidkitExec');
   });
 
   it('runCoreRapidkitCapture returns stdout/stderr', async () => {
-    mockExeca.mockResolvedValue({
-      exitCode: 0,
-      stdout: '{"version":"1.0.0"}',
-      stderr: '',
-    });
+    mockFs.pathExists.mockResolvedValue(false);
+    mockWorkingCore();
 
     const res = await bridge.runCoreRapidkitCapture(['version']);
     expect(res.exitCode).toBe(0);
@@ -374,17 +386,7 @@ describe('public API', () => {
   });
 
   it('runCoreRapidkitStreamed maps known RapidKitError to friendly message', async () => {
-    mockExeca.mockImplementation(async (_cmd: string, args?: string[]) => {
-      if (args?.[0] === '--version') return { exitCode: 0, stdout: 'Python 3.11', stderr: '' };
-      if (args?.[0] === '-c' && args?.[1]?.includes('sysconfig'))
-        return { exitCode: 0, stdout: '', stderr: '' };
-      if (args?.[0] === '-c' && args?.[1]?.includes("find_spec('rapidkit')"))
-        return { exitCode: 0, stdout: '1', stderr: '' };
-      if (args?.[0] === '-m' && args?.[1] === 'rapidkit') {
-        return { exitCode: 0, stdout: '{"version":"1.0.0"}', stderr: '' };
-      }
-      return { exitCode: 0, stdout: '', stderr: '' };
-    });
+    mockWorkingCore();
     mockFs.pathExists.mockResolvedValue(false);
 
     const child = new EventEmitter() as EventEmitter & { stderr: EventEmitter };
@@ -412,17 +414,7 @@ describe('public API', () => {
   });
 
   it('runCoreRapidkitStreamed returns 1 when spawn emits error', async () => {
-    mockExeca.mockImplementation(async (_cmd: string, args?: string[]) => {
-      if (args?.[0] === '--version') return { exitCode: 0, stdout: 'Python 3.11', stderr: '' };
-      if (args?.[0] === '-c' && args?.[1]?.includes('sysconfig'))
-        return { exitCode: 0, stdout: '', stderr: '' };
-      if (args?.[0] === '-c' && args?.[1]?.includes("find_spec('rapidkit')"))
-        return { exitCode: 0, stdout: '1', stderr: '' };
-      if (args?.[0] === '-m' && args?.[1] === 'rapidkit') {
-        return { exitCode: 0, stdout: '{"version":"1.0.0"}', stderr: '' };
-      }
-      return { exitCode: 0, stdout: '', stderr: '' };
-    });
+    mockWorkingCore();
     mockFs.pathExists.mockResolvedValue(false);
 
     const child = new EventEmitter() as EventEmitter & { stderr: EventEmitter };
@@ -451,14 +443,12 @@ describe('resolveRapidkitPython', () => {
 
   beforeEach(async () => {
     vi.resetModules();
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     bridge = await import('../core-bridge/pythonRapidkitExec');
   });
 
   it('returns system python when tryRapidkit succeeds', async () => {
-    mockExeca
-      .mockResolvedValueOnce({ stdout: '', exitCode: 0 }) // script probe
-      .mockResolvedValueOnce({ stdout: '1', exitCode: 0 }); // import probe
+    mockExeca.mockResolvedValueOnce(pythonVersion).mockResolvedValueOnce(coreVersion);
 
     const res = await bridge.resolveRapidkitPython();
     expect(res.kind).toBe('system');
@@ -468,7 +458,7 @@ describe('resolveRapidkitPython', () => {
   });
 
   it('bootstraps venv when system python has no rapidkit', async () => {
-    process.env.RAPIDKIT_BRIDGE_FORCE_VENV = '1';
+    vi.stubEnv('RAPIDKIT_BRIDGE_FORCE_VENV', '1');
     mockFs.pathExists.mockResolvedValue(false);
     mockFs.ensureDir.mockResolvedValue(undefined);
 
@@ -480,7 +470,8 @@ describe('resolveRapidkitPython', () => {
       // pip check succeeds
       .mockResolvedValueOnce({ stdout: 'pip 24', stderr: '', exitCode: 0 } as any)
       // core install succeeds
-      .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 } as any);
+      .mockResolvedValueOnce({ stdout: '', stderr: '', exitCode: 0 } as any)
+      .mockResolvedValueOnce(coreVersion);
 
     const res = await bridge.resolveRapidkitPython();
     expect(res.kind).toBe('venv');
@@ -495,17 +486,14 @@ describe('resolveRapidkitRunner', () => {
 
   beforeEach(async () => {
     vi.resetModules();
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     bridge = await import('../core-bridge/pythonRapidkitExec');
   });
 
   it('uses workspace .venv rapidkit cli when available', async () => {
     mockFs.pathExists.mockResolvedValue(true);
 
-    mockExeca.mockResolvedValue({
-      exitCode: 0,
-      stdout: '{"version":"1.0.0"}',
-    });
+    mockWorkingCore();
 
     const runner = await bridge.runCoreRapidkitCapture(['list'], {
       cwd: '/fake/project',
@@ -525,7 +513,7 @@ describe('resolveRapidkitRunner', () => {
     );
     mockExeca.mockImplementation(async (cmd: string, args?: string[]) => {
       if (cmd === userLocalRapidkit && args?.join(' ') === '--version --json') {
-        return { exitCode: 0, stdout: '{"version":"0.5.4"}', stderr: '' };
+        return { exitCode: 0, stdout: '{"schema_version":1,"version":"0.6.3"}', stderr: '' };
       }
       return { exitCode: 1, stdout: '', stderr: '' };
     });
@@ -561,7 +549,7 @@ describe('resolveRapidkitRunner', () => {
       mockFs.pathExists.mockImplementation(async (candidate: string) => candidate === expected);
       mockExeca.mockImplementation(async (cmd: string, args?: string[]) => {
         if (cmd === expected && args?.join(' ') === '--version --json') {
-          return { exitCode: 0, stdout: '{"version":"0.5.4"}', stderr: '' };
+          return { exitCode: 0, stdout: '{"schema_version":1,"version":"0.6.3"}', stderr: '' };
         }
         return { exitCode: 1, stdout: '', stderr: '' };
       });
@@ -596,7 +584,7 @@ describe('resolveRapidkitRunner', () => {
         };
       }
       if (cmd === coreRunner) {
-        return { exitCode: 0, stdout: '{"schema_version":1,"version":"0.5.4"}', stderr: '' };
+        return { exitCode: 0, stdout: '{"schema_version":1,"version":"0.6.3"}', stderr: '' };
       }
       return { exitCode: 1, stdout: '', stderr: '' };
     });
@@ -614,7 +602,7 @@ describe('getCachedCoreTopLevelCommands', () => {
 
   beforeEach(async () => {
     vi.resetModules();
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     bridge = await import('../core-bridge/pythonRapidkitExec');
   });
 
@@ -667,7 +655,7 @@ describe('getCoreTopLevelCommands', () => {
 
   beforeEach(async () => {
     vi.resetModules();
-    vi.clearAllMocks();
+    vi.resetAllMocks();
     bridge = await import('../core-bridge/pythonRapidkitExec');
   });
 

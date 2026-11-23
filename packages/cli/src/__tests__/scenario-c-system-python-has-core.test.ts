@@ -39,14 +39,14 @@ describe('Scenario C: System Python has rapidkit-core -> no bridge venv', () => 
     const wrapper = `#!/usr/bin/env bash
 # Fake python wrapper for Scenario C test
 sys_python="${systemPython}"
-if [ "$1" = "-c" ] && echo "$2" | grep -q "import importlib.util"; then
-  echo 1
+if [ "$1" = "--version" ]; then
+  echo 'Python 3.11.18'
   exit 0
 fi
 if [ "$1" = "-m" ] && [ "$2" = "rapidkit" ]; then
   # For version probe, return valid JSON so the probe succeeds
   if [ "$3" = "--version" ]; then
-    echo '{"version":"0.2.1"}'
+    echo '{"schema_version":1,"version":"0.6.3"}'
     exit 0
   fi
   # For other rapidkit invocations, succeed silently so the wrapper behaves like

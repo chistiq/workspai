@@ -267,7 +267,7 @@ jobs:
         run: python -m pip install uv==0.12.6
 
       - name: Validate contracts and adapter behavior
-        run: npm --workspace workspai exec vitest -- run src/__tests__/contracts/agent-framework-contract.test.ts src/__tests__/agent-framework-registry.test.ts src/__tests__/openai-agents-adapter.test.ts src/__tests__/openai-agents-context-loader.test.ts src/__tests__/openai-agents-lifecycle.test.ts src/__tests__/agent-framework-selection.test.ts src/__tests__/agent-framework-release-admission.test.ts
+        run: npm --workspace workspai exec vitest -- run src/__tests__/contracts/agent-framework-contract.test.ts src/__tests__/agent-framework-registry.test.ts src/__tests__/openai-agents-adapter.test.ts src/__tests__/openai-agents-context-loader.test.ts src/__tests__/openai-agents-lifecycle.test.ts
 
       - name: Compile generated adapter project
         id: conformance
@@ -319,7 +319,7 @@ jobs:
         run: python -m pip install uv==0.12.6
 
       - name: Validate contracts and adapter behavior
-        run: npm --workspace workspai exec vitest -- run src/__tests__/contracts/agent-framework-contract.test.ts src/__tests__/agent-framework-registry.test.ts src/__tests__/google-adk-adapter.test.ts src/__tests__/google-adk-lifecycle.test.ts src/__tests__/agent-framework-selection.test.ts src/__tests__/agent-framework-release-admission.test.ts
+        run: npm --workspace workspai exec vitest -- run src/__tests__/contracts/agent-framework-contract.test.ts src/__tests__/agent-framework-registry.test.ts src/__tests__/google-adk-adapter.test.ts src/__tests__/google-adk-lifecycle.test.ts
 
       - name: Compile generated adapter project
         id: conformance
@@ -416,6 +416,9 @@ jobs:
           --repository "${{ github.repository }}"
           --source-commit "${{ github.sha }}"
           --workflow-run-id "${{ github.run_id }}"
+
+      - name: Verify bundled admission and kit selection
+        run: npm --workspace workspai exec vitest -- run src/__tests__/agent-framework-selection.test.ts src/__tests__/agent-framework-release-admission.test.ts
 
       - name: Update the existing automation branch
         shell: bash

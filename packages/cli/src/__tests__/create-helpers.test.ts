@@ -125,7 +125,15 @@ describe('Create Module Helpers', () => {
 
     it('should configure poetry to create in-project virtualenv', async () => {
       // Mock external commands and filesystem
-      vi.mocked(execa).mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+      vi.mocked(execa).mockImplementation(
+        (_command: string, args?: readonly string[]) =>
+          Promise.resolve({
+            stdout: args?.some((arg) => arg.includes('print(sys.executable)'))
+              ? 'python\n3.11.18'
+              : '',
+            exitCode: 0,
+          }) as never
+      );
       vi.mocked(fsExtra.ensureDir).mockResolvedValue(undefined);
       vi.mocked(fsExtra.outputFile).mockResolvedValue(undefined);
       vi.spyOn(fsPromises, 'readFile').mockResolvedValue('[tool.poetry]\nname = "test"\n');

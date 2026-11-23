@@ -4,7 +4,7 @@ import { execa } from 'execa';
 import inquirer from 'inquirer';
 import { promises as fsPromises } from 'fs';
 import { createProject, initializeStandaloneGitRepository } from '../create';
-import { getPythonCommand } from '../utils';
+import { RAPIDKIT_CORE_PACKAGE } from '../core-bridge/core-runtime-compatibility.js';
 import { DirectoryExistsError } from '../errors';
 import { checkRapidkitCoreVersionCompatible } from '../core-bridge/pythonRapidkitExec.js';
 
@@ -98,6 +98,27 @@ vi.mock('../cli-ui/index.js', async () => {
   };
 });
 
+type ExecaTestImplementation = (command: string, args?: readonly string[]) => unknown;
+
+function mockCreateExeca(implementation: ExecaTestImplementation, pythonAvailable = true) {
+  vi.mocked(execa).mockImplementation((command: string, args?: readonly string[]) => {
+    if (args?.includes('import sys; print(sys.executable); print(sys.version.split()[0])')) {
+      if (!pythonAvailable) return Promise.reject(new Error('Python is unavailable')) as never;
+      const isNewest = command === 'python3.14' || args.includes('-3.14');
+      const executable = command === 'py' ? 'python' : command;
+      return Promise.resolve({
+        stdout: `${executable}\n${isNewest ? '3.14.1' : '3.12.4'}`,
+        exitCode: 0,
+      }) as never;
+    }
+    return implementation(command, args) as never;
+  });
+}
+
+function mockExecaResult(result: unknown) {
+  mockCreateExeca(() => Promise.resolve(result));
+}
+
 describe('Create Module - Internal Functions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -116,7 +137,7 @@ describe('Create Module - Internal Functions', () => {
 
   describe('Optional Python engine install', () => {
     it('creates Python-aware workspaces without installing rapidkit-core when skipped', async () => {
-      vi.mocked(execa).mockResolvedValue({
+      mockExecaResult({
         stdout: '',
         stderr: '',
         exitCode: 0,
@@ -187,13 +208,13 @@ describe('Create Module - Internal Functions', () => {
       );
       expect(execa).not.toHaveBeenCalledWith(
         'poetry',
-        expect.arrayContaining(['add', 'rapidkit-core']),
+        expect.arrayContaining(['add', RAPIDKIT_CORE_PACKAGE]),
         expect.any(Object)
       );
     });
 
     it('creates minimal workspaces without Python engine files', async () => {
-      vi.mocked(execa).mockResolvedValue({
+      mockExecaResult({
         stdout: '',
         stderr: '',
         exitCode: 0,
@@ -228,11 +249,11 @@ describe('Create Module - Internal Functions', () => {
   describe('Poetry Installation Flow', () => {
     it('should install RapidKit with Poetry successfully', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'poetry',
       });
 
-      vi.mocked(execa).mockImplementation((command: string, args?: readonly string[]) => {
+      mockCreateExeca((command: string, args?: readonly string[]) => {
         if (command === 'poetry' && args?.[0] === '--version') {
           return Promise.resolve({ stdout: 'Poetry 1.7.0', stderr: '', exitCode: 0 } as any);
         }
@@ -255,19 +276,23 @@ describe('Create Module - Internal Functions', () => {
       expect(execa).toHaveBeenCalledWith('poetry', ['--version']);
       expect(execa).toHaveBeenCalledWith(
         'poetry',
-        ['init', '--no-interaction', '--python', '^3.10'],
+        ['init', '--no-interaction', '--python', '^3.11'],
         expect.any(Object)
       );
-      expect(execa).toHaveBeenCalledWith('poetry', ['add', 'rapidkit-core'], expect.any(Object));
+      expect(execa).toHaveBeenCalledWith(
+        'poetry',
+        ['add', RAPIDKIT_CORE_PACKAGE],
+        expect.any(Object)
+      );
     });
 
     it('should check for Poetry before installation', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'poetry',
       });
 
-      vi.mocked(execa).mockResolvedValue({
+      mockExecaResult({
         stdout: 'Poetry 1.7.0',
         stderr: '',
         exitCode: 0,
@@ -281,13 +306,13 @@ describe('Create Module - Internal Functions', () => {
 
     it('should install from local path in test mode', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'poetry',
       });
 
       process.env.RAPIDKIT_DEV_PATH = '/local/rapidkit/path';
 
-      vi.mocked(execa).mockImplementation((command: string, args?: readonly string[]) => {
+      mockCreateExeca((command: string, args?: readonly string[]) => {
         if (command === 'poetry' && args?.[0] === '--version') {
           return Promise.resolve({ stdout: 'Poetry 1.7.0', stderr: '', exitCode: 0 } as any);
         }
@@ -314,11 +339,11 @@ describe('Create Module - Internal Functions', () => {
       process.env.RAPIDKIT_DEV_PATH = '/local/rapidkit';
 
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'poetry',
       });
 
-      vi.mocked(execa).mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+      mockExecaResult({ stdout: '', stderr: '', exitCode: 0 } as any);
       vi.spyOn(fsPromises, 'readFile').mockResolvedValue('[tool.poetry]');
 
       await createProject('test-project', { testMode: true });
@@ -331,11 +356,11 @@ describe('Create Module - Internal Functions', () => {
 
     it('should update pyproject.toml with package-mode = false', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'poetry',
       });
 
-      vi.mocked(execa).mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+      mockExecaResult({ stdout: '', stderr: '', exitCode: 0 } as any);
 
       const mockReadFile = vi.spyOn(fsPromises, 'readFile');
       const mockWriteFile = vi.spyOn(fsPromises, 'writeFile');
@@ -363,14 +388,14 @@ describe('Create Module - Internal Functions', () => {
           return { installPythonEngine: true } as any;
         }
         return {
-          pythonVersion: '3.10',
+          pythonVersion: '3.11',
           installMethod: 'poetry',
         } as any;
       });
 
       let poetryVersionChecks = 0;
       let poetryInstalled = false;
-      vi.mocked(execa).mockImplementation((command: string, args?: readonly string[]) => {
+      mockCreateExeca((command: string, args?: readonly string[]) => {
         if (command === 'poetry' && args?.[0] === '--version') {
           poetryVersionChecks += 1;
           return poetryInstalled
@@ -411,11 +436,11 @@ describe('Create Module - Internal Functions', () => {
         const names = Array.isArray(questions) ? questions.map((q) => q?.name) : [];
         if (names.includes('installPoetry')) return { installPoetry: false } as any;
         if (names.includes('installPipx')) return { installPipx: true } as any;
-        return { pythonVersion: '3.10', installMethod: 'poetry' } as any;
+        return { pythonVersion: '3.11', installMethod: 'poetry' } as any;
       });
 
       let poetryVersionChecks = 0;
-      vi.mocked(execa).mockImplementation((command: string, args?: readonly string[]) => {
+      mockCreateExeca((command: string, args?: readonly string[]) => {
         if (command === 'poetry' && args?.[0] === '--version') {
           poetryVersionChecks += 1;
           return Promise.reject(new Error('Command not found: poetry'));
@@ -446,14 +471,14 @@ describe('Create Module - Internal Functions', () => {
   describe('Venv Installation Flow', () => {
     it('should install RapidKit with venv successfully', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'venv',
       });
 
-      vi.mocked(execa).mockImplementation((command: string, args?: readonly string[]) => {
+      mockCreateExeca((command: string, args?: readonly string[]) => {
         // Handle version checks
         if (args?.[0] === '--version') {
-          return Promise.resolve({ stdout: 'Python 3.10', stderr: '', exitCode: 0 } as any);
+          return Promise.resolve({ stdout: 'Python 3.11', stderr: '', exitCode: 0 } as any);
         }
         // Handle venv creation
         if (args?.[0] === '-m' && args?.[1] === 'venv') {
@@ -474,8 +499,11 @@ describe('Create Module - Internal Functions', () => {
         ['--version'],
         expect.any(Object)
       );
-      const pythonCmd = getPythonCommand();
-      expect(execa).toHaveBeenCalledWith(pythonCmd, ['-m', 'venv', '.venv'], expect.any(Object));
+      expect(execa).toHaveBeenCalledWith(
+        expect.stringMatching(/python/i),
+        ['-m', 'venv', '.venv'],
+        expect.any(Object)
+      );
     });
 
     it('should fallback to minimal when Python not found in interactive mode', async () => {
@@ -492,12 +520,12 @@ describe('Create Module - Internal Functions', () => {
         }
         // Default responses
         return Promise.resolve({
-          pythonVersion: '3.10',
+          pythonVersion: '3.11',
           installMethod: 'venv',
         });
       });
 
-      vi.mocked(execa).mockImplementation((command: string, args?: readonly string[]) => {
+      mockCreateExeca((command: string, args?: readonly string[]) => {
         // Reject on python --version to simulate Python not found
         if ((command === 'python' || command === 'python3') && args?.[0] === '--version') {
           return Promise.reject(new Error('Command not found: python'));
@@ -511,7 +539,7 @@ describe('Create Module - Internal Functions', () => {
         }
         // Return success for other commands
         return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 } as any);
-      });
+      }, false);
 
       // Smart fallback should succeed by creating workspace with minimal profile
       // instead of throwing an error
@@ -524,11 +552,11 @@ describe('Create Module - Internal Functions', () => {
       // Test auto-fallback behavior: when Python missing and --yes (non-interactive),
       // automatically switch to minimal profile without prompting
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'venv',
       });
 
-      vi.mocked(execa).mockImplementation((command: string, args?: readonly string[]) => {
+      mockCreateExeca((command: string, args?: readonly string[]) => {
         // Reject on python --version to simulate Python not found
         if ((command === 'python' || command === 'python3') && args?.[0] === '--version') {
           return Promise.reject(new Error('Command not found: python'));
@@ -542,7 +570,7 @@ describe('Create Module - Internal Functions', () => {
         }
         // Return success for other commands
         return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 } as any);
-      });
+      }, false);
 
       // Auto-fallback should succeed with --yes flag
       await expect(
@@ -552,7 +580,7 @@ describe('Create Module - Internal Functions', () => {
 
     it('should auto-fallback enterprise to node-only when Python not found with --yes', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'venv',
       });
 
@@ -561,7 +589,7 @@ describe('Create Module - Internal Functions', () => {
         outputFiles.push({ target: String(target), content: String(content) });
       });
 
-      vi.mocked(execa).mockImplementation((command: string, args?: readonly string[]) => {
+      mockCreateExeca((command: string, args?: readonly string[]) => {
         if ((command === 'python' || command === 'python3') && args?.[0] === '--version') {
           return Promise.reject(new Error('Command not found: python'));
         }
@@ -569,7 +597,7 @@ describe('Create Module - Internal Functions', () => {
           return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 } as any);
         }
         return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 } as any);
-      });
+      }, false);
 
       await expect(
         createProject('enterprise-ws', { profile: 'enterprise', yes: true })
@@ -583,11 +611,11 @@ describe('Create Module - Internal Functions', () => {
       process.env.RAPIDKIT_DEV_PATH = '/local/rapidkit';
 
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'venv',
       });
 
-      vi.mocked(execa).mockImplementation((command: string, args?: readonly string[]) => {
+      mockCreateExeca((command: string, args?: readonly string[]) => {
         // Mock python -m pip install calls
         if (args?.includes('-m') && args?.includes('pip') && args?.includes('install')) {
           return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 } as any);
@@ -612,11 +640,11 @@ describe('Create Module - Internal Functions', () => {
   describe('Pipx Installation Flow', () => {
     it('should install RapidKit with pipx successfully', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'pipx',
       });
 
-      vi.mocked(execa).mockImplementation((command: string, args?: readonly string[]) => {
+      mockCreateExeca((command: string, args?: readonly string[]) => {
         if (command === 'pipx' && args?.[0] === '--version') {
           return Promise.resolve({ stdout: 'pipx 1.2.0', stderr: '', exitCode: 0 } as any);
         }
@@ -629,12 +657,18 @@ describe('Create Module - Internal Functions', () => {
       await createProject('test-project', { profile: 'python-only' });
 
       expect(execa).toHaveBeenCalledWith('pipx', ['--version']);
-      expect(execa).toHaveBeenCalledWith('pipx', ['install', 'rapidkit-core']);
+      expect(execa).toHaveBeenCalledWith('pipx', [
+        'install',
+        '--force',
+        '--python',
+        expect.any(String),
+        RAPIDKIT_CORE_PACKAGE,
+      ]);
     });
 
     it('should skip pipx install when RapidKit is already available globally', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'pipx',
       });
       vi.mocked(checkRapidkitCoreVersionCompatible).mockResolvedValue({
@@ -644,7 +678,7 @@ describe('Create Module - Internal Functions', () => {
         reason: 'compatible',
       });
 
-      vi.mocked(execa).mockImplementation((command: string) => {
+      mockCreateExeca((command: string) => {
         if (command === 'git') {
           return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 } as any);
         }
@@ -655,29 +689,32 @@ describe('Create Module - Internal Functions', () => {
 
       expect(checkRapidkitCoreVersionCompatible).toHaveBeenCalled();
       expect(execa).not.toHaveBeenCalledWith('pipx', ['--version']);
-      expect(execa).not.toHaveBeenCalledWith('pipx', ['install', 'rapidkit-core']);
+      expect(execa).not.toHaveBeenCalledWith(
+        'pipx',
+        expect.arrayContaining(['install', RAPIDKIT_CORE_PACKAGE])
+      );
     });
 
     it('should check for pipx before installation', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'pipx',
       });
 
-      vi.mocked(execa).mockResolvedValue({ stdout: 'pipx 1.2.0', stderr: '', exitCode: 0 } as any);
+      mockExecaResult({ stdout: 'pipx 1.2.0', stderr: '', exitCode: 0 } as any);
 
       await createProject('test-project', { profile: 'python-only' });
 
       expect(execa).toHaveBeenCalledWith('pipx', ['--version']);
     });
 
-    it('should upgrade with pipx when install fails due existing global package', async () => {
+    it('reports a failed pinned pipx installation without upgrading to another version', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'pipx',
       });
 
-      vi.mocked(execa).mockImplementation((command: string, args?: readonly string[]) => {
+      mockCreateExeca((command: string, args?: readonly string[]) => {
         if (command === 'pipx' && args?.[0] === '--version') {
           return Promise.resolve({ stdout: 'pipx 1.2.0', stderr: '', exitCode: 0 } as any);
         }
@@ -690,21 +727,26 @@ describe('Create Module - Internal Functions', () => {
         return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 } as any);
       });
 
-      await createProject('test-project', { profile: 'python-only' });
-
-      expect(execa).toHaveBeenCalledWith('pipx', ['install', 'rapidkit-core']);
-      expect(execa).toHaveBeenCalledWith('pipx', ['upgrade', 'rapidkit-core']);
+      await expect(createProject('test-project', { profile: 'python-only' })).rejects.toThrow();
+      expect(execa).toHaveBeenCalledWith('pipx', [
+        'install',
+        '--force',
+        '--python',
+        expect.any(String),
+        RAPIDKIT_CORE_PACKAGE,
+      ]);
+      expect(execa).not.toHaveBeenCalledWith('pipx', ['upgrade', 'rapidkit-core']);
     });
 
     it('should install editable with pipx in test mode', async () => {
       process.env.RAPIDKIT_DEV_PATH = '/local/rapidkit';
 
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'pipx',
       });
 
-      vi.mocked(execa).mockImplementation((command: string, args?: readonly string[]) => {
+      mockCreateExeca((command: string, args?: readonly string[]) => {
         if (command === 'pipx' && args?.[0] === 'install' && args?.[1] === '-e') {
           return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 } as any);
         }
@@ -722,11 +764,11 @@ describe('Create Module - Internal Functions', () => {
       vi.mocked(inquirer.prompt).mockImplementation(async (questions: any) => {
         const names = Array.isArray(questions) ? questions.map((q) => q?.name) : [];
         if (names.includes('installPipx')) return { installPipx: true } as any;
-        return { pythonVersion: '3.10', installMethod: 'pipx' } as any;
+        return { pythonVersion: '3.11', installMethod: 'pipx' } as any;
       });
 
       let pipxModuleAvailable = false;
-      vi.mocked(execa).mockImplementation((command: string, args?: readonly string[]) => {
+      mockCreateExeca((command: string, args?: readonly string[]) => {
         // Accept both python and python3 (platform-specific)
         const isPython = command === 'python' || command === 'python3';
 
@@ -775,11 +817,11 @@ describe('Create Module - Internal Functions', () => {
   describe('README Creation', () => {
     it('should create .gitignore with Poetry installation', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'poetry',
       });
 
-      vi.mocked(execa).mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+      mockExecaResult({ stdout: '', stderr: '', exitCode: 0 } as any);
       vi.spyOn(fsPromises, 'readFile').mockResolvedValue('[tool.poetry]');
 
       await createProject('test-project', {
@@ -796,11 +838,11 @@ describe('Create Module - Internal Functions', () => {
 
     it('should create .gitignore with venv installation', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'venv',
       });
 
-      vi.mocked(execa).mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+      mockExecaResult({ stdout: '', stderr: '', exitCode: 0 } as any);
 
       await createProject('test-project', {});
 
@@ -813,11 +855,11 @@ describe('Create Module - Internal Functions', () => {
 
     it('should create files with pipx installation', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'pipx',
       });
 
-      vi.mocked(execa).mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+      mockExecaResult({ stdout: '', stderr: '', exitCode: 0 } as any);
 
       await createProject('test-project', {});
 
@@ -829,11 +871,11 @@ describe('Create Module - Internal Functions', () => {
   describe('Git Integration', () => {
     it('should initialize git repository by default', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'poetry',
       });
 
-      vi.mocked(execa).mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+      mockExecaResult({ stdout: '', stderr: '', exitCode: 0 } as any);
       vi.spyOn(fsPromises, 'readFile').mockResolvedValue('[tool.poetry]');
 
       await createProject('test-project', {});
@@ -843,11 +885,11 @@ describe('Create Module - Internal Functions', () => {
 
     it('should skip git when skipGit is true', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'poetry',
       });
 
-      vi.mocked(execa).mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+      mockExecaResult({ stdout: '', stderr: '', exitCode: 0 } as any);
       vi.spyOn(fsPromises, 'readFile').mockResolvedValue('[tool.poetry]');
 
       await createProject('test-project', { skipGit: true });
@@ -862,7 +904,7 @@ describe('Create Module - Internal Functions', () => {
         succeed: vi.fn(),
         warn: vi.fn(),
       };
-      vi.mocked(execa).mockImplementation(async (_command: string, args?: readonly string[]) => {
+      mockCreateExeca(async (_command: string, args?: readonly string[]) => {
         if (args?.[0] === 'rev-parse') throw new Error('not a repository');
         if (args?.includes('commit')) {
           const error = new Error('failed to write commit object') as Error & { stderr: string };
@@ -905,7 +947,7 @@ describe('Create Module - Internal Functions', () => {
         succeed: vi.fn(),
         warn: vi.fn(),
       };
-      vi.mocked(execa).mockImplementation(async (_command: string, args?: readonly string[]) => {
+      mockCreateExeca(async (_command: string, args?: readonly string[]) => {
         if (args?.[0] === 'rev-parse') throw new Error('not a repository');
         if (args?.[0] === 'add') throw new Error('staging failed');
         return { stdout: '', stderr: '', exitCode: 0 } as any;
@@ -925,11 +967,11 @@ describe('Create Module - Internal Functions', () => {
 
     it('should create .gitignore file', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'poetry',
       });
 
-      vi.mocked(execa).mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+      mockExecaResult({ stdout: '', stderr: '', exitCode: 0 } as any);
       vi.spyOn(fsPromises, 'readFile').mockResolvedValue('[tool.poetry]');
 
       await createProject('test-project', {});
@@ -943,11 +985,11 @@ describe('Create Module - Internal Functions', () => {
 
     it('should keep the canonical workspace marker trackable while ignoring legacy state', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'poetry',
       });
 
-      vi.mocked(execa).mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+      mockExecaResult({ stdout: '', stderr: '', exitCode: 0 } as any);
       vi.spyOn(fsPromises, 'readFile').mockResolvedValue('[tool.poetry]');
 
       await createProject('test-project', {});
@@ -975,10 +1017,10 @@ describe('Create Module - Internal Functions', () => {
     it('should create directory if it does not exist', async () => {
       vi.mocked(fsExtra.pathExists).mockResolvedValue(false);
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'poetry',
       });
-      vi.mocked(execa).mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+      mockExecaResult({ stdout: '', stderr: '', exitCode: 0 } as any);
       vi.spyOn(fsPromises, 'readFile').mockResolvedValue('[tool.poetry]');
 
       await createProject('new-project', {});
@@ -999,7 +1041,7 @@ describe('Create Module - Internal Functions', () => {
         installMethod: 'poetry',
       });
 
-      vi.mocked(execa).mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+      mockExecaResult({ stdout: '', stderr: '', exitCode: 0 } as any);
       vi.spyOn(fsPromises, 'readFile').mockResolvedValue('[tool.poetry]');
 
       await createProject('test-project', { userConfig, profile: 'python-only' });
@@ -1016,16 +1058,16 @@ describe('Create Module - Internal Functions', () => {
 
     it('should use userConfig default install method', async () => {
       const userConfig = {
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         defaultInstallMethod: 'pipx' as const,
       };
 
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'pipx',
       });
 
-      vi.mocked(execa).mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+      mockExecaResult({ stdout: '', stderr: '', exitCode: 0 } as any);
 
       await createProject('test-project', { userConfig, profile: 'python-only' });
 
@@ -1041,16 +1083,16 @@ describe('Create Module - Internal Functions', () => {
 
     it('should default install method to venv when Poetry is unavailable', async () => {
       const userConfig = {
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         defaultInstallMethod: 'poetry' as const,
       };
 
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'venv',
       });
 
-      vi.mocked(execa).mockImplementation((command: string, args?: readonly string[]) => {
+      mockCreateExeca((command: string, args?: readonly string[]) => {
         if (command === 'poetry' && args?.[0] === '--version') {
           return Promise.reject(new Error('Command not found: poetry'));
         }
@@ -1075,7 +1117,7 @@ describe('Create Module - Internal Functions', () => {
         installMethod: 'venv',
       });
 
-      vi.mocked(execa).mockImplementation((command: string, args?: readonly string[]) => {
+      mockCreateExeca((command: string, args?: readonly string[]) => {
         if (
           command === 'py' &&
           (args?.[0] === '-3.14' || args?.[0] === '-3') &&
@@ -1107,7 +1149,7 @@ describe('Create Module - Internal Functions', () => {
             default: '3.14',
             choices: expect.arrayContaining([
               expect.objectContaining({ value: '3.14' }),
-              expect.objectContaining({ value: '3.10' }),
+              expect.objectContaining({ value: '3.11' }),
             ]),
           }),
         ])
@@ -1117,7 +1159,7 @@ describe('Create Module - Internal Functions', () => {
 
   describe('Pipx Installation', () => {
     it('should check for pipx availability', async () => {
-      vi.mocked(execa).mockImplementation((command: string) => {
+      mockCreateExeca((command: string) => {
         if (command === 'pipx') {
           return Promise.resolve({ stdout: 'pipx 1.4.0', stderr: '', exitCode: 0 } as any);
         }
@@ -1129,7 +1171,7 @@ describe('Create Module - Internal Functions', () => {
     });
 
     it('should handle pipx not found', async () => {
-      vi.mocked(execa).mockImplementation((command: string) => {
+      mockCreateExeca((command: string) => {
         if (command === 'pipx') {
           return Promise.reject(new Error('Command not found: pipx'));
         }
@@ -1140,7 +1182,7 @@ describe('Create Module - Internal Functions', () => {
     });
 
     it('should install poetry with pipx', async () => {
-      vi.mocked(execa).mockImplementation((command: string, args?: readonly string[]) => {
+      mockCreateExeca((command: string, args?: readonly string[]) => {
         if (command === 'pipx' && args?.[0] === 'install') {
           return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 } as any);
         }
@@ -1152,7 +1194,7 @@ describe('Create Module - Internal Functions', () => {
     });
 
     it('should handle pipx upgrade when already installed', async () => {
-      vi.mocked(execa).mockImplementation((command: string, args?: readonly string[]) => {
+      mockCreateExeca((command: string, args?: readonly string[]) => {
         if (command === 'pipx' && args?.[0] === 'install') {
           return Promise.reject(new Error('poetry already installed'));
         }
@@ -1177,11 +1219,11 @@ describe('Create Module - Internal Functions', () => {
   describe('Venv Installation Method', () => {
     it('should handle venv installation method', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'venv',
       });
 
-      vi.mocked(execa).mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+      mockExecaResult({ stdout: '', stderr: '', exitCode: 0 } as any);
 
       await createProject('test-venv-project', { profile: 'python-only' });
 
@@ -1191,11 +1233,11 @@ describe('Create Module - Internal Functions', () => {
 
     it('should install rapidkit-core with pip in venv', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'venv',
       });
 
-      vi.mocked(execa).mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+      mockExecaResult({ stdout: '', stderr: '', exitCode: 0 } as any);
 
       await createProject('test-venv-project', { profile: 'python-only' });
 
@@ -1212,11 +1254,11 @@ describe('Create Module - Internal Functions', () => {
   describe('Git Operations', () => {
     it('should handle git init failure gracefully', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'poetry',
       });
 
-      vi.mocked(execa).mockImplementation((command: string, args?: readonly string[]) => {
+      mockCreateExeca((command: string, args?: readonly string[]) => {
         if (command === 'git' && args?.[0] === 'init') {
           return Promise.reject(new Error('git not found'));
         }
@@ -1233,11 +1275,11 @@ describe('Create Module - Internal Functions', () => {
 
     it('should create initial git commit', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'poetry',
       });
 
-      vi.mocked(execa).mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+      mockExecaResult({ stdout: '', stderr: '', exitCode: 0 } as any);
       vi.spyOn(fsPromises, 'readFile').mockResolvedValue('[tool.poetry]');
 
       await createProject('test-project', {});
@@ -1255,11 +1297,11 @@ describe('Create Module - Internal Functions', () => {
   describe('Workspace Marker', () => {
     it('should create workspace marker file', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'poetry',
       });
 
-      vi.mocked(execa).mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+      mockExecaResult({ stdout: '', stderr: '', exitCode: 0 } as any);
       vi.spyOn(fsPromises, 'readFile').mockResolvedValue('[tool.poetry]');
 
       await createProject('test-project', {});
@@ -1301,7 +1343,7 @@ describe('Create Module - Internal Functions', () => {
         installMethod: 'poetry',
       });
 
-      vi.mocked(execa).mockImplementation((command: string, args?: readonly string[]) => {
+      mockCreateExeca((command: string, args?: readonly string[]) => {
         if (args?.includes('--version')) {
           return Promise.resolve({ stdout: 'Python 3.11.5', stderr: '', exitCode: 0 } as any);
         }
@@ -1322,7 +1364,7 @@ describe('Create Module - Internal Functions', () => {
 
   describe('Python Command Detection', () => {
     it('should detect python3 command', async () => {
-      vi.mocked(execa).mockImplementation((command: string) => {
+      mockCreateExeca((command: string) => {
         if (command === 'python3') {
           return Promise.resolve({ stdout: 'Python 3.11.0', stderr: '', exitCode: 0 } as any);
         }
@@ -1334,12 +1376,12 @@ describe('Create Module - Internal Functions', () => {
     });
 
     it('should fall back to python command', async () => {
-      vi.mocked(execa).mockImplementation((command: string) => {
+      mockCreateExeca((command: string) => {
         if (command === 'python3') {
           return Promise.reject(new Error('Command not found'));
         }
         if (command === 'python') {
-          return Promise.resolve({ stdout: 'Python 3.10.0', stderr: '', exitCode: 0 } as any);
+          return Promise.resolve({ stdout: 'Python 3.11.0', stderr: '', exitCode: 0 } as any);
         }
         return Promise.reject(new Error('Command not found'));
       });
@@ -1367,11 +1409,11 @@ describe('Create Module - Internal Functions', () => {
   describe('Poetry Configuration', () => {
     it('should configure virtualenvs.in-project', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'poetry',
       });
 
-      vi.mocked(execa).mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+      mockExecaResult({ stdout: '', stderr: '', exitCode: 0 } as any);
       vi.spyOn(fsPromises, 'readFile').mockResolvedValue('[tool.poetry]');
 
       await createProject('test-project', { profile: 'python-only' });
@@ -1385,11 +1427,11 @@ describe('Create Module - Internal Functions', () => {
 
     it('should handle poetry config errors gracefully', async () => {
       vi.mocked(inquirer.prompt).mockResolvedValue({
-        pythonVersion: '3.10',
+        pythonVersion: '3.11',
         installMethod: 'poetry',
       });
 
-      vi.mocked(execa).mockImplementation((command: string, args?: readonly string[]) => {
+      mockCreateExeca((command: string, args?: readonly string[]) => {
         if (
           command === 'poetry' &&
           Array.isArray(args) &&
@@ -1413,7 +1455,7 @@ describe('Create Module - Internal Functions', () => {
   // ─── Demo mode: git fail → warn, not crash ───────────────────────────────
   describe('Demo workspace (demoMode: true)', () => {
     it('should warn (not throw) when git init fails inside createDemoWorkspace', async () => {
-      vi.mocked(execa).mockImplementation((cmd: any, _args?: any) => {
+      mockCreateExeca((cmd: any, _args?: any) => {
         if (cmd === 'git') return Promise.reject(new Error('git not found')) as any;
         return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 }) as any;
       });

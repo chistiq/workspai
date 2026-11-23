@@ -28,9 +28,10 @@ describe('agent framework version automation', () => {
     expect(source).toContain('ref: ${{ github.event.repository.default_branch }}');
     expect(source).toContain('persist-credentials: false');
     expect(source).toContain('propose-agent-framework-version-update.ts');
-    expect(source).toContain(
-      'git diff -- packages/cli/src/agent-frameworks/version-baselines.v1.json'
-    );
+    expect(source).toContain('report.json');
+    expect(source).toContain('proposed.json');
+    expect(source).toContain('diff -u "$BASELINE" "$DIR/proposed.json"');
+    expect(source).not.toContain('--write');
     expect(source).not.toContain('gh auth setup-git');
     expect(source).not.toContain('git commit');
     expect(source).not.toContain('git push');

@@ -275,7 +275,7 @@ describe('AI Recommender', () => {
       }
     });
 
-    it('recommends from pre-generated embeddings in non-mock mode', async () => {
+    it('regenerates legacy embeddings without an input hash in non-mock mode', async () => {
       const root = fs.mkdtempSync(path.join(os.tmpdir(), 'rk-reco-obj-'));
       const prev = process.cwd();
       const targetPath = path.join(root, 'data', 'modules-embeddings.json');
@@ -308,6 +308,10 @@ describe('AI Recommender', () => {
         vi.resetModules();
         vi.doMock('../../ai/openai-client.js', () => ({
           generateEmbedding: vi.fn(async () => [0.8, 0.1, 0.1]),
+          generateEmbeddings: vi.fn(async () => [
+            [0.9, 0.1, 0.1],
+            [0.1, 0.9, 0.1],
+          ]),
           isMockMode: vi.fn(() => false),
         }));
         vi.doMock('../../ai/module-catalog.js', () => ({
@@ -341,6 +345,10 @@ describe('AI Recommender', () => {
         const recs = await mod.recommendModules('authentication', 1);
         expect(recs.length).toBe(1);
         expect(recs[0].module.id).toBe('authentication-core');
+        const { generateEmbeddings } = await import('../../ai/openai-client.js');
+        expect(generateEmbeddings).toHaveBeenCalledWith(
+          expect.arrayContaining([expect.stringContaining('Authentication Core')])
+        );
       } finally {
         vi.doUnmock('../../ai/openai-client.js');
         vi.doUnmock('../../ai/module-catalog.js');

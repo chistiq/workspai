@@ -19,6 +19,15 @@ import {
   WORKSPAI_WORKSPACE_MARKER,
 } from '../utils/workspace-paths.js';
 import { withInterprocessLock } from '../utils/interprocess-lock.js';
+import { evaluatePythonVersionConstraint } from '../utils/python-version-constraint.js';
+import {
+  coreInstallTarget,
+  RAPIDKIT_CORE_PACKAGE,
+  RAPIDKIT_CORE_MINIMUM_PYTHON,
+  RAPIDKIT_CORE_MINIMUM_PYTHON_MINOR,
+  RAPIDKIT_CORE_REQUIRES_PYTHON,
+  RAPIDKIT_CORE_VERSION,
+} from './core-runtime-compatibility.js';
 
 export type PythonCommand = string;
 
@@ -61,7 +70,7 @@ function pythonCommandCandidates(): PythonCommand[] {
     add(getVenvPythonPath(path.join(path.resolve(spec), '.venv')));
   }
 
-  for (const probe of getPythonVersionProbeCandidates()) {
+  for (const probe of getPythonVersionProbeCandidates(14, RAPIDKIT_CORE_MINIMUM_PYTHON_MINOR)) {
     if (probe.args.length === 1 && probe.args[0] === '--version') {
       add(probe.command);
     }
@@ -78,10 +87,46 @@ function pythonLauncherArgs(cmd: string, args: string[]): string[] {
   return cmd === 'py' ? ['-3', ...args] : args;
 }
 
+function parsePythonVersion(output: unknown): string | null {
+  const match = String(output ?? '').match(/Python\s+(\d+\.\d+(?:\.\d+)?)/i);
+  return match?.[1] ?? null;
+}
+
+export async function hasCoreCompatiblePython(cmd: PythonCommand): Promise<boolean> {
+  try {
+    const result = await execa(cmd, pythonLauncherArgs(cmd, ['--version']), {
+      reject: false,
+      stdio: 'pipe',
+      timeout: 2500,
+    });
+    if (result.exitCode !== 0) return false;
+    const version = parsePythonVersion(`${result.stdout ?? ''}\n${result.stderr ?? ''}`);
+    return (
+      version !== null &&
+      evaluatePythonVersionConstraint(version, RAPIDKIT_CORE_REQUIRES_PYTHON).satisfied === true
+    );
+  } catch {
+    return false;
+  }
+}
+
 type ExecOpts = {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
 };
+
+function coreCommandArgs(args: string[]): string[] {
+  // Core 0.6.3 emits a banner unless --json is explicit, even with --json-schema.
+  if (
+    args[0] === 'modules' &&
+    args[1] === 'list' &&
+    !args.includes('--json') &&
+    args.some((arg) => arg === '--json-schema' || arg.startsWith('--json-schema='))
+  ) {
+    return [...args, '--json'];
+  }
+  return args;
+}
 
 type CaptureResult = {
   exitCode: number;
@@ -126,7 +171,7 @@ function formatBridgeError(err: unknown): string {
         const expectedCmd = getDefaultPythonCommand();
         return (
           'Workspai could not find Python (python3/python/py) on your PATH.\n' +
-          `Install Python 3.10+ and ensure \`${expectedCmd}\` is available, then retry.\n` +
+          `Install Python ${RAPIDKIT_CORE_MINIMUM_PYTHON}+ and ensure \`${expectedCmd}\` is available, then retry.\n` +
           'Tip: if you are inside a RapidKit project, use the local ./rapidkit launcher.'
         );
       }
@@ -155,7 +200,7 @@ function formatBridgeError(err: unknown): string {
       case 'BRIDGE_PIP_INSTALL_FAILED':
         return (
           'Workspai could not install rapidkit-core in the bridge virtual environment.\n' +
-          'Check your network/proxy, or install manually with: pipx install rapidkit-core.\n' +
+          `Check the configured package index for ${coreInstallTarget()}, or install it with pipx.\n` +
           `Details: ${err.message}`
         );
       case 'BRIDGE_VENV_LOCK_FAILED':
@@ -177,12 +222,6 @@ function formatBridgeError(err: unknown): string {
 
   const msg = err instanceof Error ? err.message : String(err);
   return `Workspai failed to run the Python core engine: ${msg}`;
-}
-
-function coreInstallTarget(): string {
-  const override = process.env.RAPIDKIT_CORE_PYTHON_PACKAGE;
-  if (override && override.trim()) return override.trim();
-  return 'rapidkit-core';
 }
 
 function coreInstallTargetId(): string {
@@ -311,30 +350,15 @@ function isPinnedSpec(spec: string): boolean {
   return /[<>=!~]=|@|\.whl$|\.tar\.gz$|\.zip$|git\+|https?:\/\//.test(spec);
 }
 
-function venvDirFromPythonPath(pythonPath: string): string {
-  return path.dirname(path.dirname(pythonPath));
-}
-
 function commandsCachePath(): string {
   return path.join(cacheRoot(), 'rapidkit', 'npm-bridge', 'core-commands.json');
 }
 
-async function tryRapidkit(cmd: PythonCommand): Promise<boolean> {
-  const verbose = !!process.env.RAPIDKIT_DEBUG;
+async function findInterpreterRapidkitRunner(cmd: PythonCommand): Promise<RapidkitRunner | null> {
+  const args = pythonLauncherArgs(cmd, ['-m', 'rapidkit']);
+  if (await probeCoreVersion(cmd, args)) return { cmd, baseArgs: args };
 
-  const debug = (msg: string) => {
-    if (verbose) {
-      // Write to stderr so JSON on stdout is preserved for callers.
-      process.stderr.write(`[DEBUG] tryRapidkit(${cmd}): ${msg}\n`);
-    }
-  };
-
-  // Some distributions expose `rapidkit` as a console script rather than `python -m rapidkit`.
-  // Prefer a console script that is installed for the SAME Python interpreter (if available),
-  // so we don't accidentally invoke the npm wrapper `rapidkit` on PATH (which may come first).
   try {
-    debug('probing interpreter-specific rapidkit script');
-    // Ask the Python interpreter where its 'scripts' directory is and where its rapidkit script would live.
     const scriptPathRes = await execa(
       cmd,
       pythonLauncherArgs(cmd, [
@@ -343,139 +367,30 @@ async function tryRapidkit(cmd: PythonCommand): Promise<boolean> {
       ]),
       { reject: false, stdio: 'pipe', timeout: 2000 }
     );
-    const scriptPath = (scriptPathRes.stdout ?? '').toString().trim();
-
-    debug(`script path: ${scriptPath}`);
-
-    if (scriptPath) {
-      try {
-        if (await fsExtra.pathExists(scriptPath)) {
-          debug(`found script at ${scriptPath}; invoking --version --json`);
-          const res = await execa(scriptPath, ['--version', '--json'], {
-            reject: false,
-            stdio: 'pipe',
-            timeout: 4000,
-          });
-          debug(`script exitCode=${res.exitCode}`);
-          if (res.exitCode === 0) {
-            const out = (res.stdout ?? '').toString().trim();
-            try {
-              const parsed = JSON.parse(out) as unknown;
-              const ok =
-                !!parsed &&
-                typeof parsed === 'object' &&
-                parsed !== null &&
-                'version' in (parsed as Record<string, unknown>);
-              debug(`script JSON parse ok=${ok}`);
-              if (ok) return true;
-            } catch (_err) {
-              debug('script output not valid JSON');
-              // not valid JSON -> fall through to other checks
-            }
-          }
-        }
-      } catch (err) {
-        debug(`interpreter-specific script probe failed: ${String(err)}`);
-        // ignore script invocation errors and fall back
-      }
+    const base = (scriptPathRes.stdout ?? '').toString().trim();
+    const script = base && isWindowsPlatform() ? `${base}.exe` : base;
+    if (script && (await fsExtra.pathExists(script)) && (await probeCoreVersion(script, []))) {
+      return { cmd: script, baseArgs: [] };
     }
-  } catch (err) {
-    debug(`interpreter-specific script probe error: ${String(err)}`);
-    // ignore
+  } catch {
+    // Keep looking when an interpreter has no usable Core console script.
   }
+  return null;
+}
 
-  // Fast check: is the `rapidkit` module importable? This avoids importing the full
-  // package (which can be slow on first-run and cause false negatives).
-  try {
-    debug('probing importlib.find_spec("rapidkit")');
-    const probe = await execa(
-      cmd,
-      pythonLauncherArgs(cmd, [
-        '-c',
-        "import importlib.util; print(1 if importlib.util.find_spec('rapidkit') else 0)",
-      ]),
-      {
-        reject: false,
-        stdio: 'pipe',
-        timeout: 2000,
-      }
-    );
-    debug(
-      `import probe exitCode=${probe.exitCode} stdout=${(probe.stdout ?? '').toString().trim()}`
-    );
-    if (probe.exitCode === 0 && (probe.stdout ?? '').toString().trim() === '1') {
-      return true;
-    }
-  } catch (err) {
-    debug(`import probe error: ${String(err)}`);
-    // ignore fast-check errors and fall back to the more thorough checks below
-  }
+async function tryRapidkit(cmd: PythonCommand): Promise<boolean> {
+  return (await findInterpreterRapidkitRunner(cmd)) !== null;
+}
 
-  // Fallback: try invoking `python -m rapidkit --version --json` with a longer timeout.
+async function probeCoreVersion(cmd: string, baseArgs: string[]): Promise<boolean> {
   try {
-    debug('probing python -m rapidkit');
-    const res = await execa(
-      cmd,
-      pythonLauncherArgs(cmd, ['-m', 'rapidkit', '--version', '--json']),
-      {
-        reject: false,
-        stdio: 'pipe',
-        timeout: 8000,
-      }
-    );
-    debug(`-m probe exitCode=${res.exitCode}`);
-    if (res.exitCode === 0) return true;
-  } catch (err) {
-    debug(`-m probe error: ${String(err)}`);
-    // ignore
-  }
-
-  // Final fallback: probe generic `rapidkit` executables on PATH (may be a console script or npm wrapper).
-  // Scan PATH entries to find any `rapidkit` executable that emits valid JSON. This avoids relying on
-  // `command -v rapidkit` which only returns the first match (often the npm wrapper in Node's bin).
-  try {
-    debug('probing PATH for rapidkit executables');
-    const pathEnv = (process.env.PATH ?? '').split(path.delimiter).filter(Boolean);
-    for (const dir of pathEnv) {
-      const candidate = path.join(dir, isWindowsPlatform() ? 'rapidkit.exe' : 'rapidkit');
-      try {
-        if (await fsExtra.pathExists(candidate)) {
-          debug(`found candidate on PATH: ${candidate}; invoking --version --json`);
-          const res = await execa(candidate, ['--version', '--json'], {
-            reject: false,
-            stdio: 'pipe',
-            timeout: 4000,
-          });
-          debug(`candidate exitCode=${res.exitCode}`);
-          if (res.exitCode === 0) {
-            const out = (res.stdout ?? '').toString().trim();
-            try {
-              const parsed = JSON.parse(out) as unknown;
-              const record = parsed as Record<string, unknown>;
-              if (
-                !!parsed &&
-                typeof parsed === 'object' &&
-                parsed !== null &&
-                'version' in record &&
-                record.schema_version === 1
-              ) {
-                return true;
-              }
-            } catch {
-              debug('candidate output not valid JSON, skipping');
-              // not JSON => skip
-            }
-          }
-        }
-      } catch (err) {
-        debug(`error probing candidate ${candidate}: ${String(err)}`);
-        // ignore errors for this candidate and continue scanning
-      }
-    }
-    debug('no valid rapidkit found on PATH');
-    return false;
-  } catch (err) {
-    debug(`PATH probe error: ${String(err)}`);
+    const probe = await execa(cmd, [...baseArgs, '--version', '--json'], {
+      reject: false,
+      stdio: 'pipe',
+      timeout: 8000,
+    });
+    return probe.exitCode === 0 && (await isCoreJsonVersion(probe.stdout, { requireSchema: true }));
+  } catch {
     return false;
   }
 }
@@ -500,6 +415,14 @@ async function isCoreJsonVersion(
     const record = parsed as Record<string, unknown>;
     if (!('version' in record)) {
       return false;
+    }
+    if (typeof record.version !== 'string' || !/^\d+\.\d+/.test(record.version)) return false;
+    const target = coreInstallTarget();
+    if (target === RAPIDKIT_CORE_PACKAGE) {
+      if (record.version !== RAPIDKIT_CORE_VERSION) return false;
+    } else {
+      const constraint = parseRapidkitCoreConstraint(target);
+      if (constraint && !isVersionSatisfyingConstraint(record.version, constraint)) return false;
     }
     if (options?.requireSchema) {
       return record.schema_version === 1 || record.schemaVersion === 'rapidkit-core-version-v1';
@@ -530,6 +453,8 @@ async function findWorkspaceRunner(
     workspaceDir: string,
     venvDir: string
   ): Promise<RapidkitRunner | null> => {
+    const py = getVenvPythonPath(venvDir, platform);
+    if (!(await fsExtra.pathExists(py)) || !(await hasCoreCompatiblePython(py))) return null;
     const cli = getVenvRapidkitPath(venvDir, platform);
     if (await fsExtra.pathExists(cli)) {
       const probe = await execa(cli, ['--version', '--json'], {
@@ -543,8 +468,7 @@ async function findWorkspaceRunner(
       }
     }
 
-    const py = getVenvPythonPath(venvDir, platform);
-    if (await fsExtra.pathExists(py)) {
+    {
       const probe = await execa(py, ['-m', 'rapidkit', '--version', '--json'], {
         reject: false,
         stdio: 'pipe',
@@ -638,93 +562,29 @@ async function resolveRapidkitRunner(cwd?: string): Promise<RapidkitRunner> {
     }
   }
 
-  const resolved = await resolveRapidkitPython();
-
-  if (resolved.kind === 'venv') {
-    const venvDir = venvDirFromPythonPath(resolved.pythonPath);
-    const cli = bridgeRapidkitCli(venvDir);
-    if (await fsExtra.pathExists(cli)) {
-      return { cmd: cli, baseArgs: [] };
+  if (process.env.RAPIDKIT_BRIDGE_FORCE_VENV !== '1') {
+    for (const cmd of pythonCommandCandidates()) {
+      if (!(await hasCoreCompatiblePython(cmd))) continue;
+      const runner = await findInterpreterRapidkitRunner(cmd);
+      if (runner) return runner;
     }
-    return { cmd: resolved.pythonPath, baseArgs: ['-m', 'rapidkit'] };
+
+    const userLocalRunner = await findUserLocalRapidkitRunner();
+    if (userLocalRunner) return userLocalRunner;
+    const pathRunner = await findPathRapidkitRunner();
+    if (pathRunner) return pathRunner;
   }
 
-  // System mode: prefer module invocation, but fall back to interpreter-specific console script or PATH console script if needed.
-  try {
-    const probe = await execa(resolved.cmd, ['-m', 'rapidkit', '--version', '--json'], {
-      reject: false,
-      stdio: 'pipe',
-      timeout: 4000,
-    });
-    if (probe.exitCode === 0) {
-      return { cmd: resolved.cmd, baseArgs: ['-m', 'rapidkit'] };
-    }
-  } catch {
-    // ignore
-  }
-
-  // Try interpreter-specific console script before bootstrapping a venv. This handles
-  // cases where the package installs a console script but is not importable as a module.
-  try {
-    const scriptPathRes = await execa(
-      resolved.cmd,
-      [
-        '-c',
-        "import sysconfig, os; print(os.path.join(sysconfig.get_path('scripts'), 'rapidkit'))",
-      ],
-      { reject: false, stdio: 'pipe', timeout: 2000 }
-    );
-    const scriptPath = (scriptPathRes.stdout ?? '').toString().trim();
-    if (scriptPath && (await fsExtra.pathExists(scriptPath))) {
-      try {
-        const res = await execa(scriptPath, ['--version', '--json'], {
-          reject: false,
-          stdio: 'pipe',
-          timeout: 4000,
-        });
-        if (res.exitCode === 0 && (await isCoreJsonVersion(res.stdout))) {
-          return { cmd: scriptPath, baseArgs: [] };
-        }
-      } catch {
-        // ignore
-      }
-    }
-  } catch {
-    // ignore
-  }
-
-  // If system python is present but rapidkit isn't importable (and no interpreter-specific
-  // console script worked), bootstrap the bridge venv. Falling back to PATH `rapidkit` is
-  // unsafe because it can be the npm wrapper itself.
-  const userLocalRunner = await findUserLocalRapidkitRunner();
-  if (userLocalRunner) return userLocalRunner;
-  const pathRunner = await findPathRapidkitRunner();
-  if (pathRunner) return pathRunner;
-
-  // If no user-local/pipx console script is available, bootstrap the bridge venv.
-  const venvDir = bridgeVenvDir();
-  const pythonPath = await ensureBridgeVenv(resolved.cmd);
-  const cli = bridgeRapidkitCli(venvDir);
-  if (await fsExtra.pathExists(cli)) {
-    return { cmd: cli, baseArgs: [] };
-  }
-  return { cmd: pythonPath, baseArgs: ['-m', 'rapidkit'] };
+  const pythonPath = await ensureBridgeVenvFromCandidates();
+  const runner = await findInterpreterRapidkitRunner(pythonPath);
+  if (runner) return runner;
+  throw new BridgeError('BRIDGE_VENV_HEALTH_FAILED', 'No usable Core entry point was found.');
 }
 
 async function pickSystemPython(): Promise<PythonCommand | null> {
   for (const cmd of pythonCommandCandidates()) {
-    try {
-      const probe = await execa(cmd, pythonLauncherArgs(cmd, ['--version']), {
-        reject: false,
-        stdio: 'pipe',
-        timeout: 2000,
-      });
-      if (probe.exitCode === 0) {
-        return cmd;
-      }
-    } catch {
-      // try next
-    }
+    if (!(await hasCoreCompatiblePython(cmd))) continue;
+    return cmd;
   }
   return null;
 }
@@ -732,23 +592,26 @@ async function pickSystemPython(): Promise<PythonCommand | null> {
 async function ensureBridgeVenvFromCandidates(): Promise<string> {
   let lastBootstrapError: unknown = null;
   let detectedPython = false;
+  let detectedUnsupportedPython = false;
 
   for (const cmd of pythonCommandCandidates()) {
+    let version: string | null = null;
     try {
       const probe = await execa(cmd, pythonLauncherArgs(cmd, ['--version']), {
         reject: false,
         stdio: 'pipe',
         timeout: 2000,
       });
-      if (probe.exitCode !== 0) {
-        // With `reject: false`, execa reports command-not-found and some launch
-        // failures as a result whose exitCode is undefined. That is an unavailable
-        // candidate, not a bridge bootstrap failure. Keep probing so callers receive
-        // the canonical, actionable PYTHON_NOT_FOUND diagnostic when no interpreter
-        // can actually be launched.
+      if (probe.exitCode !== 0) continue;
+      version = parsePythonVersion(`${probe.stdout ?? ''}\n${probe.stderr ?? ''}`);
+      detectedPython ||= version !== null;
+      if (
+        !version ||
+        evaluatePythonVersionConstraint(version, RAPIDKIT_CORE_REQUIRES_PYTHON).satisfied !== true
+      ) {
+        detectedUnsupportedPython = true;
         continue;
       }
-      detectedPython = true;
     } catch {
       // A missing candidate is expected while probing python3/python/py. Do not
       // leak platform-specific ENOENT details as a bridge bootstrap error.
@@ -765,6 +628,12 @@ async function ensureBridgeVenvFromCandidates(): Promise<string> {
 
   if (!detectedPython) {
     throw new BridgeError('PYTHON_NOT_FOUND', 'No Python interpreter found (python3/python/py).');
+  }
+  if (detectedUnsupportedPython && !lastBootstrapError) {
+    throw new BridgeError(
+      'PYTHON_NOT_FOUND',
+      `Python ${RAPIDKIT_CORE_MINIMUM_PYTHON}+ is required by RapidKit Core ${RAPIDKIT_CORE_VERSION}.`
+    );
   }
   if (lastBootstrapError instanceof BridgeError) {
     throw lastBootstrapError;
@@ -792,12 +661,15 @@ async function checkRapidkitCoreAvailable(): Promise<boolean> {
   const dynamicPythonCommands = Array.from(
     new Set([
       ...getPythonCommandCandidates(),
-      ...getPythonVersionProbeCandidates(14, 10).map((probe) => probe.command),
+      ...getPythonVersionProbeCandidates(14, RAPIDKIT_CORE_MINIMUM_PYTHON_MINOR).map(
+        (probe) => probe.command
+      ),
     ])
   );
 
   // Method 1: Try detected Python commands with import
   for (const cmd of dynamicPythonCommands) {
+    if (!(await hasCoreCompatiblePython(cmd))) continue;
     try {
       debug(`Method 1: trying ${cmd} import`);
       const result = await execa(
@@ -1159,7 +1031,9 @@ async function detectRapidkitCoreVersion(): Promise<string | null> {
   const dynamicPythonCommands = Array.from(
     new Set([
       ...getPythonCommandCandidates(),
-      ...getPythonVersionProbeCandidates(14, 10).map((probe) => probe.command),
+      ...getPythonVersionProbeCandidates(14, RAPIDKIT_CORE_MINIMUM_PYTHON_MINOR).map(
+        (probe) => probe.command
+      ),
     ])
   );
 
@@ -1169,6 +1043,7 @@ async function detectRapidkitCoreVersion(): Promise<string | null> {
   };
 
   for (const cmd of dynamicPythonCommands) {
+    if (!(await hasCoreCompatiblePython(cmd))) continue;
     try {
       const result = await execa(
         cmd,
@@ -1248,7 +1123,10 @@ async function checkRapidkitCoreVersionCompatible(): Promise<RapidkitCoreVersion
     };
   }
 
-  const isCompatible = isVersionSatisfyingConstraint(installedVersion, expectedConstraint);
+  const isCompatible =
+    spec === RAPIDKIT_CORE_PACKAGE
+      ? installedVersion === RAPIDKIT_CORE_VERSION
+      : isVersionSatisfyingConstraint(installedVersion, expectedConstraint);
   return {
     isCompatible,
     installedVersion,
@@ -1299,7 +1177,7 @@ async function ensureBridgeVenvLocked(pythonCmd: PythonCommand): Promise<string>
 
     try {
       const health = await probeBridgeVenvHealth(venvDir);
-      if (health.healthy) {
+      if (health.healthy && (await hasCoreCompatiblePython(py))) {
         return py;
       }
       await fsExtra.remove(venvDir);
@@ -1458,6 +1336,7 @@ export async function resolveRapidkitPython(): Promise<
 
   // Prefer system python if it already has rapidkit available.
   for (const cmd of pythonCommandCandidates()) {
+    if (!(await hasCoreCompatiblePython(cmd))) continue;
     if (await tryRapidkit(cmd)) {
       return { kind: 'system', cmd };
     }
@@ -1481,7 +1360,7 @@ export async function runCoreRapidkit(args: string[], opts?: ExecOpts): Promise<
   try {
     const runner = await resolveRapidkitRunner(opts?.cwd);
     const cmd = runner.cmd;
-    const cmdArgs = [...runner.baseArgs, ...args];
+    const cmdArgs = [...runner.baseArgs, ...coreCommandArgs(args)];
 
     const isInitCommand = args[0] === 'init';
 
@@ -1572,7 +1451,7 @@ export async function runCoreRapidkitStreamed(args: string[], opts?: ExecOpts): 
   try {
     const runner = await resolveRapidkitRunner(opts?.cwd);
     const cmd = runner.cmd;
-    const cmdArgs = [...runner.baseArgs, ...args];
+    const cmdArgs = [...runner.baseArgs, ...coreCommandArgs(args)];
 
     return await new Promise<number>((resolve) => {
       const child = spawn(cmd, cmdArgs, {
@@ -1627,7 +1506,7 @@ export async function runCoreRapidkitCapture(
   try {
     const runner = await resolveRapidkitRunner(opts?.cwd);
     const cmd = runner.cmd;
-    const cmdArgs = [...runner.baseArgs, ...args];
+    const cmdArgs = [...runner.baseArgs, ...coreCommandArgs(args)];
 
     const res = await execa(cmd, cmdArgs, {
       cwd: opts?.cwd,

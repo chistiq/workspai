@@ -4,11 +4,7 @@ import { prompt } from '../cli-ui/prompts.js';
 import { getOpenAIKey, isAIEnabled } from '../config/user-config.js';
 import { initOpenAI, enableMockMode } from '../ai/openai-client.js';
 import { recommendModules } from '../ai/recommender.js';
-import {
-  ensureEmbeddings,
-  generateModuleEmbeddings,
-  updateEmbeddings,
-} from '../ai/embeddings-manager.js';
+import { generateModuleEmbeddings, updateEmbeddings } from '../ai/embeddings-manager.js';
 import { runCoreRapidkitStreamed } from '../core-bridge/pythonRapidkitExec.js';
 import { resolveProjectCommandCapabilities } from '../utils/project-command-capabilities.js';
 import { logger } from '../logger.js';
@@ -111,27 +107,6 @@ export function registerAICommands(program: Command): void {
 
         if (!options.json) {
           console.log(chalk.blue('\n🤖 Analyzing your request...\n'));
-        }
-
-        // Ensure embeddings exist
-        const hasEmbeddings = apiKey ? await ensureEmbeddings(!options.json) : true;
-        if (!hasEmbeddings) {
-          if (options.json) {
-            writeJsonAndExit(
-              {
-                ok: false,
-                query: userQuery,
-                error: {
-                  code: 'EMBEDDINGS_MISSING',
-                  message: 'Module embeddings are not available',
-                  remediation: 'workspai ai generate-embeddings',
-                },
-              },
-              1
-            );
-          }
-          console.log(chalk.yellow('\n⚠️  Cannot proceed without embeddings\n'));
-          process.exit(1);
         }
 
         // Get recommendations

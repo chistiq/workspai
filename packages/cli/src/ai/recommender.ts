@@ -2,7 +2,8 @@ import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { getModuleCatalog, type ModuleMetadata } from './module-catalog.js';
-import { generateEmbedding, isMockMode } from './openai-client.js';
+import { moduleEmbeddingText, moduleEmbeddingInputHash } from './module-embedding-input.js';
+import { generateEmbedding, generateEmbeddings, isMockMode } from './openai-client.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -15,6 +16,7 @@ export interface ModuleEmbeddingData {
     id: string;
     name: string;
     embedding: number[];
+    inputHash?: string;
   }>;
 }
 
@@ -26,18 +28,7 @@ export interface RecommendationResult {
 
 let embeddingsData: ModuleEmbeddingData | null = null;
 const mockModuleEmbeddings = new Map<string, number[]>();
-
-function moduleEmbeddingText(module: ModuleMetadata): string {
-  return [
-    module.name,
-    module.description,
-    module.longDescription,
-    ...module.keywords,
-    ...module.useCases,
-  ]
-    .filter(Boolean)
-    .join(' ');
-}
+const runtimeModuleEmbeddings = new Map<string, { content: string; embedding: number[] }>();
 
 async function getMockModuleEmbedding(module: ModuleMetadata): Promise<number[]> {
   const cached = mockModuleEmbeddings.get(module.id);
@@ -50,6 +41,70 @@ async function getMockModuleEmbedding(module: ModuleMetadata): Promise<number[]>
   return embedding;
 }
 
+async function getRuntimeModuleEmbeddings(
+  modules: ModuleMetadata[],
+  staticEmbeddings: ModuleEmbeddingData | null,
+  queryDimension: number
+): Promise<Map<string, number[]>> {
+  const embeddings = new Map<string, number[]>();
+  const storedById = new Map(
+    staticEmbeddings?.model === 'text-embedding-3-small'
+      ? staticEmbeddings.modules
+          .filter((entry) => entry && typeof entry.id === 'string')
+          .map((entry) => [entry.id, entry])
+      : []
+  );
+  const missing: ModuleMetadata[] = [];
+
+  for (const module of modules) {
+    const content = moduleEmbeddingText(module);
+    const cached = runtimeModuleEmbeddings.get(module.id);
+    if (cached?.content === content && cached.embedding.length === queryDimension) {
+      embeddings.set(module.id, cached.embedding);
+      continue;
+    }
+
+    const stored = storedById.get(module.id);
+    if (
+      stored?.inputHash === moduleEmbeddingInputHash(content) &&
+      Array.isArray(stored.embedding) &&
+      stored.embedding.length === queryDimension &&
+      stored.embedding.every((value) => Number.isFinite(value))
+    ) {
+      embeddings.set(module.id, stored.embedding);
+      continue;
+    }
+    missing.push(module);
+  }
+
+  if (missing.length === 0) return embeddings;
+
+  const generated = await generateEmbeddings(missing.map(moduleEmbeddingText));
+  if (generated.length !== missing.length) {
+    throw new Error('Generated module embeddings did not match the current Core catalog.');
+  }
+
+  for (let index = 0; index < missing.length; index += 1) {
+    const module = missing[index];
+    const embedding = generated[index];
+    if (
+      !module ||
+      !embedding ||
+      embedding.length !== queryDimension ||
+      !embedding.every((value) => Number.isFinite(value))
+    ) {
+      throw new Error(`Generated an invalid embedding for Core module ${module?.id ?? index}.`);
+    }
+    runtimeModuleEmbeddings.set(module.id, {
+      content: moduleEmbeddingText(module),
+      embedding,
+    });
+    embeddings.set(module.id, embedding);
+  }
+
+  return embeddings;
+}
+
 /**
  * Load pre-generated module embeddings from data file
  */
@@ -58,45 +113,34 @@ export function loadEmbeddings(): ModuleEmbeddingData {
     return embeddingsData;
   }
 
-  // Look for embeddings file in multiple locations
   const possiblePaths = [
+    path.join(process.cwd(), 'data/modules-embeddings.json'),
     path.join(__dirname, '../../data/modules-embeddings.json'),
     path.join(__dirname, '../data/modules-embeddings.json'),
-    path.join(process.cwd(), 'data/modules-embeddings.json'),
   ];
 
-  let embeddingsPath: string | null = null;
-  for (const p of possiblePaths) {
-    if (fs.existsSync(p)) {
-      embeddingsPath = p;
-      break;
+  for (const candidate of new Set(possiblePaths)) {
+    try {
+      if (!fs.existsSync(candidate)) continue;
+      const parsed = JSON.parse(fs.readFileSync(candidate, 'utf-8'));
+      if (Array.isArray(parsed)) {
+        embeddingsData = {
+          model: 'mock-or-text-embedding-3-small',
+          dimension: parsed[0]?.embedding?.length || 1536,
+          generated_at: new Date().toISOString(),
+          modules: parsed,
+        };
+        return embeddingsData;
+      }
+      if (parsed && typeof parsed.model === 'string' && Array.isArray(parsed.modules)) {
+        embeddingsData = parsed as ModuleEmbeddingData;
+        return embeddingsData;
+      }
+    } catch {
+      // A missing or invalid cache must not stop recommendations.
     }
   }
-
-  if (!embeddingsPath) {
-    throw new Error('embeddings file not found');
-  }
-
-  const data = fs.readFileSync(embeddingsPath, 'utf-8');
-  const parsed = JSON.parse(data);
-
-  // Handle both formats: array of embeddings or structured object
-  if (Array.isArray(parsed)) {
-    embeddingsData = {
-      model: 'mock-or-text-embedding-3-small',
-      dimension: parsed[0]?.embedding?.length || 1536,
-      generated_at: new Date().toISOString(),
-      modules: parsed,
-    };
-  } else {
-    embeddingsData = parsed;
-  }
-
-  if (!embeddingsData) {
-    throw new Error('failed to load embeddings data');
-  }
-
-  return embeddingsData;
+  throw new Error('No usable embeddings file found');
 }
 
 /**
@@ -136,7 +180,7 @@ function generateReason(module: ModuleMetadata, query: string): string {
     return `Matches: ${matchedKeywords.slice(0, 3).join(', ')}`;
   }
 
-  return `Relevant for: ${module.useCases[0]}`;
+  return module.useCases[0] ? `Relevant for: ${module.useCases[0]}` : module.description;
 }
 
 /**
@@ -170,26 +214,28 @@ export async function recommendModules(
   }
 
   // Load pre-generated embeddings
-  const embeddings = loadEmbeddings();
-
-  // Calculate similarity scores for all modules
-  const scores: RecommendationResult[] = embeddings.modules
-    .map((moduleEmbedding) => {
-      const module = catalog.find((m) => m.id === moduleEmbedding.id);
-      if (!module) {
-        // Module in embeddings but not in catalog (skip it)
-        return null;
-      }
-
-      const score = cosineSimilarity(queryEmbedding, moduleEmbedding.embedding);
-
-      return {
+  let embeddings: ModuleEmbeddingData | null = null;
+  try {
+    embeddings = loadEmbeddings();
+  } catch {
+    // Generate embeddings from the current catalog when no cache is usable.
+  }
+  const moduleEmbeddings = await getRuntimeModuleEmbeddings(
+    catalog,
+    embeddings,
+    queryEmbedding.length
+  );
+  const scores: RecommendationResult[] = catalog.flatMap((module) => {
+    const embedding = moduleEmbeddings.get(module.id);
+    if (!embedding) return [];
+    return [
+      {
         module,
-        score,
+        score: cosineSimilarity(queryEmbedding, embedding),
         reason: generateReason(module, query),
-      };
-    })
-    .filter((r): r is RecommendationResult => r !== null);
+      },
+    ];
+  });
 
   // Sort by score (highest first) and return top K
   scores.sort((a, b) => b.score - a.score);

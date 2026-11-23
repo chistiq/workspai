@@ -35,13 +35,9 @@ function mockExecaForCatalog(
 ) {
   let responseIndex = 0;
   mockExeca.mockImplementation(async (_cmd: string, args?: string[]) => {
-    // resolveRapidkitRunner probes – always succeed
-    if (args?.[0] === '-c' || args?.[0] === '--version') {
-      return { stdout: '1', stderr: '', exitCode: 0 };
-    }
-    // sysconfig probe
-    if (args?.[1]?.includes?.('sysconfig')) {
-      return { stdout: '/usr/bin/rapidkit', stderr: '', exitCode: 0 };
+    if (args?.at(-1) === '--version') return { stdout: 'Python 3.11', exitCode: 0 };
+    if (args?.includes('--version') && args?.includes('--json')) {
+      return { stdout: '{"schema_version":1,"version":"0.6.3"}', exitCode: 0 };
     }
     // Actual module command calls
     if (args?.some((a: string) => a === 'modules')) {
@@ -184,6 +180,11 @@ describe('getModulesCatalog', () => {
       detailed: true,
     });
     expect(result).not.toBeNull();
+    expect(mockExeca).toHaveBeenCalledWith(
+      expect.any(String),
+      expect.arrayContaining(['modules', 'list', '--json-schema', '1', '--json']),
+      expect.any(Object)
+    );
   });
 
   it('uses custom TTL', async () => {
@@ -456,7 +457,8 @@ describe('checkRapidkitCoreVersionCompatible', () => {
     process.env.RAPIDKIT_CORE_PYTHON_PACKAGE = 'rapidkit-core>=0.27.0,<0.28.0';
 
     mockExeca.mockImplementation(async (_cmd: string, args: string[]) => {
-      if (args?.[0] === '-m' && args?.[1] === 'pip' && args?.[2] === 'show') {
+      if (args?.at(-1) === '--version') return { exitCode: 0, stdout: 'Python 3.11' };
+      if (args?.includes('pip') && args.includes('show')) {
         return { exitCode: 0, stdout: 'Name: rapidkit-core\nVersion: 0.27.4', stderr: '' };
       }
       throw new Error('not found');
@@ -473,7 +475,8 @@ describe('checkRapidkitCoreVersionCompatible', () => {
     process.env.RAPIDKIT_CORE_PYTHON_PACKAGE = 'rapidkit-core>=0.27.0,<0.28.0';
 
     mockExeca.mockImplementation(async (_cmd: string, args: string[]) => {
-      if (args?.[0] === '-m' && args?.[1] === 'pip' && args?.[2] === 'show') {
+      if (args?.at(-1) === '--version') return { exitCode: 0, stdout: 'Python 3.11' };
+      if (args?.includes('pip') && args.includes('show')) {
         return { exitCode: 0, stdout: 'Name: rapidkit-core\nVersion: 0.26.9', stderr: '' };
       }
       throw new Error('not found');

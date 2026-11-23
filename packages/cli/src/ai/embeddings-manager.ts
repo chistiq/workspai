@@ -9,6 +9,7 @@ import { fileURLToPath } from 'url';
 import chalk from 'chalk';
 import { prompt } from '../cli-ui/prompts.js';
 import { createUiSpinner } from '../cli-ui/spinner.js';
+import { moduleEmbeddingText, moduleEmbeddingInputHash } from './module-embedding-input.js';
 import { getModuleCatalog } from './module-catalog.js';
 import { generateEmbeddings, isInitialized, isMockMode } from './openai-client.js';
 
@@ -117,9 +118,7 @@ export async function generateModuleEmbeddings(
     }
 
     // Prepare texts for embedding
-    const texts = modules.map((module) => {
-      return `${module.name}. ${module.description}. ${module.longDescription}. Keywords: ${module.keywords.join(', ')}. Use cases: ${module.useCases.join(', ')}.`;
-    });
+    const texts = modules.map(moduleEmbeddingText);
 
     const spinner = createUiSpinner(`Generating embeddings for ${modules.length} modules...`, {
       component: 'ai',
@@ -133,13 +132,14 @@ export async function generateModuleEmbeddings(
 
       // Create output structure
       const output = {
-        model: 'text-embedding-3-small',
+        model: isMockMode() ? 'mock' : 'text-embedding-3-small',
         dimension: embeddings[0].length,
         generated_at: new Date().toISOString(),
         modules: modules.map((module, index) => ({
           id: module.id,
           name: module.name,
           embedding: embeddings[index],
+          inputHash: moduleEmbeddingInputHash(texts[index]),
         })),
       };
 

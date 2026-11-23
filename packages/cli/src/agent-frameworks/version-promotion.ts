@@ -25,8 +25,13 @@ export function buildAgentFrameworkVersionPromotion(
   if (discovery.policy !== 'discover-only' || !discovery.admissionRequired) {
     throw new Error('Version promotion requires a discover-only, admission-required report.');
   }
-  if (discovery.summary.blocked > 0) {
-    throw new Error('Version promotion is blocked by an upstream registry regression.');
+  if (
+    discovery.summary.blocked > 0 ||
+    discovery.adapters.some((adapter) => adapter.status === 'blocked')
+  ) {
+    throw new Error(
+      'Version promotion is blocked by upstream discovery. Review the discovery report.'
+    );
   }
   const discoveryByAdapter = new Map(
     discovery.adapters.map((adapter) => [adapter.adapterId, adapter])
@@ -69,8 +74,14 @@ export function buildAgentFrameworkVersionPromotion(
           `Discovery package identity does not match ${baseline.adapterId}/${dependency.name}.`
         );
       }
-      if (candidate.status === 'registry-regression') {
-        throw new Error(`Registry regression blocks ${baseline.adapterId}/${dependency.name}.`);
+      if (
+        candidate.status === 'registry-regression' ||
+        candidate.status === 'unavailable' ||
+        !candidate.latestRegistryVersion
+      ) {
+        throw new Error(
+          `No eligible registry evidence for ${baseline.adapterId}/${dependency.name}.`
+        );
       }
       if (compareRegistryVersions(candidate.latestRegistryVersion, dependency.version) < 0) {
         throw new Error(

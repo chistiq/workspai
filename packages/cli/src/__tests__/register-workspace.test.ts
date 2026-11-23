@@ -1,5 +1,6 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { registerWorkspaceAtPath } from '../create.js';
+import { RAPIDKIT_CORE_PACKAGE } from '../core-bridge/core-runtime-compatibility.js';
 import * as fsExtra from 'fs-extra';
 import { execa } from 'execa';
 import { finalizeWorkspaceOnboarding } from '../utils/workspace-onboarding.js';
@@ -39,7 +40,17 @@ vi.mock('fs', () => ({
 
 // Helper: build a fully-passing execa mock that succeeds for every call
 function mockExecaSuccess() {
-  vi.mocked(execa).mockResolvedValue({ stdout: '', stderr: '', exitCode: 0 } as any);
+  vi.mocked(execa).mockImplementation(
+    (command: string, args?: readonly string[]) =>
+      Promise.resolve(
+        pythonProbeResult(command, args) ?? { stdout: '', stderr: '', exitCode: 0 }
+      ) as never
+  );
+}
+
+function pythonProbeResult(command: string, args?: readonly string[]) {
+  if (!args?.some((arg) => arg.includes('print(sys.executable)'))) return undefined;
+  return { stdout: `${command}\n3.11.18`, stderr: '', exitCode: 0 };
 }
 
 describe('registerWorkspaceAtPath', () => {
@@ -105,7 +116,7 @@ describe('registerWorkspaceAtPath', () => {
     expect(execa).toHaveBeenCalledWith('poetry', ['--version']);
     expect(execa).toHaveBeenCalledWith(
       'poetry',
-      ['init', '--no-interaction', '--python', '^3.10'],
+      ['init', '--no-interaction', '--python', '^3.11'],
       { cwd: testPath }
     );
     expect(execa).toHaveBeenCalledWith(
@@ -124,7 +135,7 @@ describe('registerWorkspaceAtPath', () => {
     expect(addCalls.length).toBeGreaterThan(0);
     // The first add call should have cwd and timeout
     expect(addCalls[0][0]).toBe('poetry');
-    expect(addCalls[0][1]).toEqual(['add', 'rapidkit-core']);
+    expect(addCalls[0][1]).toEqual(['add', RAPIDKIT_CORE_PACKAGE]);
     expect(addCalls[0][2]).toHaveProperty('cwd', testPath);
     expect(addCalls[0][2]).toHaveProperty('timeout');
   });
@@ -172,8 +183,10 @@ describe('registerWorkspaceAtPath', () => {
   it('should warn (not throw) when git init fails during workspace registration', async () => {
     mockExecaSuccess();
     // Make git init throw
-    vi.mocked(execa).mockImplementation((cmd: any, _args: any, _opts?: any) => {
+    vi.mocked(execa).mockImplementation((cmd: any, args: any, _opts?: any) => {
       if (cmd === 'git') throw new Error('git not found');
+      const probe = pythonProbeResult(cmd, args);
+      if (probe) return Promise.resolve(probe) as never;
       return Promise.resolve({ stdout: '', stderr: '', exitCode: 0 }) as any;
     });
 
@@ -202,6 +215,8 @@ describe('registerWorkspaceAtPath', () => {
   // ─── Error path: poetry probe fails → auto-selects venv ──────────────────
   it('should fall back to venv when poetry --version probe fails', async () => {
     vi.mocked(execa).mockImplementation((cmd: any, args: any, _opts?: any) => {
+      const probe = pythonProbeResult(cmd, args);
+      if (probe) return Promise.resolve(probe) as never;
       // poetry --version probe fails
       if (cmd === 'poetry' && Array.isArray(args) && args[0] === '--version') {
         return Promise.reject(new Error('poetry not found')) as any;
@@ -250,6 +265,8 @@ describe('registerWorkspaceAtPath', () => {
     const installError = new Error('poetry install exploded');
 
     vi.mocked(execa).mockImplementation((cmd: any, args: any, _opts?: any) => {
+      const probe = pythonProbeResult(cmd, args);
+      if (probe) return Promise.resolve(probe) as never;
       // Let poetry --version succeed so poetry is chosen
       if (cmd === 'poetry' && Array.isArray(args) && args[0] === '--version') {
         return Promise.resolve({ stdout: 'Poetry 1.8.0', stderr: '', exitCode: 0 }) as any;
@@ -311,6 +328,8 @@ describe('registerWorkspaceAtPath', () => {
 
   it('should skip git init when target is already inside a git worktree', async () => {
     vi.mocked(execa).mockImplementation((cmd: any, args: any, opts?: any) => {
+      const probe = pythonProbeResult(cmd, args);
+      if (probe) return Promise.resolve(probe) as never;
       if (cmd === 'git' && Array.isArray(args) && args[0] === 'rev-parse') {
         return Promise.resolve({
           stdout: '/tmp/existing-parent-repo',
