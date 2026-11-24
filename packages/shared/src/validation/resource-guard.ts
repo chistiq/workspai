@@ -12,7 +12,9 @@ interface PendingValue {
 }
 
 function pointerSegment(value: string): string {
-  return value.replaceAll('~', '~0').replaceAll('/', '~1');
+  return value.includes('~') || value.includes('/')
+    ? value.replaceAll('~', '~0').replaceAll('/', '~1')
+    : value;
 }
 
 function diagnostic(code: string, path: string, message: string): WisValidationDiagnostic {
@@ -117,12 +119,23 @@ export function inspectJsonResourceLimits(
       continue;
     }
     ancestors.add(value);
-    pending.push({ ...current, leaving: true });
+    pending.push({ value, path: current.path, depth: current.depth, leaving: true });
 
     if (Array.isArray(value)) {
-      const descriptors = Object.getOwnPropertyDescriptors(value);
-      for (let index = value.length - 1; index >= 0; index -= 1) {
-        const descriptor = descriptors[String(index)];
+      const length: unknown = Object.getOwnPropertyDescriptor(value, 'length')?.value;
+      if (
+        typeof length !== 'number' ||
+        !Number.isSafeInteger(length) ||
+        length < 0 ||
+        length > limits.maxNodes
+      ) {
+        diagnostics.push(
+          diagnostic('WIS_RESOURCE_NODE_LIMIT', current.path, 'Input exceeds the node limit.')
+        );
+        break;
+      }
+      for (let index = length - 1; index >= 0; index -= 1) {
+        const descriptor = Object.getOwnPropertyDescriptor(value, index);
         if (!descriptor || !('value' in descriptor)) {
           diagnostics.push(
             diagnostic(
@@ -153,14 +166,16 @@ export function inspectJsonResourceLimits(
       );
       continue;
     }
-    if (Object.getOwnPropertySymbols(value).length > 0) {
+    const keys = Reflect.ownKeys(value);
+    if (keys.some((key) => typeof key === 'symbol')) {
       diagnostics.push(
         diagnostic('WIS_RESOURCE_SYMBOL_KEY', current.path, 'Symbol keys are not portable JSON.')
       );
     }
-    const descriptors = Object.getOwnPropertyDescriptors(value);
-    for (const key of Object.keys(descriptors).reverse()) {
-      const descriptor = descriptors[key];
+    for (let index = keys.length - 1; index >= 0; index -= 1) {
+      const key = keys[index];
+      if (typeof key !== 'string') continue;
+      const descriptor = Object.getOwnPropertyDescriptor(value, key);
       if (!descriptor?.enumerable) continue;
       if (!('value' in descriptor)) {
         diagnostics.push(

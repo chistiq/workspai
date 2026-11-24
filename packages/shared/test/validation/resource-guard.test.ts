@@ -57,6 +57,21 @@ describe('JSON resource preflight', () => {
     expect(invoked).toBe(false);
   });
 
+  it('rejects an oversized sparse array before inspecting individual indices', () => {
+    const value = new Proxy(new Array(1000), {
+      getOwnPropertyDescriptor(target, key) {
+        if (key !== 'length') throw new Error('Array elements must not be inspected');
+        return Reflect.getOwnPropertyDescriptor(target, key);
+      },
+      ownKeys() {
+        throw new Error('An oversized array must not be enumerated');
+      },
+    });
+    expect(inspectJsonResourceLimits({ value }, limits)).toEqual([
+      expect.objectContaining({ code: 'WIS_RESOURCE_NODE_LIMIT', path: '/value' }),
+    ]);
+  });
+
   it('accepts null-prototype records but rejects symbol and accessor keys', () => {
     const value = Object.create(null) as Record<string | symbol, unknown>;
     value.safe = true;
