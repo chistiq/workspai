@@ -73,11 +73,10 @@ report and stop promotion. Candidate pins are produced as a separate file.
 
 The [exact candidate manifest](./AGENT_FRAMEWORK_CANDIDATES_v0.83.0.json)
 includes runtime-support pins. All six candidates passed credentialless
-generated-project conformance on Linux. To ship these candidates in v0.83.0,
-apply the reviewed proposal on the version update branch and finish the complete
-[admission workflow](../../../.github/agent-framework-version-update.md).
-Bundled Create and Attach continue to use their existing reviewed admissions
-until the new receipt is available.
+generated-project conformance on Linux. The manual and weekly full matrix runs
+qualify the proposal from the run's `main` commit. Apply the resulting patch to update the bundled
+baseline and admission together for Create and Attach. See the
+[admission guide](../../../.github/agent-framework-version-update.md).
 
 ## Install or upgrade
 

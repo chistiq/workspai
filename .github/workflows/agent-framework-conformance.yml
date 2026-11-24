@@ -1,56 +1,8 @@
 name: Agent Framework Adapter Matrix
 
 on:
-  pull_request:
-    paths:
-      - "packages/cli/src/agent-frameworks/**"
-      - "packages/cli/src/contracts/agent-framework-contract.ts"
-      - "packages/cli/src/proof-carrying-change.ts"
-      - "packages/cli/src/utils/json-schema-contract.ts"
-      - "packages/cli/src/index.ts"
-      - "packages/cli/src/doctor.ts"
-      - "packages/cli/src/utils/backend-framework-contract.ts"
-      - "packages/cli/src/utils/project-kind.ts"
-      - "packages/cli/src/utils/workspace-contract.ts"
-      - "packages/cli/src/cli-ui/kit-picker-choices.ts"
-      - "packages/cli/src/contracts/create-planner-capabilities-contract.ts"
-      - "packages/cli/src/contracts/runtime-command-surface-contract.ts"
-      - "packages/cli/src/utils/workspace-paths.ts"
-      - "packages/cli/src/__tests__/agent-framework-*.test.ts"
-      - "packages/cli/src/__tests__/agent-framework-lifecycle.test.ts"
-      - "packages/cli/src/__tests__/agent-framework-admission-candidate.test.ts"
-      - "packages/cli/src/__tests__/agent-framework-registry.test.ts"
-      - "packages/cli/src/__tests__/agent-framework-version-policy.test.ts"
-      - "packages/cli/src/__tests__/microsoft-agent-framework-adapter.test.ts"
-      - "packages/cli/src/__tests__/openai-agents-adapter.test.ts"
-      - "packages/cli/src/__tests__/openai-agents-context-loader.test.ts"
-      - "packages/cli/src/__tests__/openai-agents-lifecycle.test.ts"
-      - "packages/cli/src/__tests__/google-adk-adapter.test.ts"
-      - "packages/cli/src/__tests__/google-adk-lifecycle.test.ts"
-      - "packages/cli/src/__tests__/agent-framework-selection.test.ts"
-      - "packages/cli/src/__tests__/contracts/agent-framework-contract.test.ts"
-      - "packages/cli/src/__tests__/handle-create-flags.test.ts"
-      - "packages/cli/src/__tests__/kit-picker-choices.test.ts"
-      - "packages/cli/scripts/smoke-microsoft-agent-framework-adapter.ts"
-      - "packages/cli/scripts/smoke-openai-agents-adapter.ts"
-      - "packages/cli/scripts/smoke-google-adk-adapter.ts"
-      - "packages/cli/scripts/verify-agent-framework-conformance.ts"
-      - "packages/cli/scripts/discover-agent-framework-versions.ts"
-      - "packages/cli/scripts/propose-agent-framework-version-update.ts"
-      - "packages/cli/scripts/promote-agent-framework-release-admission.ts"
-      - "packages/cli/package.json"
-      - "packages/cli/contracts/agent-framework-capabilities.v1.json"
-      - "packages/cli/contracts/create-planner-capabilities.v1.json"
-      - "packages/cli/contracts/runtime-command-surface.v1.json"
-      - "packages/cli/contracts/workspace-intelligence/agent-framework-*.v*.json"
-      - "contracts/agent-framework-capabilities.v1.json"
-      - "contracts/create-planner-capabilities.v1.json"
-      - "contracts/runtime-command-surface.v1.json"
-      - "contracts/workspace-intelligence/agent-framework-*.v*.json"
-      - ".github/workflows/agent-framework-conformance.yml"
-      - ".github/workflows/agent-framework-version-discovery.yml"
-      - ".github/agent-framework-version-update.md"
-      - "package-lock.json"
+  schedule:
+    - cron: "43 8 * * 1"
   workflow_dispatch:
     inputs:
       qualification_mode:
@@ -64,129 +16,43 @@ on:
 
 permissions:
   contents: read
-  pull-requests: read
 
 concurrency:
   group: agent-framework-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  detect-changes:
-    name: Detect affected adapter families
+  qualification:
+    name: Validate branch and select qualification mode
     runs-on: ubuntu-latest
     outputs:
-      microsoft: ${{ steps.filter.outputs.microsoft }}
-      openai: ${{ steps.filter.outputs.openai }}
-      google: ${{ steps.filter.outputs.google }}
+      full: ${{ (github.event_name == 'schedule' || inputs.qualification_mode == 'full') && 'true' || 'false' }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          persist-credentials: false
-
-      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4
-        id: filter
-        with:
-          filters: |
-            microsoft:
-              - 'packages/cli/src/agent-frameworks/**'
-              - '!packages/cli/src/agent-frameworks/adapters/openai-agents/**'
-              - '!packages/cli/src/agent-frameworks/adapters/google-adk/**'
-              - 'packages/cli/src/__tests__/microsoft-agent-framework-adapter.test.ts'
-              - 'packages/cli/src/__tests__/agent-framework-*.test.ts'
-              - 'packages/cli/scripts/smoke-microsoft-agent-framework-adapter.ts'
-              - 'packages/cli/src/contracts/agent-framework-contract.ts'
-              - 'packages/cli/src/proof-carrying-change.ts'
-              - 'packages/cli/src/utils/json-schema-contract.ts'
-              - 'packages/cli/src/utils/workspace-paths.ts'
-              - 'packages/cli/src/index.ts'
-              - 'packages/cli/src/doctor.ts'
-              - 'packages/cli/src/utils/backend-framework-contract.ts'
-              - 'packages/cli/src/utils/project-kind.ts'
-              - 'packages/cli/src/utils/workspace-contract.ts'
-              - 'packages/cli/src/cli-ui/kit-picker-choices.ts'
-              - 'packages/cli/src/contracts/create-planner-capabilities-contract.ts'
-              - 'packages/cli/src/contracts/runtime-command-surface-contract.ts'
-              - 'packages/cli/contracts/create-planner-capabilities.v1.json'
-              - 'packages/cli/contracts/runtime-command-surface.v1.json'
-              - 'contracts/create-planner-capabilities.v1.json'
-              - 'contracts/runtime-command-surface.v1.json'
-              - 'packages/cli/scripts/verify-agent-framework-conformance.ts'
-              - 'packages/cli/scripts/promote-agent-framework-release-admission.ts'
-              - 'packages/cli/package.json'
-              - 'package-lock.json'
-              - '.github/workflows/agent-framework-conformance.yml'
-            openai:
-              - 'packages/cli/src/agent-frameworks/**'
-              - '!packages/cli/src/agent-frameworks/adapters/microsoft-agent-framework/**'
-              - '!packages/cli/src/agent-frameworks/adapters/google-adk/**'
-              - 'packages/cli/src/__tests__/openai-agents-*.test.ts'
-              - 'packages/cli/src/__tests__/agent-framework-*.test.ts'
-              - 'packages/cli/scripts/smoke-openai-agents-adapter.ts'
-              - 'packages/cli/src/contracts/agent-framework-contract.ts'
-              - 'packages/cli/src/proof-carrying-change.ts'
-              - 'packages/cli/src/utils/json-schema-contract.ts'
-              - 'packages/cli/src/utils/workspace-paths.ts'
-              - 'packages/cli/src/index.ts'
-              - 'packages/cli/src/doctor.ts'
-              - 'packages/cli/src/utils/backend-framework-contract.ts'
-              - 'packages/cli/src/utils/project-kind.ts'
-              - 'packages/cli/src/utils/workspace-contract.ts'
-              - 'packages/cli/src/cli-ui/kit-picker-choices.ts'
-              - 'packages/cli/src/contracts/create-planner-capabilities-contract.ts'
-              - 'packages/cli/src/contracts/runtime-command-surface-contract.ts'
-              - 'packages/cli/contracts/create-planner-capabilities.v1.json'
-              - 'packages/cli/contracts/runtime-command-surface.v1.json'
-              - 'contracts/create-planner-capabilities.v1.json'
-              - 'contracts/runtime-command-surface.v1.json'
-              - 'packages/cli/scripts/verify-agent-framework-conformance.ts'
-              - 'packages/cli/scripts/promote-agent-framework-release-admission.ts'
-              - 'packages/cli/package.json'
-              - 'package-lock.json'
-              - '.github/workflows/agent-framework-conformance.yml'
-            google:
-              - 'packages/cli/src/agent-frameworks/**'
-              - '!packages/cli/src/agent-frameworks/adapters/microsoft-agent-framework/**'
-              - '!packages/cli/src/agent-frameworks/adapters/openai-agents/**'
-              - 'packages/cli/src/__tests__/google-adk-*.test.ts'
-              - 'packages/cli/src/__tests__/agent-framework-*.test.ts'
-              - 'packages/cli/scripts/smoke-google-adk-adapter.ts'
-              - 'packages/cli/src/contracts/agent-framework-contract.ts'
-              - 'packages/cli/src/proof-carrying-change.ts'
-              - 'packages/cli/src/utils/json-schema-contract.ts'
-              - 'packages/cli/src/utils/workspace-paths.ts'
-              - 'packages/cli/src/index.ts'
-              - 'packages/cli/src/doctor.ts'
-              - 'packages/cli/src/utils/backend-framework-contract.ts'
-              - 'packages/cli/src/utils/project-kind.ts'
-              - 'packages/cli/src/utils/workspace-contract.ts'
-              - 'packages/cli/src/cli-ui/kit-picker-choices.ts'
-              - 'packages/cli/src/contracts/create-planner-capabilities-contract.ts'
-              - 'packages/cli/src/contracts/runtime-command-surface-contract.ts'
-              - 'packages/cli/contracts/create-planner-capabilities.v1.json'
-              - 'packages/cli/contracts/runtime-command-surface.v1.json'
-              - 'contracts/create-planner-capabilities.v1.json'
-              - 'contracts/runtime-command-surface.v1.json'
-              - 'packages/cli/scripts/verify-agent-framework-conformance.ts'
-              - 'packages/cli/scripts/promote-agent-framework-release-admission.ts'
-              - 'packages/cli/package.json'
-              - 'package-lock.json'
-              - '.github/workflows/agent-framework-conformance.yml'
+      - name: Require the default branch
+        shell: bash
+        env:
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        run: |
+          if [ "$GITHUB_REF" != "refs/heads/$DEFAULT_BRANCH" ]; then
+            echo '::error::Run Agent Framework qualification on the default branch.'
+            exit 1
+          fi
 
   microsoft-agent-framework:
     name: Microsoft Agent Framework · ${{ matrix.runtime }} · ${{ matrix.os }}
-    needs: detect-changes
-    if: github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.microsoft == 'true'
+    needs: qualification
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.qualification_mode == 'full' && '["ubuntu-24.04","macos-latest","windows-latest"]' || '["ubuntu-24.04"]') }}
+        os: ${{ fromJSON(needs.qualification.outputs.full == 'true' && '["ubuntu-24.04","macos-latest","windows-latest"]' || '["ubuntu-24.04"]') }}
         runtime: [python, dotnet]
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -209,6 +75,10 @@ jobs:
 
       - name: Install JavaScript dependencies
         run: npm ci
+
+      - name: Select the committed version proposal
+        working-directory: packages/cli
+        run: npm exec tsx -- scripts/prepare-agent-framework-candidate.ts
 
       - name: Install pinned uv runtime
         if: matrix.runtime == 'python'
@@ -233,19 +103,19 @@ jobs:
 
   openai-agents:
     name: OpenAI Agents SDK · ${{ matrix.runtime }} · ${{ matrix.os }}
-    needs: detect-changes
-    if: github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.openai == 'true'
+    needs: qualification
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.qualification_mode == 'full' && '["ubuntu-24.04","macos-latest","windows-latest"]' || '["ubuntu-24.04"]') }}
+        os: ${{ fromJSON(needs.qualification.outputs.full == 'true' && '["ubuntu-24.04","macos-latest","windows-latest"]' || '["ubuntu-24.04"]') }}
         runtime: [python, typescript]
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -261,6 +131,10 @@ jobs:
 
       - name: Install JavaScript dependencies
         run: npm ci
+
+      - name: Select the committed version proposal
+        working-directory: packages/cli
+        run: npm exec tsx -- scripts/prepare-agent-framework-candidate.ts
 
       - name: Install pinned uv runtime
         if: matrix.runtime == 'python'
@@ -285,19 +159,19 @@ jobs:
 
   google-adk:
     name: Google ADK · ${{ matrix.runtime }} · ${{ matrix.os }}
-    needs: detect-changes
-    if: github.event_name == 'workflow_dispatch' || needs.detect-changes.outputs.google == 'true'
+    needs: qualification
     runs-on: ${{ matrix.os }}
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
-        os: ${{ fromJSON(github.event_name == 'workflow_dispatch' && inputs.qualification_mode == 'full' && '["ubuntu-24.04","macos-latest","windows-latest"]' || '["ubuntu-24.04"]') }}
+        os: ${{ fromJSON(needs.qualification.outputs.full == 'true' && '["ubuntu-24.04","macos-latest","windows-latest"]' || '["ubuntu-24.04"]') }}
         runtime: [python, typescript]
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -313,6 +187,10 @@ jobs:
 
       - name: Install JavaScript dependencies
         run: npm ci
+
+      - name: Select the committed version proposal
+        working-directory: packages/cli
+        run: npm exec tsx -- scripts/prepare-agent-framework-candidate.ts
 
       - name: Install pinned uv runtime
         if: matrix.runtime == 'python'
@@ -337,14 +215,15 @@ jobs:
 
   admit-matrix:
     name: Admit complete adapter matrix
-    if: always() && github.event_name == 'workflow_dispatch' && inputs.qualification_mode == 'full' && needs['microsoft-agent-framework'].result == 'success' && needs['openai-agents'].result == 'success' && needs['google-adk'].result == 'success'
-    needs: [microsoft-agent-framework, openai-agents, google-adk]
+    if: github.repository == 'chistiq/workspai' && needs.qualification.outputs.full == 'true' && needs['microsoft-agent-framework'].result == 'success' && needs['openai-agents'].result == 'success' && needs['google-adk'].result == 'success'
+    needs: [qualification, microsoft-agent-framework, openai-agents, google-adk]
     runs-on: ubuntu-latest
     timeout-minutes: 10
 
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
+          ref: ${{ github.sha }}
           persist-credentials: false
 
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
@@ -355,6 +234,10 @@ jobs:
 
       - name: Install JavaScript dependencies
         run: npm ci
+
+      - name: Select the committed version proposal
+        working-directory: packages/cli
+        run: npm exec tsx -- scripts/prepare-agent-framework-candidate.ts
 
       - name: Download every conformance lane
         uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
@@ -366,8 +249,29 @@ jobs:
       - name: Verify evidence and admit complete matrix
         working-directory: packages/cli
         env:
-          SOURCE_COMMIT: ${{ github.event.pull_request.head.sha || github.sha }}
+          SOURCE_COMMIT: ${{ github.sha }}
         run: npm exec tsx -- scripts/verify-agent-framework-conformance.ts --reports test-results/agent-framework-conformance --write-candidate test-results/agent-framework-conformance/agent-framework-admission-candidate.json --source-commit "$SOURCE_COMMIT"
+
+      - name: Bind the verified matrix to a release admission
+        working-directory: packages/cli
+        run: >-
+          npm exec tsx -- scripts/promote-agent-framework-release-admission.ts
+          --candidate test-results/agent-framework-conformance/agent-framework-admission-candidate.json
+          --output src/agent-frameworks/release-admissions.v2.json
+          --repository "${{ github.repository }}"
+          --source-commit "${{ github.sha }}"
+          --workflow-run-id "${{ github.run_id }}"
+
+      - name: Verify bundled admission and kit selection
+        run: npm --workspace workspai exec vitest -- run src/__tests__/agent-framework-selection.test.ts src/__tests__/agent-framework-release-admission.test.ts
+
+      - name: Export the verified baseline and admission together
+        shell: bash
+        run: |
+          git diff --no-ext-diff HEAD -- \
+            packages/cli/src/agent-frameworks/version-baselines.v1.json \
+            packages/cli/src/agent-frameworks/release-admissions.v2.json \
+            > packages/cli/test-results/agent-framework-conformance/release-admission.patch
 
       - name: Upload reviewable admission candidate
         if: success()
@@ -377,61 +281,3 @@ jobs:
           path: packages/cli/test-results/agent-framework-conformance
           if-no-files-found: error
           retention-days: 30
-
-  promote-automation-admission:
-    name: Bind admitted matrix to automation pull request
-    if: github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/automation/agent-framework-version-baselines'
-    needs: admit-matrix
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: write
-
-    steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
-        with:
-          persist-credentials: false
-
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
-        with:
-          node-version: "20.19.0"
-          cache: npm
-          cache-dependency-path: package-lock.json
-
-      - name: Install JavaScript dependencies
-        run: npm ci
-
-      - name: Download verified admission candidate
-        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
-        with:
-          name: agent-framework-admission-candidate-${{ github.sha }}
-          path: packages/cli/test-results/agent-framework-admission
-
-      - name: Promote exact release admission
-        working-directory: packages/cli
-        run: >-
-          npm exec tsx -- scripts/promote-agent-framework-release-admission.ts
-          --candidate test-results/agent-framework-admission/agent-framework-admission-candidate.json
-          --output src/agent-frameworks/release-admissions.v2.json
-          --repository "${{ github.repository }}"
-          --source-commit "${{ github.sha }}"
-          --workflow-run-id "${{ github.run_id }}"
-
-      - name: Verify bundled admission and kit selection
-        run: npm --workspace workspai exec vitest -- run src/__tests__/agent-framework-selection.test.ts src/__tests__/agent-framework-release-admission.test.ts
-
-      - name: Update the existing automation branch
-        shell: bash
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          if git diff --quiet -- packages/cli/src/agent-frameworks/release-admissions.v2.json; then
-            echo "Release admission already matches this verified matrix."
-            exit 0
-          fi
-          gh auth setup-git
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add -- packages/cli/src/agent-frameworks/release-admissions.v2.json
-          git commit --no-verify -m "chore(agent-frameworks): bind verified release admission"
-          git push --no-verify origin "HEAD:refs/heads/${GITHUB_REF_NAME}"

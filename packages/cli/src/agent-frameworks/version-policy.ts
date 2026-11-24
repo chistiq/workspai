@@ -42,7 +42,7 @@ export type AgentFrameworkVersionBaselineDocument = {
 
 const VERSION_PATTERN = /^\d+(?:\.\d+)*(?:[a-z0-9.-]*)$/i;
 
-function assertBaselineDocument(
+export function assertAgentFrameworkVersionBaselineDocument(
   value: unknown
 ): asserts value is AgentFrameworkVersionBaselineDocument {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -131,7 +131,7 @@ function assertBaselineDocument(
   }
 }
 
-assertBaselineDocument(versionBaselineDocument);
+assertAgentFrameworkVersionBaselineDocument(versionBaselineDocument);
 const validatedVersionBaselineDocument =
   versionBaselineDocument as AgentFrameworkVersionBaselineDocument;
 

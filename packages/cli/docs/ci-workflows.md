@@ -11,7 +11,7 @@ Map of GitHub Actions workflows in this repository. Use this when editing CI to 
 | Windows bridge E2E        | `.github/workflows/windows-bridge-e2e.yml`                | Native Windows bridge and lifecycle checks                                                |
 | E2E smoke                 | `.github/workflows/e2e-smoke.yml`                         | Focused bridge regression smoke                                                           |
 | Official generator smoke  | `.github/workflows/frontend-generator-smoke.yml`          | Contract-driven official-generator drift gate                                             |
-| Agent Framework matrix    | `.github/workflows/agent-framework-conformance.yml`       | Affected-family Linux PR gate plus manual twelve-lane release qualification and admission |
+| Agent Framework matrix    | `.github/workflows/agent-framework-conformance.yml`       | Weekly and manual cross-platform qualification and admission                            |
 | Agent Framework discovery | `.github/workflows/agent-framework-version-discovery.yml` | Weekly PyPI/NuGet candidate report; no commit, PR, or contract rewrite                    |
 | Model Gateway matrix      | `.github/workflows/model-gateway-qualification.yml`       | Three-OS generated-project and lifecycle qualification; manual fast mode stays on Linux   |
 | Model Gateway discovery   | `.github/workflows/model-gateway-version-discovery.yml`   | Weekly npm/PyPI/GitHub candidate report; no baseline write, commit, or PR                 |
@@ -29,19 +29,17 @@ GitHub release agreement. It always saves the registry and GitHub results when
 discovery reaches the upstream checks. A blocked package or adapter is shown
 in the uploaded report and run summary. An unblocked update produces a separate
 `proposed.json`; the scheduled job does not write the source baseline or admit
-a version. A reviewed pin update
-still has to pass the manual `full` mode of `agent-framework-conformance` on
-Linux, macOS, and Windows for every built-in adapter runtime. Pull requests run
-the faster Linux gate only for the affected Microsoft, OpenAI, or Google family;
-shared agent-framework surfaces select the affected families, while documentation-only
-changes skip the specialized workflow. The full matrix compiles the nested `agents/primary`
+a version. The Agent Framework matrix runs manually on `main` or on Mondays
+at 08:43 UTC. Scheduled runs and manual `full` runs cover Linux, macOS, and
+Windows for every built-in adapter runtime. Manual `fast` runs cover Linux.
+Each job checks out the run's SHA and qualifies the reviewed proposal for the
+current CLI version when one is present. The full matrix compiles the nested `agents/primary`
 runtime, runs credentialless context-boundary tests, and records manifest-bound
-admission data plus semantic implementation provenance. Promotion requires the
-candidate source commit to equal the checked-out promotion commit. An
-implementation digest is audit evidence, not a runtime lock and not a manual
-maintenance requirement after every routine adapter edit.
-It never sets Foundry, OpenAI, Gemini, or Vertex credentials. Only a reviewed admission on the protected
-version-update branch can promote a green candidate.
+admission data plus semantic implementation provenance. The admission job
+binds the evidence to the same commit, verifies bundled kit selection, and
+exports the baseline and receipt together as `release-admission.patch`. Applying
+that patch records the reviewed versions. The workflow uses read-only repository
+permissions and runs without Foundry, OpenAI, Gemini, or Vertex credentials.
 
 OpenRouter AI Gateway kits are not part of the Agent Framework conformance
 matrix. They use a dedicated qualification workflow for generated-project
@@ -52,8 +50,8 @@ Weekly discovery reports newer stable sdk-core versions, with registry and
 GitHub agreement shown as a candidate diff. It does not write the baseline or
 open a pull request. See [AI Gateway](./model-gateways.md).
 
-The PR template at `.github/agent-framework-version-update.md` is for that
-human pin update. It is not opened by the weekly discovery workflow.
+The [admission guide](../../../.github/agent-framework-version-update.md)
+describes how to review and apply the resulting patch.
 
 ## Change-aware validation
 
@@ -70,7 +68,7 @@ from the changed paths:
 | Workspace lifecycle surface            | Cross-platform workspace E2E                                           |
 | Dependency or security surface         | npm audit, SBOM, dependency review, and CodeQL                         |
 
-Specialized workflows use identical `push` and `pull_request` path filters.
+Path-triggered specialized workflows use matching `push` and `pull_request` path filters.
 The complete Windows CLI suite runs in four shards on separate runners, with
 two Vitest workers per runner to limit filesystem contention. Every shard must
 pass before `CI Gate` succeeds; no test files are excluded. Each shard uploads

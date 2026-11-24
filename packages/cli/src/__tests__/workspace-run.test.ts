@@ -1,6 +1,7 @@
 import os from 'os';
 import path from 'path';
 import fs from 'fs';
+import { setTimeout as sleep } from 'node:timers/promises';
 
 import fsExtra from 'fs-extra';
 import { afterEach, describe, expect, it, vi } from 'vitest';
@@ -1082,6 +1083,60 @@ describe('workspace-run', { timeout: 30_000 }, () => {
       await fsExtra.remove(workspacePath);
     }
   });
+
+  it.skipIf(process.platform === 'win32')(
+    'stops a startup descendant even when its launcher exits first and it ignores SIGTERM',
+    async () => {
+      const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-workspace-run-'));
+      const projectPath = await createProject(workspacePath, 'services/api-a');
+      const heartbeat = path.join(projectPath, 'heartbeat');
+      const pidFile = path.join(projectPath, 'writer.pid');
+      const childScript = `
+        const { appendFileSync } = require('node:fs');
+        process.on('SIGTERM', () => {});
+        setInterval(() => appendFileSync('heartbeat', '.'), 20);
+      `;
+      const launcherScript = `
+        const { spawn } = require('node:child_process');
+        const { writeFileSync } = require('node:fs');
+        const writer = spawn(process.execPath, ['-e', ${JSON.stringify(childScript)}], { stdio: 'ignore' });
+        writeFileSync('writer.pid', String(writer.pid));
+      `;
+      const { execa: actualExeca } = await vi.importActual<typeof import('execa')>('execa');
+      const mock = noGateMock();
+      mock.mockImplementation(
+        (_cmd: string, args: string[], options: Parameters<typeof actualExeca>[2]) =>
+          args.includes('start')
+            ? actualExeca(process.execPath, ['-e', launcherScript], options)
+            : Promise.resolve({ exitCode: 0, stdout: '{}', stderr: '' })
+      );
+      vi.stubEnv('WORKSPAI_WORKSPACE_RUN_STARTUP_GRACE_MS', '1000');
+
+      try {
+        const report = await runWorkspaceStage({
+          workspacePath,
+          stage: 'start',
+          enforceGates: false,
+          json: true,
+        });
+        expect(report.summary).toMatchObject({ selectedCount: 1, passed: 1 });
+        const stoppedHeartbeat = await fs.promises.readFile(heartbeat, 'utf8');
+        await sleep(150);
+        expect(await fs.promises.readFile(heartbeat, 'utf8')).toBe(stoppedHeartbeat);
+      } finally {
+        vi.unstubAllEnvs();
+        const writerPid = Number(await fs.promises.readFile(pidFile, 'utf8').catch(() => ''));
+        if (writerPid > 0) {
+          try {
+            process.kill(writerPid, 'SIGKILL');
+          } catch {
+            // The process group may already have been terminated by workspace run.
+          }
+        }
+        await fsExtra.remove(workspacePath);
+      }
+    }
+  );
 
   it('expands affected set with blast-radius dependency graph', async () => {
     const workspacePath = await fsExtra.mkdtemp(path.join(os.tmpdir(), 'rk-workspace-run-'));

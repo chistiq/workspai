@@ -952,17 +952,54 @@ function resolvePositiveDuration(name: string, fallback: number): number {
 
 type StartupSubprocessResult = {
   exitCode?: number | null;
+  failed?: boolean;
   stdout?: unknown;
   stderr?: unknown;
   timedOut?: boolean;
 };
 
 type StartupSubprocess = Promise<StartupSubprocessResult> & {
+  pid?: number;
   kill?: (signal?: NodeJS.Signals, options?: { forceKillAfterDelay?: number }) => boolean;
 };
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function signalStartupGroup(pid: number, signal: NodeJS.Signals | 0): boolean {
+  try {
+    process.kill(-pid, signal);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+async function stopStartupProcess(subprocess: StartupSubprocess): Promise<void> {
+  const pid = subprocess.pid;
+  if (pid && process.platform !== 'win32' && signalStartupGroup(pid, 'SIGTERM')) {
+    // The launcher can exit before its compiler or service. Wait on the group
+    // even when the launcher's own promise has already settled.
+    const deadline = Date.now() + 1_000;
+    while (signalStartupGroup(pid, 0)) {
+      if (Date.now() >= deadline) {
+        signalStartupGroup(pid, 'SIGKILL');
+        break;
+      }
+      await delay(50);
+    }
+    return;
+  }
+  if (pid && process.platform === 'win32') {
+    const terminated = await execa('taskkill', ['/pid', String(pid), '/T', '/F'], {
+      reject: false,
+      timeout: 5_000,
+      windowsHide: true,
+    });
+    if (terminated.exitCode === 0) return;
+  }
+  subprocess.kill?.('SIGTERM', { forceKillAfterDelay: 1_000 });
 }
 
 async function runStartupSmoke(input: {
@@ -989,23 +1026,23 @@ async function runStartupSmoke(input: {
     };
   }
 
+  const spawnOptions = {
+    cwd: input.projectPath,
+    reject: false as const,
+    timeout: input.timeoutMs,
+    detached: process.platform !== 'win32',
+  };
   const subprocess = (
     input.useRapidkitWrapper && entrypoint
       ? execa(process.execPath, [entrypoint, 'start'], {
-          cwd: input.projectPath,
-          reject: false,
-          timeout: input.timeoutMs,
+          ...spawnOptions,
           env: {
             ...process.env,
             RAPIDKIT_WORKSPACE_RUN_CHILD: '1',
           },
         })
       : input.argv
-        ? execa(input.argv.executable, input.argv.args, {
-            cwd: input.projectPath,
-            reject: false,
-            timeout: input.timeoutMs,
-          })
+        ? execa(input.argv.executable, input.argv.args, spawnOptions)
         : null
   ) as StartupSubprocess | null;
   if (!subprocess) {
@@ -1029,6 +1066,14 @@ async function runStartupSmoke(input: {
     completion,
     delay(startupGraceMs).then(() => ({ kind: 'alive' as const })),
   ]);
+  if (
+    initial.kind !== 'alive' &&
+    process.platform !== 'win32' &&
+    subprocess.pid &&
+    signalStartupGroup(subprocess.pid, 0)
+  ) {
+    await stopStartupProcess(subprocess);
+  }
 
   if (initial.kind === 'error') {
     const timedOut =
@@ -1045,11 +1090,13 @@ async function runStartupSmoke(input: {
     };
   }
   if (initial.kind === 'exit') {
-    const exitCode = Number(initial.result.exitCode ?? 0);
+    const timedOut = initial.result.timedOut === true;
+    const exitCode = timedOut ? 124 : (initial.result.exitCode ?? (initial.result.failed ? 1 : 0));
     return {
       exitCode,
       stdout: String(initial.result.stdout ?? ''),
       stderr: String(initial.result.stderr ?? ''),
+      timedOut,
       healthStatus: {
         healthy: exitCode === 0,
         reason:
@@ -1094,20 +1141,26 @@ async function runStartupSmoke(input: {
     }
   }
 
-  try {
-    subprocess.kill?.('SIGTERM', { forceKillAfterDelay: 1_000 });
-  } catch {
-    try {
-      subprocess.kill?.();
-    } catch {
-      // Best-effort cleanup. The command timeout remains the final safety net.
-    }
-  }
+  await stopStartupProcess(subprocess);
   const settled = await Promise.race([
     completion,
     delay(2_000).then(() => ({ kind: 'alive' as const })),
   ]);
+  if (settled.kind === 'alive') {
+    const reason = 'The startup process did not terminate within the cleanup budget.';
+    return { exitCode: 1, stdout: '', stderr: reason, healthStatus: { healthy: false, reason } };
+  }
   const result = settled.kind === 'exit' ? settled.result : undefined;
+  if (result?.timedOut) {
+    const reason = 'The start command timed out before the startup check completed.';
+    return {
+      exitCode: 124,
+      stdout: String(result.stdout ?? ''),
+      stderr: String(result.stderr || reason),
+      timedOut: true,
+      healthStatus: { healthy: false, reason },
+    };
+  }
   return {
     exitCode: healthStatus.healthy ? 0 : 1,
     stdout: String(result?.stdout ?? ''),

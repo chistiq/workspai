@@ -21,6 +21,8 @@ Released November 23, 2026.
   canonical IDs, capabilities, framework support, and declared dependencies.
 - Update the source-ready OpenRouter gateway pins to TypeScript `1.5.131`
   and Python `1.3.206`.
+- Qualify reviewed Agent Framework proposals on `main` through manual and
+  weekly matrix runs. Export the verified baseline and admission receipt as one patch.
 
 ### Added
 
@@ -38,6 +40,8 @@ Released November 23, 2026.
 - Save Agent Framework discovery reports even when registry or GitHub
   evidence blocks promotion. Keep reviewed proposals separate from the
   bundled baseline and validate the final admission after promotion.
+- Stop package-manager descendants when a bounded `workspace run start`
+  check finishes so they cannot keep writing to the project afterward.
 
 ## [0.82.0] - 2026-11-20
 

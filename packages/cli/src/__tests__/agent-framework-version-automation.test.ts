@@ -54,46 +54,19 @@ describe('agent framework version automation', () => {
     }
     const conformance = workflows[1]!;
     expect(conformance).toContain('qualification_mode:');
-    expect(conformance).toContain("'packages/cli/src/__tests__/agent-framework-*.test.ts'");
     expect(conformance).toContain(
-      'inputs.qualification_mode == \'full\' && \'["ubuntu-24.04","macos-latest","windows-latest"]\' || \'["ubuntu-24.04"]\''
+      'outputs.full == \'true\' && \'["ubuntu-24.04","macos-latest","windows-latest"]\' || \'["ubuntu-24.04"]\''
     );
-    expect(conformance).toContain(
-      "github.event_name == 'workflow_dispatch' && inputs.qualification_mode == 'full'"
-    );
-    expect(conformance).toContain('dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d');
-    expect(YAML.parse(conformance).permissions).toEqual({
-      contents: 'read',
-      'pull-requests': 'read',
-    });
-    expect(conformance).toContain("- 'packages/cli/src/agent-frameworks/**'");
-    expect(conformance).toContain(
-      "- '!packages/cli/src/agent-frameworks/adapters/openai-agents/**'"
-    );
-    expect(conformance).toContain(
-      "- '!packages/cli/src/agent-frameworks/adapters/microsoft-agent-framework/**'"
-    );
+    expect(YAML.parse(conformance).permissions).toEqual({ contents: 'read' });
     expect(conformance).toContain('runtime: [python, dotnet]');
     expect(conformance).toContain('runtime: [python, typescript]');
     expect(conformance).toContain('smoke-openai-agents-adapter.ts');
     expect(conformance).toContain('smoke-google-adk-adapter.ts');
-    expect(conformance).toContain("- '!packages/cli/src/agent-frameworks/adapters/google-adk/**'");
     expect(conformance).toContain('Google ADK ·');
     expect(conformance).toContain('node-version: "22.20.0"');
     expect(conformance).not.toMatch(/FOUNDRY_PROJECT_ENDPOINT:\s*\$\{\{/);
     expect(conformance).not.toMatch(/OPENAI_API_KEY:\s*\$\{\{/);
-    expect(conformance).toContain("github.event_name == 'workflow_dispatch'");
-    expect(conformance).toContain(
-      "github.ref == 'refs/heads/automation/agent-framework-version-baselines'"
-    );
     expect(conformance).toContain('promote-agent-framework-release-admission.ts');
-    expect(conformance).toContain(
-      'git commit --no-verify -m "chore(agent-frameworks): bind verified release admission"'
-    );
-    expect(conformance).toContain(
-      'git push --no-verify origin "HEAD:refs/heads/${GITHUB_REF_NAME}"'
-    );
-    expect(conformance).toContain('contents: write');
     expect(conformance).not.toContain('pull_request_target:');
 
     const smoke = read('packages/cli/scripts/smoke-microsoft-agent-framework-adapter.ts');
@@ -138,6 +111,36 @@ describe('agent framework version automation', () => {
     expect(verify).toContain('liveImplementationDigestBlockers');
     expect(verify).not.toContain(
       'implementationSha256: digestBuiltinAgentFrameworkImplementation(adapter)'
+    );
+  });
+
+  it('qualifies the main proposal manually or weekly and exports its admission without pushing', () => {
+    const source = read('.github/workflows/agent-framework-conformance.yml');
+    const workflow = YAML.parse(source);
+    expect(Object.keys(workflow.on).sort()).toEqual(['schedule', 'workflow_dispatch']);
+    expect(workflow.on.schedule).toEqual([{ cron: '43 8 * * 1' }]);
+    expect(workflow.on.workflow_dispatch.inputs.qualification_mode).toMatchObject({
+      default: 'full',
+      options: ['fast', 'full'],
+    });
+    expect(workflow.jobs.qualification.outputs.full).toContain(
+      "github.event_name == 'schedule' || inputs.qualification_mode == 'full'"
+    );
+    expect(source).toContain('github.event.repository.default_branch');
+    const prepare = 'npm exec tsx -- scripts/prepare-agent-framework-candidate.ts';
+    for (const id of ['microsoft-agent-framework', 'openai-agents', 'google-adk', 'admit-matrix']) {
+      const steps = workflow.jobs[id].steps;
+      expect(steps[0].with.ref).toBe('${{ github.sha }}');
+      expect(steps.map((step: { run?: string }) => step.run)).toContain(prepare);
+    }
+    expect(source).toContain('SOURCE_COMMIT: ${{ github.sha }}');
+    expect(workflow.jobs['admit-matrix'].if).toContain("github.repository == 'chistiq/workspai'");
+    expect(source).toContain('release-admission.patch');
+    expect(source.indexOf('Verify bundled admission and kit selection')).toBeLessThan(
+      source.indexOf('Upload reviewable admission candidate')
+    );
+    expect(source).not.toMatch(
+      /automation\/agent-framework-version-baselines|contents: write|git (?:commit|push)/
     );
   });
 

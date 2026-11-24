@@ -3304,18 +3304,21 @@ export async function runCommandInCwd(
       );
     }
     const requiresWindowsBatchShell = isWindowsPlatform() && /\.(?:cmd|bat)$/i.test(executable);
+    // The enclosing workspace runner owns termination for nested lifecycle commands.
+    const ownsProcessGroup =
+      !isWindowsPlatform() && process.env.RAPIDKIT_WORKSPACE_RUN_CHILD !== '1';
     child = spawn(executable, spawnArgs, {
       stdio: inheritChildOutput ? 'inherit' : ['ignore', 'pipe', 'pipe'],
       cwd,
       shell: requiresWindowsBatchShell,
       env: spawnEnv,
-      detached: !isWindowsPlatform(),
+      detached: ownsProcessGroup,
     });
     if (effectiveTimeoutMs && effectiveTimeoutMs > 0) {
       timeout = setTimeout(() => {
         if (settled) return;
         settled = true;
-        if (!isWindowsPlatform() && child.pid) {
+        if (ownsProcessGroup && child.pid) {
           try {
             process.kill(-child.pid, 'SIGTERM');
           } catch {

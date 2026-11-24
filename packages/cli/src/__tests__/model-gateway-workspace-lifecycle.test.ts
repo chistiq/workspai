@@ -32,7 +32,7 @@ async function removeTempRoot(root: string): Promise<void> {
   await rm(resolvedRoot, {
     recursive: true,
     force: true,
-    maxRetries: process.platform === 'win32' ? 10 : 0,
+    maxRetries: 10,
     retryDelay: 100,
   });
 }
