@@ -7,9 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-## [0.83.0] - 2026-11-23
+## [0.83.0] - 2026-11-24
 
-Released November 23, 2026.
+Released November 24, 2026.
 
 ### Changed
 
@@ -23,6 +23,9 @@ Released November 23, 2026.
   and Python `1.3.206`.
 - Qualify reviewed Agent Framework proposals on `main` through manual and
   weekly matrix runs. Export the verified baseline and admission receipt as one patch.
+- Admit Microsoft Agent Framework Python `1.26.0` and .NET `1.28.0`, OpenAI
+  Agents Python `0.25.0` and TypeScript `0.22.0`, and Google ADK Python `2.15.0`
+  and TypeScript `2.5.0`. Microsoft Agent Framework Python now requires Python 3.11+.
 
 ### Added
 

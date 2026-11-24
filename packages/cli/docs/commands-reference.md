@@ -325,12 +325,10 @@ a nonzero exit with `--strict`. See [workspace-run.md](./workspace-run.md).
 
 `agent framework` is the governed bridge between Workspai evidence and an
 agent runtime. `list` exposes every built-in adapter and its release-admission
-state. The current candidates are Microsoft Python `1.23.0` and .NET `1.26.0`,
-OpenAI Agents Python `0.24.0` and TypeScript `0.21.0`, and Google ADK Python
-`2.13.0` and TypeScript `2.3.0`. Microsoft and Google adapters remain
-`preview`; OpenAI adapters remain `stable`. These candidates are not admitted:
-the existing v2 inventory records the prior versions and their Linux, macOS,
-and Windows evidence. Create and Attach require the reviewed v2 release inventory,
+state. The admitted versions are Microsoft Python `1.26.0` (Python `>=3.11`)
+and .NET `1.28.0`, OpenAI Agents Python `0.25.0` and TypeScript `0.22.0`, and
+Google ADK Python `2.15.0` and TypeScript `2.5.0`. Microsoft and Google adapters
+are `preview`. OpenAI adapters are `stable`. Create and Attach require the reviewed v2 release inventory,
 whose manifest, framework baseline, runtime, and platform claims were promoted
 from the Linux, macOS, and Windows release matrix. Semantic implementation
 digests remain audit provenance rather than runtime authorization. `plan`

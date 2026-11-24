@@ -97,19 +97,19 @@ conflict, not a ranking guess.
 
 The current baselines target these upstream stable versions and are
 Workspai-qualified by the complete Linux, macOS, and Windows matrix in
-[Agent Framework Adapter Matrix run 92](https://github.com/chistiq/workspai/actions/runs/40584579308):
+[Agent Framework Adapter Matrix run 94](https://github.com/chistiq/workspai/actions/runs/45335389592):
 
 | Adapter                            | Framework baseline | Runtime         | Authored detection                         |
 | ---------------------------------- | ------------------- | --------------- | ------------------------------------------ |
-| `microsoft-agent-framework-python` | `1.23.0`            | Python `>=3.10` | `agent-framework` PyPI package family      |
-| `microsoft-agent-framework-dotnet` | `1.26.0`            | .NET `>=8.0`    | `Microsoft.Agents.AI` NuGet package family |
+| `microsoft-agent-framework-python` | `1.26.0`            | Python `>=3.11` | `agent-framework` PyPI package family      |
+| `microsoft-agent-framework-dotnet` | `1.28.0`            | .NET `>=8.0`    | `Microsoft.Agents.AI` NuGet package family |
 
 The first provider profile pins its integration independently: Python uses
-`agent-framework-foundry` `1.15.0`, while .NET uses
-`Microsoft.Agents.AI.Foundry` `1.26.0-preview.261023.1` over the stable
-`Microsoft.Agents.AI` `1.26.0` core. Preview integration status is not
+`agent-framework-foundry` `1.16.2`, while .NET uses
+`Microsoft.Agents.AI.Foundry` `1.28.0-preview.261106.1` over the stable
+`Microsoft.Agents.AI` `1.28.0` core. Preview integration status is not
 misrepresented as framework stability. The dedicated .NET test project pins
-`Microsoft.NET.Test.Sdk` `18.11.0` and `xunit.v3.mtp-v2` `4.0.2`.
+`Microsoft.NET.Test.Sdk` `18.12.0` and `xunit.v3.mtp-v2` `4.0.3`.
 
 Each adapter implements detection, scaffold and attach planning, managed-file
 rendering, project context, validation, and runtime resolution. It never
@@ -172,11 +172,11 @@ baselines below are release-admitted for Create and Attach.
 
 | Adapter                    | Framework baseline | Runtime         | Authored detection                 |
 | -------------------------- | ------------------- | --------------- | ---------------------------------- |
-| `openai-agents-python`     | `0.24.0`            | Python `>=3.10` | exact PyPI package `openai-agents` |
-| `openai-agents-typescript` | `0.21.0`            | Node.js `>=22`  | exact npm package `@openai/agents` |
+| `openai-agents-python`     | `0.25.0`            | Python `>=3.10` | exact PyPI package `openai-agents` |
+| `openai-agents-typescript` | `0.22.0`            | Node.js `>=22`  | exact npm package `@openai/agents` |
 
 The TypeScript starter also pins peer `zod` `4.6.7`, TypeScript `7.0.2`, and
-`@types/node` `26.6.5`. The `openai` PyPI or npm package alone is not this
+`@types/node` `26.6.6`. The `openai` PyPI or npm package alone is not this
 framework. Generated markers under `.workspai/agent-frameworks/` cannot select
 it.
 
@@ -209,11 +209,11 @@ Claimed capabilities are conservative and independently evidenced:
   hosted tools, and human-approval loops
 
 Python cancellation uses `Runner.max_turns` and `ModelSettings.timeout` from
-`openai-agents` `0.24.0`. `ModelSettings.timeout` is a per-model-request
+`openai-agents` `0.25.0`. `ModelSettings.timeout` is a per-model-request
 timeout applied only on the live model path. Injected `ScriptedModel` runs omit
 it because that setting hung the official test double on Python 3.13.
 TypeScript cancellation uses `maxTurns` plus `AbortSignal` from
-`@openai/agents` `0.21.0`. Those SDK controls are not a Workspai-owned timeout
+`@openai/agents` `0.22.0`. Those SDK controls are not a Workspai-owned timeout
 service. Workspai still owns mutation admission and verification; a successful
 model run is not verified evidence.
 
@@ -238,7 +238,7 @@ Create and Attach still refuse a kit whose adapter is not release-admitted;
 visibility in the picker is not permission to write a blocked adapter.
 Attach still requires `--framework openai-agents` when the
 runtime is shared. OpenAI adapters are labeled `stable`; the current Python
-`0.24.0` and TypeScript `0.21.0` baselines are release-admitted by the full
+`0.25.0` and TypeScript `0.22.0` baselines are release-admitted by the full
 cross-platform matrix.
 Handoffs, MCP, sessions, voice, sandbox, and approval loops stay unsupported.
 Microsoft adapters remain `preview`.
@@ -260,14 +260,14 @@ graph Workflow Runtime is not generalized to Python.
 | `google-adk-python`     | Python `>=3.11`   | exact PyPI package `google-adk` |
 | `google-adk-typescript` | Node.js `>=20.19` | exact npm package `@google/adk` |
 
-The current Python baseline is `google-adk` `2.13.0`. The TypeScript
-baseline is `@google/adk` `2.3.0` with `zod` `4.6.7`, TypeScript `7.0.2`,
-and `@types/node` `26.6.5`. `@google/adk-devtools` is not a v1 dependency. Do not
+The current Python baseline is `google-adk` `2.15.0`. The TypeScript
+baseline is `@google/adk` `2.5.0` with `zod` `4.6.7`, TypeScript `7.0.2`,
+and `@types/node` `26.6.6`. `@google/adk-devtools` is not a v1 dependency. Do not
 run unqualified `npx adk`.
 
 Adapters are labeled `preview`. Create kits are `agent.google-adk.python` and
 `agent.google-adk.typescript`. Both exact baselines are release-admitted by
-Agent Framework Adapter Matrix run 92. The generic admission boundary refuses
+Agent Framework Adapter Matrix run 94. The generic admission boundary refuses
 any unpublished or drifted kit before
 `--dry-run` and before filesystem or workspace mutation. Generated Python code
 uses the current ADK lifecycle: construct `App(root_agent=...)`, pass that app
@@ -291,12 +291,9 @@ unsupported. In-memory sessions are process-local, not durable persistence.
 Credentialless conformance subclasses the public `BaseLlm` surface. It does not
 monkey-patch private SDK internals and does not call Gemini or Vertex.
 
-A path-filtered PR gate compiles only the affected Microsoft, OpenAI, or Google
-adapter family on Linux. Shared lifecycle, security, registry, admission,
-Create/Doctor integration, and contract changes select the affected families;
-documentation-only edits do not run adapter conformance. The complete matrix is
-an explicit release-qualification operation: it compiles every built-in adapter runtime on Linux,
-macOS, and Windows. Every full-qualification lane
+The matrix runs weekly or on manual dispatch from `main`. A full run compiles
+every built-in adapter runtime on Linux, macOS, and Windows. Manual `fast` mode
+runs the Linux lanes. Every full-qualification lane
 records all 18 mandatory checks, the exact runtime and framework baseline,
 digests of the adapter manifest and semantic implementation, and one bounded
 evidence file per check. Google ADK `verification-binding` evidence records
@@ -305,16 +302,14 @@ evidence file per check. Google ADK `verification-binding` evidence records
 `telemetryOptInRecording` as distinct booleans. Reports are retained as CI artifacts for review. A
 final job validates every evidence path and emits an admission candidate only
 when all three operating-system lanes pass for every built-in adapter.
-Microsoft and OpenAI Python conformance use Python 3.10.11, the final Python
-3.10 release with cross-platform binary installers. Google ADK Python uses
-Python 3.11 because candidate `google-adk` 2.13.0 requires Python `>=3.11`.
+Microsoft Agent Framework Python and Google ADK Python use Python 3.11 for
+conformance. OpenAI Agents Python retains its Python 3.10 minimum.
 
-After verification, CI emits one admission-candidate artifact. It binds the
-source commit, CLI version, adapter manifest and implementation digests, lane reports, and every
-evidence file by SHA-256. Its status is always `pending`: successful CI produces
-reviewable evidence, not release authority. Only the protected version-update
-branch may convert that candidate into the exact release-admission inventory,
-and the resulting pull request still passes normal review and repository gates.
+After verification, CI emits the admission candidate and `release-admission.patch`
+in the same artifact. The candidate binds the source commit, CLI version,
+adapter manifest and implementation digests, lane reports, and every evidence
+file by SHA-256. Applying the reviewed patch records the qualified baseline and
+its release-admission inventory together.
 
 CI evidence is not silently trusted at runtime. The default registry remains
 blocked when callers provide neither raw conformance reports nor explicit
@@ -464,7 +459,7 @@ Python and TypeScript adapters share that same create, attach, detection,
 ownership, and verification host. They are selectable for Create and Attach
 only while their exact manifest digest, framework baseline, runtime, and
 platform list remain in the reviewed release-admission inventory. All six current baselines are admitted by
-[Agent Framework Adapter Matrix run 92](https://github.com/chistiq/workspai/actions/runs/40584579308).
+[Agent Framework Adapter Matrix run 94](https://github.com/chistiq/workspai/actions/runs/45335389592).
 
 ## Implementation sequence
 

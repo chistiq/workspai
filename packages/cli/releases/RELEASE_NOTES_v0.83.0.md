@@ -7,14 +7,15 @@
     { "icon": "📦", "text": "Use Core 0.6.3 by default with Python 3.11 through 3.x" },
     { "icon": "🛠️", "text": "Create FastAPI Standard, FastAPI DDD, and NestJS Standard projects with refreshed templates" },
     { "icon": "🔎", "text": "Discover 52 validated modules and consume versioned catalog output as JSON" },
-    { "icon": "🔌", "text": "Use refreshed OpenRouter SDK pins in the TypeScript and Python gateway starters" }
+    { "icon": "🔌", "text": "Use refreshed OpenRouter SDK pins in the TypeScript and Python gateway starters" },
+    { "icon": "🤖", "text": "Create and attach agent kits with six cross-platform-qualified SDK updates" }
   ]
 }
 -->
 
 # Workspai CLI v0.83.0
 
-Released November 23, 2026. **Publication status: Published November 23, 2026.**
+Released November 24, 2026. **Publication status: Published November 24, 2026.**
 
 Workspai CLI 0.83.0 updates its RapidKit Core integration. This release covers
 the optional Python engine, the three Core-backed kits, and the module catalog
@@ -59,24 +60,23 @@ same versions in the registries and GitHub releases. Linux generated-project
 and lifecycle checks passed. See [Model Gateways](../docs/model-gateways.md)
 for the qualification status.
 
-## Agent Framework SDK candidates
+## Agent Framework SDK updates
 
 Discovery writes the report before evaluating promotion. Registry failures,
 version regressions, and GitHub disagreements remain visible in the uploaded
 report and stop promotion. Candidate pins are produced as a separate file.
 
-| Framework | Python SDK candidate | Other runtime SDK candidate |
+| Framework | Python SDK | TypeScript or .NET SDK |
 | --- | --- | --- |
 | Microsoft Agent Framework | `agent-framework-core` `1.26.0`, `agent-framework-foundry` `1.16.2` (Python 3.11+) | .NET `Microsoft.Agents.AI` `1.28.0`, Foundry `1.28.0-preview.261106.1` |
 | OpenAI Agents | `openai-agents` `0.25.0` | TypeScript `@openai/agents` `0.22.0` |
 | Google ADK | `google-adk` `2.15.0` | TypeScript `@google/adk` `2.5.0` |
 
-The [exact candidate manifest](./AGENT_FRAMEWORK_CANDIDATES_v0.83.0.json)
-includes runtime-support pins. All six candidates passed credentialless
-generated-project conformance on Linux. The manual and weekly full matrix runs
-qualify the proposal from the run's `main` commit. Apply the resulting patch to update the bundled
-baseline and admission together for Create and Attach. See the
-[admission guide](../../../.github/agent-framework-version-update.md).
+All 18 conformance lanes passed across Linux, macOS, and Windows in
+[Agent Framework Adapter Matrix run 94](https://github.com/chistiq/workspai/actions/runs/45335389592).
+The bundled baseline and verified admission are active for Create and Attach.
+The [reviewed proposal](./AGENT_FRAMEWORK_CANDIDATES_v0.83.0.json) records the
+exact runtime-support pins.
 
 ## Install or upgrade
 
